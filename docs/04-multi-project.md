@@ -1,0 +1,157 @@
+# 04. 複数案件を 1 人でまわす
+
+一人で 4〜5 本のリポジトリを持つと、コードを書く時間より
+**「どれがどうなっているか思い出す時間」**の方が長くなります。
+
+ここはその時間をゼロに近づけるための話です。
+
+---
+
+## PC を開いた時点で全部最新にする
+
+朝いちばんに `git pull` を忘れて、古い `main` の上に作業を積むのが一番よくある事故でした。
+なので、ログオン 1 分後にタスクスケジューラで走らせています。
+
+実物: [kit/scripts/pull-all.mjs](../kit/scripts/pull-all.mjs)（Windows / macOS / Linux）
+／ [kit/scripts/pull-all.ps1](../kit/scripts/pull-all.ps1)（PowerShell 版）
+
+### 絶対にやらないこと
+
+このスクリプトが守っているのは、この 4 つです。
+
+- **`stash` しない**
+- **`reset` しない**
+- **`checkout` しない**
+- **`merge` しない**
+
+無人で走るスクリプトが作業ツリーを触ると、いつか必ず作業を消します。
+「賢く」する余地はいくらでもありますが、全部やめました。
+
+### 何をするか
+
+| 状態 | 動作 |
+|---|---|
+| 作業ツリーが汚れている | **スキップ**。何もしない |
+| rebase / merge / cherry-pick / bisect の途中 | **スキップ** |
+| detached HEAD | **スキップ** |
+| デフォルトブランチにいて clean | `git pull --ff-only` |
+| 作業ブランチにいる | `git fetch origin main:main` |
+
+最後の行が肝です。
+`git fetch origin main:main` は、**いま `main` にいなくてもローカルの `main` を進められます**。
+チェックアウトを一切動かさないので、作業中のブランチに影響しません。
+しかも fast-forward できないときは git が拒否するので、強制されることもない。
+
+作業ブランチで開発しながら、`main` だけは常に最新。これが欲しかった状態でした。
+
+### ログ
+
+毎回 `_logs/pull-all_<日時>.log` に残します。30 日で自動削除。
+
+無人スクリプトはログがないと、動いていないことに気づけません。
+「今日はスキップした」も含めて全部残します。
+
+### 「壊さない」を証明する
+
+無人で走るスクリプトを信じる根拠は、コードを読んだ印象ではなく、テストであるべきです。
+
+```bash
+node kit/scripts/test-pull-all.mjs              # Node 版
+node kit/scripts/test-pull-all.mjs --target ps  # PowerShell 版（同じテスト）
+```
+
+git をモックしていません。**本物の bare origin と、本物のクローン 6 つ**を作って、
+それぞれを別の状態に置いてから、実際にスクリプトを走らせます。
+
+| クローン | 状態 |
+|---|---|
+| clean-on-main | `main` にいて clean、origin が 1 コミット先 |
+| dirty | 未コミットの変更あり |
+| feature-branch | 自分のコミットを持つ作業ブランチにいる |
+| detached | detached HEAD |
+| mid-rebase | **実際に競合させた rebase の途中**で止めてある |
+| diverged | ローカル `main` に origin にないコミットがある |
+
+そして走らせたあとに、これを確認します。
+
+```
+destroys nothing:
+  PASS  dirty repo: uncommitted work intact
+  PASS  dirty repo: HEAD did not move
+  PASS  dirty repo: still dirty (nothing was stashed)
+  PASS  no stash was ever created
+  PASS  detached HEAD: untouched
+  PASS  mid-rebase: still mid-rebase
+  PASS  mid-rebase: HEAD did not move
+  PASS  diverged main: local commit not discarded
+  PASS  diverged: HEAD did not move
+```
+
+**大事なのは、この「何もしなかった」側のテストです。**
+「ちゃんと pull できた」より、「触ってはいけないものに触らなかった」の方が、
+朝いちばんに黙って走るスクリプトには効きます。
+
+同じテストを Node 版と PowerShell 版の両方に当てているので、
+実装が 2 つに分かれても挙動がずれません。CI で Ubuntu / macOS / Windows で回しています。
+
+### 登録
+
+**Windows（タスクスケジューラ）**
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Dev\ai-workforce\kit\scripts\pull-all.ps1" -Root C:\Dev'
+$t = New-ScheduledTaskTrigger -AtLogOn
+$t.Delay = "PT1M"
+Register-ScheduledTask -TaskName "AIWF pull-all" -Action $a -Trigger $t
+```
+
+`PT1M` の遅延は、ネットワークが上がる前に走って全部失敗するのを避けるためです。
+
+**macOS / Linux（cron）**
+
+```cron
+@reboot sleep 60 && /usr/bin/node ~/Dev/ai-workforce/kit/scripts/pull-all.mjs --root ~/Dev --quiet
+```
+
+同じ理由で `sleep 60` を入れています。
+
+---
+
+## ローカルが古いことに気づけない問題
+
+手元の Claude Code から GitHub に直接 push して作業していると、
+**ローカルのリポジトリだけが取り残されます**。
+
+実際、あるプロジェクトでローカルが 17 コミット遅れていたことに、しばらく気づきませんでした。
+push する側は最新なので、何も困らない。困るのは、次にローカルで作業を始めたときです。
+
+`pull-all` はこれの対策でもあります。
+
+---
+
+## プロジェクトを取り違える問題
+
+`musubu` の作業を `hanami-nail-prototype` で実行された、という事故があります。
+
+原因は単純で、両方 Next.js App Router + Supabase なので、
+**途中まで違和感なく動いてしまう**からです。
+
+対策は 2 つ、どちらも安いので両方やります。
+
+1. **プロンプトの冒頭に絶対パスを書く**（[03](03-division-of-labor.md)）
+2. **共通 `CLAUDE.md` に「作業前に `pwd` で一致を確認する」を入れる**
+
+これは「気をつける」で防げる類の事故ではありません。仕組みで塞ぎます。
+
+---
+
+## 各プロジェクトの CLAUDE.md を、記憶の置き場にする
+
+複数案件で一番失われるのは、**「なぜそうなっているか」**です。
+
+3 か月前の自分がなぜその実装にしたのか、コードからは分かりません。
+だから各プロジェクトの `CLAUDE.md` に「触ってはいけないもの」「既知の落とし穴」を書きます。
+
+これは AI のためであると同時に、**3 か月後の自分のため**です。
+どちらも同じくらい記憶がありません。

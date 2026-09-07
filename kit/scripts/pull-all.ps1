@@ -1,0 +1,166 @@
+#requires -Version 5.1
+<#
+.SYNOPSIS
+    Bring every repository under a root directory up to date, without ever
+    touching work in progress.
+
+.DESCRIPTION
+    Run it at logon. When you sit down, main is current everywhere.
+
+    Rules, in order of importance:
+      - Never stash. Never reset. Never checkout. Never merge.
+      - A dirty working tree is skipped entirely.
+      - A repository mid-rebase, mid-merge, mid-bisect or on a detached HEAD is skipped.
+      - On the default branch with a clean tree: fast-forward only pull.
+      - On a feature branch: 'git fetch origin main:main' advances the local default
+        branch without leaving the branch you are on. If that would not fast-forward,
+        git refuses and the repository is reported, not forced.
+
+    The whole point is that this can run unattended and still never lose a line of
+    your work. If it cannot act safely, it reports and moves on.
+
+    ASCII-only on purpose. See the encoding note in guard-sql.ps1.
+
+.EXAMPLE
+    .\pull-all.ps1 -Root C:\Dev
+
+.EXAMPLE
+    .\pull-all.ps1 -Root C:\Dev -Repos api,web,infra
+#>
+
+[CmdletBinding()]
+param(
+    [string] $Root = 'C:\Dev',
+
+    # Explicit list of folder names under $Root. Omit to auto-discover every git repo.
+    [string[]] $Repos,
+
+    [string] $LogDir = $(Join-Path $Root '_logs'),
+
+    # Keep this many days of logs.
+    [int] $LogRetentionDays = 30
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Continue'
+
+# --- logging ---------------------------------------------------------------
+
+if (-not (Test-Path -LiteralPath $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+}
+$logFile = Join-Path $LogDir ('pull-all_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+function Write-Log([string] $Message, [string] $Color = 'Gray') {
+    $line = '{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
+    Write-Host $line -ForegroundColor $Color
+    [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+}
+
+function Invoke-Git([string] $RepoPath, [string[]] $GitArgs) {
+    $output = & git -C $RepoPath @GitArgs 2>&1
+    return [pscustomobject]@{
+        ExitCode = $LASTEXITCODE
+        Output   = ($output | Out-String).Trim()
+    }
+}
+
+# --- discovery -------------------------------------------------------------
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Log 'git not found on PATH. Nothing to do.' 'Red'
+    exit 1
+}
+
+if (-not (Test-Path -LiteralPath $Root)) {
+    Write-Log "Root not found: $Root" 'Red'
+    exit 1
+}
+
+if ($Repos) {
+    $targets = $Repos | ForEach-Object { Join-Path $Root $_ } | Where-Object { Test-Path -LiteralPath $_ }
+} else {
+    $targets = Get-ChildItem -LiteralPath $Root -Directory |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |
+        Select-Object -ExpandProperty FullName
+}
+
+Write-Log ("pull-all start  root=$Root  repos=" + (@($targets).Count))
+
+$summary = @()
+
+foreach ($repo in $targets) {
+    $name = Split-Path $repo -Leaf
+
+    # Resolve the real git dir: `.git` can be a file (worktrees, submodules).
+    $gitDirResult = Invoke-Git $repo @('rev-parse', '--absolute-git-dir')
+    if ($gitDirResult.ExitCode -ne 0) {
+        Write-Log "$name : SKIP (not a git repo)" 'Yellow'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/not-a-repo' }
+        continue
+    }
+    $gitDir = $gitDirResult.Output
+
+    # --- refuse to act on anything mid-operation ---------------------------
+    $inProgress = @('rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'BISECT_LOG') |
+        Where-Object { Test-Path -LiteralPath (Join-Path $gitDir $_) }
+
+    if ($inProgress) {
+        Write-Log "$name : SKIP (in progress: $($inProgress -join ', '))" 'Yellow'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/in-progress' }
+        continue
+    }
+
+    $status = Invoke-Git $repo @('status', '--porcelain')
+    if ($status.Output) {
+        Write-Log "$name : SKIP (dirty working tree)" 'Yellow'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/dirty' }
+        continue
+    }
+
+    $branch = (Invoke-Git $repo @('rev-parse', '--abbrev-ref', 'HEAD')).Output
+    if ($branch -eq 'HEAD') {
+        Write-Log "$name : SKIP (detached HEAD)" 'Yellow'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/detached' }
+        continue
+    }
+
+    # --- work out the default branch ---------------------------------------
+    $head = (Invoke-Git $repo @('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD')).Output
+    if ($head -match '^origin/(.+)$') { $default = $Matches[1] } else { $default = 'main' }
+
+    if ($branch -eq $default) {
+        $r = Invoke-Git $repo @('pull', '--ff-only')
+        if ($r.ExitCode -eq 0) {
+            Write-Log "$name : ok ($default fast-forwarded)" 'Green'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'ok' }
+        } else {
+            Write-Log "$name : FAILED ff-only pull -- $($r.Output)" 'Red'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/pull' }
+        }
+        continue
+    }
+
+    # On a feature branch: advance the local default branch in place. This
+    # cannot touch the checkout, and git refuses if it is not a fast-forward.
+    $r = Invoke-Git $repo @('fetch', 'origin', "${default}:${default}")
+    if ($r.ExitCode -eq 0) {
+        Write-Log "$name : ok (on '$branch', $default advanced)" 'Green'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'ok/branch' }
+    } else {
+        Write-Log "$name : $default not fast-forwardable, left alone -- $($r.Output)" 'Yellow'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/diverged' }
+    }
+}
+
+# --- wrap up ---------------------------------------------------------------
+
+Write-Log '--- summary ---'
+foreach ($s in $summary) { Write-Log ('{0,-28} {1}' -f $s.Repo, $s.Result) }
+
+Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogRetentionDays) } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+Write-Log "done. log: $logFile"

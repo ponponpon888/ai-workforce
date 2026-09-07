@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使い方の質問 / Usage question
+    url: https://github.com/ponponpon888/ai-workforce/discussions
+    about: 「これで合っていますか」系は Discussions へ。Issue でも読みます。
+  - name: 仕事の相談 / Work enquiry
+    url: https://www.shingokumon.com
+    about: 開発の依頼はこちらから。国内・海外どちらでも。

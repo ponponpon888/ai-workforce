@@ -1,0 +1,13 @@
+# リポジトリ内は常に LF。作業ツリーの改行はプラットフォームに任せる。
+* text=auto
+
+# shebang 付きのスクリプトは作業ツリーでも LF を強制する。
+# CRLF で checkout されると Linux / macOS で "bad interpreter" になって動かない。
+*.mjs   text eol=lf
+*.sh    text eol=lf
+
+# 触らない
+*.png   binary
+*.jpg   binary
+*.ico   binary
+*.zip   binary

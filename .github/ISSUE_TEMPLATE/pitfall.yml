@@ -1,0 +1,51 @@
+name: 落とし穴の報告 / Report a pitfall
+description: あなたが踏んだ事故を教えてください。このリポジトリで一番価値のある報告です。
+title: "[pitfall] "
+labels: [pitfall]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **これが一番ありがたい報告です。** コードは要りません。3 行で構いません。
+
+        秘密情報は貼らないでください（接続文字列、API キー、顧客データ）。
+        ログを貼る前に一度読み直してください。
+
+        ---
+        The most valuable kind of report here. No code needed. Three lines is fine.
+        Never paste secrets — re-read your logs before posting.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 何が起きたか / What happened
+      placeholder: |
+        例: guard-sql を入れたのに、Cowork から実行した DELETE が素通りした。
+    validations:
+      required: true
+
+  - type: textarea
+    id: cause
+    attributes:
+      label: 原因が分かっているなら / Cause, if you know it
+      placeholder: |
+        例: フックは手元の Claude Code にしか効かず、チャット側の MCP 呼び出しは通らなかった。
+    validations:
+      required: false
+
+  - type: textarea
+    id: fix
+    attributes:
+      label: どう塞いだか / How you closed it
+      placeholder: |
+        例: 接続 URL に read_only=true を付けた。まだ塞げていない場合は「塞げていない」で構いません。
+    validations:
+      required: false
+
+  - type: input
+    id: env
+    attributes:
+      label: 環境 / Environment
+      placeholder: "Windows 11 / PowerShell 5.1 / Node 20 / Claude Code x.y.z"
+    validations:
+      required: false

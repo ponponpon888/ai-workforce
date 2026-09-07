@@ -1,0 +1,152 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  parse:
+    name: parse all scripts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every .ps1
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Path . -Filter *.ps1 -Recurse | ForEach-Object {
+            $errors = $null; $tokens = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $bad++
+              Write-Host "::error file=$($_.FullName)::parse errors"
+              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            } else {
+              Write-Host "ok: $($_.Name)"
+            }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+  ascii:
+    name: scripts stay ASCII-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on non-ASCII in .ps1
+        # Windows PowerShell 5.1 reads a BOM-free UTF-8 script as the system ANSI
+        # codepage. Non-ASCII in a .ps1 becomes mojibake at runtime on a Japanese
+        # Windows install. Keep them ASCII.
+        run: |
+          bad=0
+          while IFS= read -r f; do
+            if LC_ALL=C grep -qP '[^\x00-\x7F]' "$f"; then
+              echo "::error file=$f::non-ASCII characters in a .ps1"
+              bad=1
+            fi
+          done < <(find . -name '*.ps1')
+          exit $bad
+
+  guard-sql-node:
+    name: guard-sql (node)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node kit/scripts/test-guard-sql.mjs
+
+  guard-sql-powershell:
+    name: guard-sql (powershell)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        shell: pwsh
+        run: ./kit/scripts/test-guard-sql.ps1
+
+  guard-sql-windows-powershell-51:
+    name: guard-sql (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `shell: powershell` is Windows PowerShell 5.1, not pwsh 7.x. They are
+      # different runtimes and they disagree in ways that only show up here --
+      # 5.1 leaves $PSCommandPath empty inside a param() default value when
+      # [CmdletBinding()] is present, which crashed this suite before a single
+      # test ran. 7.x populates it, so CI on pwsh alone never saw it.
+      - name: Report the version actually in use
+        shell: powershell
+        run: $PSVersionTable.PSVersion
+      - name: Run tests
+        shell: powershell
+        run: ./kit/scripts/test-guard-sql.ps1
+      - name: Run pull-all tests against the PowerShell implementation
+        shell: powershell
+        run: node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
+
+  pull-all:
+    name: pull-all never destroys work
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Builds a real bare origin and six real clones (clean, dirty, feature
+      # branch, detached HEAD, mid-rebase, diverged), runs the script over them
+      # and checks that nothing was lost.
+      - run: node kit/scripts/test-pull-all.mjs
+      - run: node kit/scripts/test-pull-all.mjs --target ps
+        shell: bash
+
+  installers:
+    name: installers run clean
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: install.mjs into a throwaway home
+        shell: bash
+        run: |
+          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
+          node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8')); console.log('settings.json is valid JSON')"
+      - name: install.ps1 into a throwaway home
+        shell: pwsh
+        run: |
+          ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
+          Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
+          Write-Host 'settings.json is valid JSON'
+
+  todos:
+    name: no TODO left in docs
+    runs-on: ubuntu-latest
+    # Case studies are drafts until v0.1. Flip this to a hard failure at release.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          if grep -rn 'TODO' docs README.md README.en.md; then
+            echo "::warning::TODO markers still present"
+            exit 1
+          fi

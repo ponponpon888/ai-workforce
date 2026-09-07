@@ -1,0 +1,40 @@
+name: 書いてあることが間違っている / Something here is wrong
+description: 効かない対策・古い情報・誤ったフラグ名などの指摘
+title: "[wrong] "
+labels: [correction]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **もっともらしいが効かない対策を置いておくのが、一番まずい状態です。**
+
+        実際、このリポジトリは一度「Supabase 側でロールを分けて GRANT を落とせばいい」と
+        書いていました。効きません。こういう指摘が一番助かります。
+
+        ---
+        A plausible-but-useless guardrail is the worst state to be in. This repository once
+        recommended splitting Postgres roles to constrain Supabase MCP. It does not work.
+
+  - type: input
+    id: where
+    attributes:
+      label: どこ / Where
+      placeholder: "docs/07-github-vercel.md の「PAT のスコープ」"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が間違っているか / What is wrong
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: 根拠 / Source
+      description: 公式ドキュメントの URL があると、そのまま直せます。
+      placeholder: "https://docs.github.com/..."
+    validations:
+      required: false

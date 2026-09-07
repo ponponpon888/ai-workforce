@@ -1,0 +1,25 @@
+# Never commit anything that could carry a secret.
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+service-account*.json
+
+# Local approval tokens produced by approve-ddl
+approvals/
+*.approval
+
+# Logs produced by pull-all
+_logs/
+*.log
+
+# Backups produced by the installers
+*.bak
+*.bak.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

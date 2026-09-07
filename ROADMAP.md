@@ -2,16 +2,18 @@
 
 このリポジトリで次に何をするか。要望を見て入れ替えます。
 
-**いまの状態**: v0.1 に向けた整備中。guard-sql 25 ケース・pull-all 21 ケースが
+**いまの状態**: v0.1 に向けた整備中。guard-sql 29 ケース・pull-all 22 ケースが
 Ubuntu / macOS / Windows の CI で通っています。
 
 ---
 
 ## v0.1 までに終わらせること
 
-- [ ] **`kit/` を手元の実物と突き合わせる。** いまの `kit/` は本番を守っている構成を
-      公開用に書き起こしたもので、動いている実物そのものではありません
-      （[README](README.md) の断り書き）。差分を取り込みます
+- [x] **`kit/` を手元の実物と突き合わせた。** 4 件、`kit/` 側が間違っていました
+      （PowerShell ツールが matcher から漏れ / `deny` の書き間違い / 中和が
+      `--sql` を食う / `GIT_TERMINAL_PROMPT` 無し）。
+      経緯は [02](docs/02-guardrails.md)。実物側への逆流（DDL 承認トークン、
+      中和処理）はまだです
 - [x] **Windows PowerShell 5.1 で検証した。** 1 件見つけて直しました
       （`param()` の既定値の中で `$PSCommandPath` が空になる。[02](docs/02-guardrails.md)）。
       CI に `shell: powershell`（＝5.1）のジョブを追加済み
@@ -23,6 +25,17 @@ Ubuntu / macOS / Windows の CI で通っています。
 - [ ] **アンインストール手順**を書く。`~/.claude/` を書き換えるツールなのに、
       戻し方が書かれていないのは不親切です
 - [ ] 「まず `guard-sql` だけ試す」最小手順を書く。全部入れる前に 1 個だけ確かめたい人向け
+- [ ] **`permissions` のリストにテストを書く。** いまテストがあるのはフックだけで、
+      `allow` / `ask` / `deny` は 1 行も検証されていません。書き間違いが
+      そのまま通ります
+- [ ] `permissions` のパターン記法を実測で確定する。コロン記法
+      `Bash(git status:*)` とスペース記法 `Bash(git status *)` のどちらが
+      実際にマッチするのか、まだ確かめていません
+- [ ] **`deny` / `ask` を PowerShell 側にも書き分ける。** いま `git push --force` などは
+      Bash 限定で、PowerShell ツール経由なら素通りします。ただし書き足す前に
+      パターン記法を確定させること（上の項目）。今回入れた
+      `PowerShell(Remove-Item -Recurse *)` と `PowerShell(Invoke-WebRequest *)` も、
+      記法が確定するまでは効いている保証がありません
 
 ---
 

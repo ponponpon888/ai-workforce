@@ -102,6 +102,10 @@ Assert-Result 'UPDATE, no WHERE'      $BLOCK (Invoke-Hook 'mcp__Supabase__execut
 Assert-Result 'unapproved DDL'        $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'alter table bookings add column memo text' })
 Assert-Result 'DELETE via psql'       $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql $DB -c "delete from bookings"' })
 Assert-Result 'WHERE hidden in a comment' $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'delete from bookings -- where id = 1' })
+# A shell command line is not SQL. Reading `--sql` as a line comment deletes the
+# statement the option carries, and the TRUNCATE stops being visible.
+Assert-Result 'TRUNCATE behind --sql' $BLOCK (Invoke-Hook 'Bash' @{ command = "npx supabase db execute --sql 'truncate bookings'" })
+Assert-Result 'DROP via the PowerShell tool' $BLOCK (Invoke-Hook 'PowerShell' @{ command = 'psql $env:DB -c "drop table x"' })
 
 Write-Host ''
 Write-Host 'must allow:' -ForegroundColor White
@@ -116,6 +120,11 @@ Assert-Result 'non-SQL Bash'          $ALLOW (Invoke-Hook 'Bash' @{ command = 'n
 Assert-Result 'Bash rm, not our job'  $ALLOW (Invoke-Hook 'Bash' @{ command = 'rm -rf ./dist' })
 Assert-Result 'unrelated MCP tool'    $ALLOW (Invoke-Hook 'mcp__GitHub__search_code' @{ query = 'drop table' })
 Assert-Result 'empty input'           $ALLOW (Invoke-Hook 'Bash' @{ command = '' })
+# The false-positive half of bringing PowerShell and shell grammar into scope:
+# writing SQL into a file is not executing it, and a path is not a statement.
+$hereDoc = "@'`ndrop extension `"pg_net`";`n'@ | Set-Content supabase/migrations/20260101_x.sql"
+Assert-Result 'here-string written to a file' $ALLOW (Invoke-Hook 'PowerShell' @{ command = $hereDoc })
+Assert-Result 'migration path in a command' $ALLOW (Invoke-Hook 'Bash' @{ command = 'npx supabase db push --file supabase/migrations/20260101_x.sql' })
 
 Write-Host ''
 Write-Host 'approval token:' -ForegroundColor White

@@ -44,6 +44,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
+# This runs unattended at logon, so git has to fail rather than wait. Without
+# these, a repository whose credentials have expired stops on a prompt nobody is
+# there to answer, and the run hangs silently instead of reporting. The second
+# one covers Git Credential Manager, which pops a window of its own that
+# GIT_TERMINAL_PROMPT does not reach.
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'never'
+
 # --- logging ---------------------------------------------------------------
 
 if (-not (Test-Path -LiteralPath $LogDir)) {

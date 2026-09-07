@@ -43,7 +43,7 @@
       "Bash(vercel *)",
       "Bash(supabase *)",
       "Bash(curl *)",
-      "Bash(Invoke-WebRequest *)"
+      "PowerShell(Invoke-WebRequest *)"
     ],
 
     "deny": [
@@ -61,7 +61,7 @@
 
       "Bash(rm -rf *)",
       "Bash(rm -r *)",
-      "Bash(Remove-Item -Recurse *)",
+      "PowerShell(Remove-Item -Recurse *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git reset --hard *)",
@@ -75,7 +75,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__[Ss]upabase__.*|mcp__postgres.*|mcp__neon.*|mcp__planetscale.*",
+        "matcher": "Bash|PowerShell|mcp__[Ss]upabase__.*|mcp__postgres.*|mcp__neon.*|mcp__planetscale.*",
         "hooks": [
           {
             "type": "command",

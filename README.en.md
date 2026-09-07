@@ -95,7 +95,7 @@ The tests matter more than the hook. **The false-positive half is the important 
 that fires on correct SQL gets switched off, and then you have no guard at all.
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 25   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
 ```
 
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string
@@ -224,7 +224,6 @@ than guessed:
   through Git only and protect `main` with a ruleset — not a Vercel setting.
 - I could not confirm whether Vercel's MCP supports per-tool restriction or project-scoped
   tokens, so `docs/07` says so instead of guessing.
-- Windows PowerShell 5.1 is untested (only 7.4 so far). 5.1 is a different animal.
 
 A setup presented as airtight looks better. But anyone copying it would get hurt by the parts
 I quietly left out. Knowing where the machine stops and the discipline starts is worth more than

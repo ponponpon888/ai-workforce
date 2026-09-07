@@ -29,6 +29,14 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } 
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
+// This runs unattended at login, so git has to fail rather than wait. Without
+// these, a repository whose credentials have expired stops on a prompt nobody
+// is there to answer, and the run hangs silently instead of reporting. The
+// second one covers Windows, where Git Credential Manager pops a window of its
+// own that GIT_TERMINAL_PROMPT does not reach.
+process.env.GIT_TERMINAL_PROMPT = '0';
+process.env.GCM_INTERACTIVE = 'never';
+
 // --- arguments --------------------------------------------------------------
 
 const argv = process.argv.slice(2);

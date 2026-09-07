@@ -76,6 +76,12 @@ assert('UPDATE, no WHERE', BLOCK, callHook(SB, { query: 'update bookings set sta
 assert('unapproved DDL', BLOCK, callHook(SB, { query: 'alter table bookings add column memo text' }));
 assert('DELETE via psql', BLOCK, callHook('Bash', { command: 'psql $DB -c "delete from bookings"' }));
 assert('WHERE hidden in a comment', BLOCK, callHook(SB, { query: 'delete from bookings -- where id = 1' }));
+// A shell command line is not SQL. Reading `--sql` as a line comment deletes the
+// statement the option carries, and the TRUNCATE stops being visible.
+assert('TRUNCATE behind --sql', BLOCK,
+  callHook('Bash', { command: "npx supabase db execute --sql 'truncate bookings'" }));
+assert('DROP via the PowerShell tool', BLOCK,
+  callHook('PowerShell', { command: 'psql $env:DB -c "drop table x"' }));
 
 console.log('\nmust allow:');
 assert('DELETE with WHERE', ALLOW, callHook(SB, { query: 'delete from bookings where id = 1' }));
@@ -89,6 +95,13 @@ assert('non-SQL Bash', ALLOW, callHook('Bash', { command: 'npm run build' }));
 assert('Bash rm, not our job', ALLOW, callHook('Bash', { command: 'rm -rf ./dist' }));
 assert('unrelated MCP tool', ALLOW, callHook('mcp__GitHub__search_code', { query: 'drop table' }));
 assert('empty input', ALLOW, callHook('Bash', { command: '' }));
+// The false-positive half of bringing PowerShell and shell grammar into scope:
+// writing SQL into a file is not executing it, and a path is not a statement.
+assert('here-string written to a file', ALLOW, callHook('PowerShell', {
+  command: `@'\ndrop extension "pg_net";\n'@ | Set-Content supabase/migrations/20260101_x.sql`,
+}));
+assert('migration path in a command', ALLOW,
+  callHook('Bash', { command: 'npx supabase db push --file supabase/migrations/20260101_x.sql' }));
 
 console.log('\napproval token:');
 const DDL = 'create table memo_test (id int)';

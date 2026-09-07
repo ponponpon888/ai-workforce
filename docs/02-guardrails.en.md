@@ -259,6 +259,88 @@ never saw either bug. There is now a separate job on `windows-latest` using `she
 
 ---
 
+## Diffing it against my own setup found four holes
+
+This `kit/` is a write-up, for publication, of the `~/.claude/` that actually guards my
+production work. Being a write-up of it, I assumed it was the same thing. Then I read the
+two side by side, line by line.
+
+**Four places where the real files were right and `kit/` was wrong.**
+
+| Hole | What it means |
+|---|---|
+| No PowerShell tool in the `settings.json` matcher | On Windows, SQL issued through PowerShell **walks straight past the hook** |
+| `Bash(Remove-Item -Recurse *)` in `deny` | `Remove-Item` is not a Bash command. **That line was stopping nothing** |
+| Neutralization always strips `--` line comments | In `npx supabase db execute --sql 'truncate bookings'`, everything from `--sql` disappears, and **the TRUNCATE gets through** |
+| No `GIT_TERMINAL_PROMPT=0` in `pull-all` | Documented as running unattended at logon, yet it **hangs silently the moment git asks for credentials** |
+
+### The second one is just a typo
+
+Nothing subtle about it. **A PowerShell command written into a Bash deny list.** I wrote it,
+and I believed it had closed something.
+
+Every test passed. The tests only covered the hook. **At that point `permissions` had no
+tests at all** — the layer that sits furthest forward and fires most often was the least
+verified one.
+
+After writing this section I found the same typo a second time, in `ask`:
+`Bash(Invoke-WebRequest *)`. What I had failed to do was **find every instance of a shape
+once I had found one**. A diff will not surface it — both lines have been sitting there,
+unchanged, since the day they were written. The same person makes the same mistake more
+than once, usually in the same sitting.
+
+### The third one opened up because I made it smarter
+
+The neutralization itself is right. Without stripping SQL comments, a line like
+`-- delete from t` is a false positive. That is why it exists.
+
+But the hook does not only receive SQL. It receives shell command lines too. Apply SQL
+grammar to one of those and an option such as `--sql` **is swallowed as a comment**. What
+survives is `npx supabase db execute`, and the TRUNCATE is no longer in view.
+
+The same string has to be **read under different grammar depending on how it arrived**.
+
+The real setup does not have this hole, because it has no neutralization at all. Its false
+positive rate is worse. **The part I made smarter for publication is the part that opened a
+new hole.**
+
+### There was no clever technique involved
+
+I diffed them. Put `kit/` and `~/.claude/` side by side and keep going until every differing
+line has an explanation. It took under an hour.
+
+Skip it, and all four ship under a green test suite.
+
+### Only two of the four tests failed first
+
+Having found the holes, I added four tests before changing anything.
+
+```
+npx supabase db execute --sql 'truncate bookings'                -> must block
+drop table x via the PowerShell tool                             -> must block
+drop extension "pg_net" inside a here-string                     -> must allow
+a command that merely contains the path supabase/migrations/...  -> must allow
+```
+
+Run against the unfixed code, **only the first two failed.** The other two were green from
+the start.
+
+Obvious in hindsight. Before the fix the PowerShell tool was outside the hook's scope
+entirely, so **anything sent through it walked past and came back ALLOW**. A false-positive
+test cannot go red before the false positive exists. Making it red would mean applying the
+fix first, which is the wrong order.
+
+**Writing a failing test first only works for the blocking half.**
+
+I wrote all four anyway. The last two are there to check that the fix did not trade a hole
+for a false positive — a different job. Written afterwards, they would only confirm that
+whatever I happened to build passes.
+
+**Closing a hole usually widens false positives.** Write only the blocking tests, go green,
+and you will be the one switching the hook off next week.
+
+---
+
 ## Verifying it
 
 ### 1. Run the test suite
@@ -271,9 +353,11 @@ node kit/scripts/test-guard-sql.mjs      # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1         # if you use the PowerShell hook
 ```
 
-25 cases in total (8 must block, 11 must allow, 6 approval-token). Both halves.
+29 cases in total (10 must block, 13 must allow, 6 approval-token). Both halves.
 
 ```
+guard-sql test suite (node)
+
 must block:
   PASS  DROP TABLE
   PASS  DROP after a SELECT
@@ -283,6 +367,9 @@ must block:
   PASS  unapproved DDL
   PASS  DELETE via psql
   PASS  WHERE hidden in a comment
+  PASS  TRUNCATE behind --sql
+  PASS  DROP via the PowerShell tool
+
 must allow:
   PASS  DELETE with WHERE
   PASS  UPDATE with WHERE
@@ -295,6 +382,9 @@ must allow:
   PASS  Bash rm, not our job
   PASS  unrelated MCP tool
   PASS  empty input
+  PASS  here-string written to a file
+  PASS  migration path in a command
+
 approval token:
   PASS  approved DDL passes
   PASS  token is single use
@@ -303,7 +393,7 @@ approval token:
   PASS  multi-statement token is single use too
   PASS  DROP still blocked inside an approved batch
 
-pass: 25   fail: 0
+pass: 29   fail: 0
 ```
 
 **The false-positive half is the important half.** Once correct SQL starts getting blocked,

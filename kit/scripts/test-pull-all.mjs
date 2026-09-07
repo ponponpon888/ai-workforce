@@ -210,6 +210,20 @@ check(
   'feature commit still exists',
   existsSync(join(repos.featureBranch, 'feature.txt'))
 );
+// Unattended has to mean unattended. Asserted against the source of whichever
+// target is under test, because a script that stops to ask for credentials
+// blocks forever — there is no way to observe that from outside without
+// hanging the suite on the very failure it is meant to catch.
+const targetSource = readFileSync(
+  resolve(here, targetArg === 'ps' ? 'pull-all.ps1' : 'pull-all.mjs'),
+  'utf8'
+);
+check(
+  'credential prompts are disabled',
+  /GIT_TERMINAL_PROMPT\s*=\s*'0'/.test(targetSource) &&
+    /GCM_INTERACTIVE\s*=\s*'never'/.test(targetSource),
+  'must set GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never before any git call'
+);
 
 console.log('\ndestroys nothing:');
 check(

@@ -264,6 +264,82 @@ CI が 7.x だけだったので、この 2 件をどちらも見逃していま
 
 ---
 
+## 自分の設定と突き合わせたら 4 つ空いていた
+
+この `kit/` は、実際に本番を守っている手元の `~/.claude/` を公開用に書き起こしたものです。
+書き起こした以上は同じはずだと思っていたので、1 行ずつ突き合わせました。
+
+**手元が正しくて `kit/` が間違っている箇所が 4 つ**ありました。
+
+| 穴 | 何が起きるか |
+|---|---|
+| `settings.json` の matcher に PowerShell ツールが無い | Windows で PowerShell 経由の SQL が**フックを素通りする** |
+| `deny` に `Bash(Remove-Item -Recurse *)` | `Remove-Item` は Bash のコマンドではない。**この行は何も止めていない** |
+| SQL の中和が `--` 行コメントを常に潰す | `npx supabase db execute --sql 'truncate bookings'` の `--sql` 以降が消え、**TRUNCATE が通る** |
+| `pull-all` に `GIT_TERMINAL_PROMPT=0` が無い | 「ログオン時に無人で走る」と書いておきながら、**認証を聞かれた時点で無言で固まる** |
+
+### 2 つ目は、ただの書き間違いです
+
+技術的に難しいところは何もありません。**Bash の `deny` リストに PowerShell のコマンドを
+書いていた**、それだけです。書いた本人はそれで塞いだつもりでいました。
+
+テストは全部通っていました。フックのテストしか書いていなかったからです。
+**`permissions` のリストには、この時点でテストが 1 つもありませんでした。**
+一番手前にあって一番よく効く層が、一番検証されていなかったことになります。
+
+この節を書いたあとで、同じ書き間違いが `ask` にもう 1 件見つかりました。
+`Bash(Invoke-WebRequest *)`。**1 つ見つけたら同じ形を全部探す**、をやっていなかった
+ということです。差分では見つかりません。同じ間違いは同じ人が同じ日に何度もします。
+
+### 3 つ目は、賢くしたせいで空きました
+
+中和処理そのものは正しい。SQL のコメントを潰さないと、`-- delete from t` のような
+コメント行で誤検知します。それを避けるために入れた処理です。
+
+ただしフックに来るのは SQL だけではありません。シェルのコマンド行も来ます。
+そこに SQL の文法を当てると、`--sql` のようなオプションが**丸ごとコメント扱いで消える**。
+残るのは `npx supabase db execute` だけになり、TRUNCATE は視界から外れます。
+
+同じ文字列を、**どの経路で来たかによって別の文法として読む**必要がありました。
+
+手元の実物にはこの穴がありません。中和処理そのものを持っていないからです。
+つまり誤検知は実物のほうが多い。**公開用に賢くした部分が、新しい穴を作った**わけです。
+
+### 見つけ方に工夫はありません
+
+差分を取っただけです。`kit/` と `~/.claude/` を並べて、違う行を全部説明できるまで見る。
+1 時間かかりませんでした。
+
+やっていなければ、この 4 つは「テストが緑だから大丈夫」のまま公開されていました。
+
+### 直す前に書いたテストは、2 つしか落ちませんでした
+
+穴を見つけたあと、先にテストを 4 つ足しました。
+
+```
+npx supabase db execute --sql 'truncate bookings'            -> 落ちること
+PowerShell ツール経由の drop table x                          -> 落ちること
+here-string の中の drop extension "pg_net"                    -> 通ること
+supabase/migrations/20260101_x.sql をパスに含むだけのコマンド  -> 通ること
+```
+
+修正前に流したら、**落ちたのは上の 2 つだけ**でした。下の 2 つは最初から緑です。
+
+当たり前でした。修正前は PowerShell がそもそもフックの対象外で、**何を渡しても
+素通り＝ALLOW** だったからです。誤検知のテストは、誤検知が起きる前には赤くなりません。
+赤くするには先に修正を入れるしかなく、それでは順序が逆になります。
+
+**「テストを先に落とす」が成立するのは、塞ぐ側のテストだけです。**
+
+それでも 4 つとも先に書きました。下の 2 つは、この修正が**塞いだ穴の代わりに誤検知を
+作っていないか**を見るためのもので、役割が違います。後から書いたら「いま通っているから
+OK」を確認しただけになります。
+
+**穴を塞ぐ変更は、たいてい誤検知を増やします。** 塞ぐテストだけ書いて緑にすると、
+翌週には自分でフックを外すことになります。
+
+---
+
 ## 動作確認
 
 入れたら必ず確認してください。効いていないフックは、あるだけ危険です。
@@ -278,9 +354,11 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 25 ケース（落とす 8 / 通す 11 / 承認トークン 6）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。
+合計 29 ケース（落とす 10 / 通す 13 / 承認トークン 6）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。
 
 ```
+guard-sql test suite (node)
+
 must block:
   PASS  DROP TABLE
   PASS  DROP after a SELECT
@@ -290,6 +368,9 @@ must block:
   PASS  unapproved DDL
   PASS  DELETE via psql
   PASS  WHERE hidden in a comment
+  PASS  TRUNCATE behind --sql
+  PASS  DROP via the PowerShell tool
+
 must allow:
   PASS  DELETE with WHERE
   PASS  UPDATE with WHERE
@@ -302,6 +383,9 @@ must allow:
   PASS  Bash rm, not our job
   PASS  unrelated MCP tool
   PASS  empty input
+  PASS  here-string written to a file
+  PASS  migration path in a command
+
 approval token:
   PASS  approved DDL passes
   PASS  token is single use
@@ -310,7 +394,7 @@ approval token:
   PASS  multi-statement token is single use too
   PASS  DROP still blocked inside an approved batch
 
-pass: 25   fail: 0
+pass: 29   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。

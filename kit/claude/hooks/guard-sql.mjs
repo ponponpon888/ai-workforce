@@ -33,9 +33,12 @@ const APPROVAL_DIR =
   process.env.AIWF_APPROVAL_DIR || join(homedir(), '.claude', 'approvals');
 
 /** Tools whose input we inspect. Anything else is none of our business. */
-const SQL_TOOL_RE = /^(Bash|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)/;
+const SQL_TOOL_RE = /^(Bash|PowerShell|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)/;
 
-/** A Bash call only counts as SQL if it actually invokes a database client. */
+/** Tools that hand us a shell command line rather than a SQL statement. */
+const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
+
+/** A shell call only counts as SQL if it actually invokes a database client. */
 const SQL_CLIENT_RE = /\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b/i;
 
 // ---------------------------------------------------------------------------
@@ -65,8 +68,17 @@ function deny(reason, statement) {
  *
  * One regex, scanned left to right: at each position the first alternative that
  * matches wins. That is what makes `'--'` read as a string and not a comment.
+ *
+ * This is SQL grammar, so it may only be applied to something that is SQL. On a
+ * shell command line `--` opens an option, not a comment: applying it to
+ * `npx supabase db execute --sql 'truncate bookings'` leaves
+ * `npx supabase db execute` and the TRUNCATE is no longer in view. The quoting
+ * is the shell's too, and the statement we need to read sits inside it. So a
+ * command line is scanned exactly as it arrived.
  */
-function neutralize(sql) {
+function neutralize(sql, grammar) {
+  if (grammar === 'shell') return sql;
+
   const pattern = new RegExp(
     [
       "'(?:[^']|'')*'", // single-quoted literal, '' escape
@@ -101,13 +113,17 @@ function isApproved(sql) {
   return ageMinutes <= APPROVAL_TTL_MINUTES;
 }
 
+/**
+ * Pull the statement out of whichever tool is being called, and report which
+ * field it came from. The field name is half of how the grammar is decided.
+ */
 function extractSql(toolInput) {
-  if (!toolInput || typeof toolInput !== 'object') return '';
+  if (!toolInput || typeof toolInput !== 'object') return { value: '', key: '' };
   for (const key of ['query', 'sql', 'statement', 'command']) {
     const value = toolInput[key];
-    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === 'string' && value.trim()) return { value, key };
   }
-  return '';
+  return { value: '', key: '' };
 }
 
 function readStdin() {
@@ -128,15 +144,22 @@ try {
 
   const payload = JSON.parse(raw);
   const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
-  const sql = extractSql(payload.tool_input);
+  const { value: sql, key: sqlField } = extractSql(payload.tool_input);
 
   if (!sql.trim()) process.exit(0);
   if (!SQL_TOOL_RE.test(toolName)) process.exit(0);
-  if (toolName === 'Bash' && !SQL_CLIENT_RE.test(sql)) process.exit(0);
+
+  // Tool name and field name together decide which grammar the same string is
+  // read under: a shell tool handing us its `command` is a command line,
+  // anything else is a SQL statement.
+  const grammar =
+    SHELL_TOOL_RE.test(toolName) && sqlField === 'command' ? 'shell' : 'sql';
+
+  if (grammar === 'shell' && !SQL_CLIENT_RE.test(sql)) process.exit(0);
 
   let firstDdl = null;
 
-  for (const stmt of neutralize(sql).split(';')) {
+  for (const stmt of neutralize(sql, grammar).split(';')) {
     if (!stmt.trim()) continue;
 
     if (/\bDROP\b/is.test(stmt)) {

@@ -73,10 +73,10 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 文が 1 文字違えば通りません。
 
 誤検知しないことの方が大事なので、テストは「止まるべきもの」と
-「止まってはいけないもの」を両方見ています（合計 25 ケース: 落とす 8 / 通す 11 / 承認トークン 6）。
+「止まってはいけないもの」を両方見ています（合計 29 ケース: 落とす 10 / 通す 13 / 承認トークン 6）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 25   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
 ```
 
 フックは 2 種類あって、挙動は同じです。
@@ -112,11 +112,12 @@ CI では Node 版を Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubu
 確認しているのは主に「触ってはいけないものに触らなかった」side です。
 
 ```bash
-node kit/scripts/test-pull-all.mjs     # pass: 21   fail: 0
+node kit/scripts/test-pull-all.mjs     # pass: 22   fail: 0
 ```
 
-**Windows PowerShell 5.1 では未検証です**（7.4 でのみ確認済み）。5.1 は 7.x とは別物なので、
-そこで使うなら最初にテストを回してください。
+**Windows PowerShell 5.1 でも確認済みです。** 5.1 は 7.x とは別物で、実際にそこでしか
+出ない不具合が 1 件見つかりました（[02](docs/02-guardrails.md) の PowerShell の落とし穴）。
+いまは CI に `shell: powershell`（＝5.1）のジョブを別に回しています。
 
 → [kit/scripts/pull-all.mjs](kit/scripts/pull-all.mjs) / [docs/04-multi-project.md](docs/04-multi-project.md)
 

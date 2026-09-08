@@ -583,7 +583,7 @@ Bash ツールで `cat .env` を叩く経路、PowerShell ツールで `Get-Cont
 |---|---|---|---|
 | `cat .env` | あり | あり | 落とす |
 | `rm .env.bak` | あり | なし | 通す |
-| `grep -r TODO src/` | なし | あり | 通す |
+| `grep -r createClient src/` | なし | あり | 通す |
 | `cat .env.example` | なし（除外） | あり | 通す |
 
 片方だけで落とさないのが要点です。`.env` という文字列が出てくるだけで落とすと、

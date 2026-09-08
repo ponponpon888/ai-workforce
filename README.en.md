@@ -101,7 +101,17 @@ node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string
 `drop table` was being read as SQL and blocked.
 
-→ [docs/02](docs/02-guardrails.md) · [guard-sql.mjs](kit/claude/hooks/guard-sql.mjs)
+A second hook of the same shape, `guard-secrets`, stops a shell command from reading `.env` or a
+private key. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and
+`Get-Content .env` were walking straight past it. It refuses only when the command both names a
+secret file and is a shape that reads one (51 cases: 26 must block, 25 must allow).
+
+```bash
+node kit/scripts/test-guard-secrets.mjs   # pass: 51   fail: 0
+```
+
+→ [docs/02](docs/02-guardrails.md) · [guard-sql.mjs](kit/claude/hooks/guard-sql.mjs) ·
+[guard-secrets.mjs](kit/claude/hooks/guard-secrets.mjs)
 
 ### 3. Division of labor
 

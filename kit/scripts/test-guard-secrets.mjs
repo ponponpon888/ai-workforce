@@ -130,7 +130,7 @@ assert('nested code under secrets/', ALLOW,
 assert('prose under secrets/', ALLOW, callHook('Bash', { command: 'cat secrets/README.md' }));
 assert('ls -la', ALLOW, callHook('Bash', { command: 'ls -la' }));
 assert('cat README.md', ALLOW, callHook('Bash', { command: 'cat README.md' }));
-assert('grep over src', ALLOW, callHook('Bash', { command: 'grep -r TODO src/' }));
+assert('grep over src', ALLOW, callHook('Bash', { command: 'grep -r createClient src/' }));
 assert('npm run build', ALLOW, callHook('Bash', { command: 'npm run build' }));
 // `env` is a common word. Neither of these is a dotfile, and neither may match.
 assert('src/lib/env.ts', ALLOW, callHook('Bash', { command: 'cat src/lib/env.ts' }));

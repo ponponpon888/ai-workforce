@@ -2,8 +2,8 @@
 
 このリポジトリで次に何をするか。要望を見て入れ替えます。
 
-**いまの状態**: v0.1 に向けた整備中。guard-sql 29 ケース・pull-all 23 ケースが
-Ubuntu / macOS / Windows の CI で通っています。
+**いまの状態**: v0.1 に向けた整備中。guard-sql 29 ケース・guard-secrets 51 ケース・
+pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています。
 
 ---
 
@@ -45,12 +45,21 @@ Ubuntu / macOS / Windows の CI で通っています。
       1 行で `rm` `del` `rd` `rmdir` `erase` `ri` が全部止まります
       （実測したのは `rm` です。残る 5 語は `Get-Alias` で同じ `Remove-Item` の
       別名であることを確認しました）。実体名の `curl.exe` だけは別に書きました
-- [ ] **`.env` が PowerShell 経由で読めます。** `Read(./.env)` は Read ツールにしか
-      効かず、`Get-Content .env` や `cat .env` は素通りします。`Get-Content` ごと
-      deny すると全ファイル読み取りが死ぬので、`permissions` では解けません。
-      フック側で見るしかない
+- [x] **`.env` をシェル経由で読むのを塞いだ。** `Read(./.env)` は Read ツールに
+      しか効かず、`cat .env` も `Get-Content .env` も素通りしていました。
+      `permissions` では解けません（`Get-Content` ごと deny すると全ファイル
+      読み取りが死ぬ）。`guard-sql` と同じ PreToolUse フックにしました。
+      経緯と、塞いでいない穴は [02](docs/02-guardrails.md)
 - [ ] `deny` に `Set-Content` を足すなら、エイリアスの `sc` は書かないこと。
       Windows の `sc.exe`（サービス制御）に前方一致で巻き込みます
+- [ ] **`deny` の `Read(./secrets/**)` と `guard-secrets` で挙動が違います。**
+      `src/lib/secrets/masker.ts` は Read ツールでは落ち、`cat` では通ります。
+      フック側だけ狭められるからです。`deny` を狭める書き方が無いので、
+      いまは差があることを書いて残しています
+- [ ] **CI の `no TODO left in docs` は文字列 `TODO` を全部拾います。**
+      docs に `grep -r TODO src/` のような例を書くと赤くなります。マーカー形
+      （`TODO:` など）だけ拾うように狭めるか、例に `TODO` を使わないか。
+      いまは後者で回避しています
 
 ---
 

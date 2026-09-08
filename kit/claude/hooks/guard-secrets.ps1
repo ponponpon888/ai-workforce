@@ -17,7 +17,7 @@
     THE RULE
     Block when a command both (a) names a secret file and (b) is a shape that
     reads a file. Either one alone is fine: 'rm .env.bak' names one without
-    reading it, 'grep -r TODO src/' reads without naming one.
+    reading it, 'grep -r createClient src/' reads without naming one.
 
     NOTE ON SCOPE
     This stops accidents, not an adversary. 'cp .env /tmp/x' then reading /tmp/x

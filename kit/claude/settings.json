@@ -57,6 +57,8 @@
       "Read(**/*.pem)",
       "Read(**/id_rsa*)",
       "Read(**/service-account*.json)",
+      "Read(./secrets/**)",
+      "Read(//**/.ssh/**)",
       "Write(.env)",
       "Write(./**/.env)",
       "Edit(.env)",

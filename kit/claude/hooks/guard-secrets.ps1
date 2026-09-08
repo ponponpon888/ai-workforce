@@ -50,27 +50,45 @@ Set-StrictMode -Version Latest
 # whole hook switched off.
 $PublicEnvSuffixes = @('example', 'sample', 'template', 'dist')
 
+# 'secrets/' came straight from the deny list, and on its own it is too wide:
+# src/lib/secrets/masker.ts is code that handles secrets, not a secret. Source
+# and prose under a secrets/ directory are not treated as secret.
+#
+# Config extensions are deliberately absent. secrets/prod.yaml is exactly the
+# kind of file this is for.
+$NonSecretExtensions = @(
+    '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs',
+    '.java', '.php', '.cs', '.sql',
+    '.md', '.txt', '.html', '.css', '.scss'
+)
+
 $SecretPatterns = @(
     # A leading dot is required: src/lib/env.ts and docs/environment.md must not
     # match. The optional suffix chain covers .env.local.
     @{ Label = 'dotenv file'
        Pattern = '(?<![\w.\-])(?:[\w.\-/~]*/)?\.env(?![\w])(?:\.[\w-]+)*'
-       Dotenv = $true }
+       Dotenv = $true
+       SkipSourceAndProse = $false }
     @{ Label = 'private key'
        Pattern = '(?<![\w.\-])[\w.\-/~]*\.pem(?![\w])'
-       Dotenv = $false }
+       Dotenv = $false
+       SkipSourceAndProse = $false }
     @{ Label = 'ssh private key'
        Pattern = '(?<![\w.\-])[\w.\-/~]*id_(?:rsa|dsa|ecdsa|ed25519)[\w.\-]*'
-       Dotenv = $false }
+       Dotenv = $false
+       SkipSourceAndProse = $false }
     @{ Label = 'service account key'
        Pattern = '(?<![\w.\-])[\w.\-/~]*service-account[\w.\-]*\.json(?![\w])'
-       Dotenv = $false }
+       Dotenv = $false
+       SkipSourceAndProse = $false }
     @{ Label = 'secrets directory'
-       Pattern = '(?<![\w.\-])[\w.\-/~]*secrets/[\w.\-]*'
-       Dotenv = $false }
+       Pattern = '(?<![\w.\-])[\w.\-/~]*secrets/[\w.\-/]*'
+       Dotenv = $false
+       SkipSourceAndProse = $true }
     @{ Label = 'ssh directory'
        Pattern = '(?<![\w.\-])[\w.\-/~]*\.ssh/[\w.\-]*'
-       Dotenv = $false }
+       Dotenv = $false
+       SkipSourceAndProse = $false }
 )
 
 # ---------------------------------------------------------------------------
@@ -91,6 +109,14 @@ $ReadCommands = @(
 # Interpreters only read a file when they are handed inline code to run.
 $Interpreters = @('python', 'python3', 'node', 'perl', 'ruby', 'php')
 $InlineCodeFlag = '(?:^|\s)-{1,2}[cer](?:\s|$)'
+
+# git prints file contents, and 'git show HEAD:.env' is one move, not two.
+# Only these subcommands do it: checkout, add and rm name the same path without
+# revealing anything, so 'git' alone is not enough to count as a read.
+$GitContentSubcommands = @('show', 'diff', 'cat-file', 'blame')
+$GitPatchFlag = '(?:^|\s)(?:-p|--patch)(?:\s|$)'
+# Global options that swallow the next word, which is therefore not the subcommand.
+$GitOptionsWithValue = @('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path')
 
 # PowerShell can read a file without naming a cmdlet at all.
 $DotNetRead = '\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*Read(?:AllText|AllBytes|AllLines)'
@@ -148,14 +174,31 @@ function Find-SecretPath([string] $Text) {
                 }
                 if ($isPublic) { continue }
             }
+            if ($p.SkipSourceAndProse) {
+                $dot = $m.Value.LastIndexOf('.')
+                if ($dot -gt 0) {
+                    $ext = $m.Value.Substring($dot).ToLowerInvariant()
+                    if ($NonSecretExtensions -contains $ext) { continue }
+                }
+            }
             return @{ Path = $m.Value; Label = $p.Label }
         }
     }
     return $null
 }
 
+# "/usr/bin/cat" is still cat.
+function Get-Leaf([string] $Token) {
+    $bare = $Token -replace '^[''"]+|[''"]+$', ''
+    if (-not $bare) { return '' }
+    $parts = @($bare -split '[\\/]')
+    $leaf = $parts[$parts.Count - 1]
+    if (-not $leaf) { $leaf = $bare }
+    return $leaf.ToLowerInvariant()
+}
+
 # The command word of a segment: leading environment assignments and 'sudo' are
-# prefixes, not the command, and /usr/bin/cat is still cat.
+# prefixes, not the command.
 function Get-CommandWord([string] $Segment) {
     $tokens = @($Segment.Trim() -split '\s+' | Where-Object { $_ })
     $i = 0
@@ -166,13 +209,26 @@ function Get-CommandWord([string] $Segment) {
         $i++
     }
     if ($i -ge $tokens.Count) { return '' }
+    return Get-Leaf $tokens[$i]
+}
 
-    $bare = $tokens[$i] -replace '^[''"]+|[''"]+$', ''
-    if (-not $bare) { return '' }
-    $parts = @($bare -split '[\\/]')
-    $leaf = $parts[$parts.Count - 1]
-    if (-not $leaf) { $leaf = $bare }
-    return $leaf.ToLowerInvariant()
+# The subcommand of a git call. Walking the tokens rather than searching the
+# whole segment is what keeps 'git commit -m "show the .env format"' out of it:
+# the subcommand there is commit, and the word show is a message.
+function Get-GitSubcommand([string] $Segment) {
+    $tokens = @($Segment.Trim() -split '\s+' | Where-Object { $_ })
+    $i = -1
+    for ($k = 0; $k -lt $tokens.Count; $k++) {
+        if ((Get-Leaf $tokens[$k]) -eq 'git') { $i = $k; break }
+    }
+    if ($i -lt 0) { return '' }
+
+    for ($i = $i + 1; $i -lt $tokens.Count; $i++) {
+        if ($GitOptionsWithValue -contains $tokens[$i]) { $i++; continue }
+        if ($tokens[$i].StartsWith('-')) { continue }
+        return $tokens[$i].ToLowerInvariant()
+    }
+    return ''
 }
 
 # Why this segment counts as a read, or $null if it does not.
@@ -180,6 +236,12 @@ function Find-Reader([string] $Segment) {
     $word = Get-CommandWord $Segment
 
     if ($ReadCommands -contains $word) { return $word }
+
+    if ($word -eq 'git') {
+        $sub = Get-GitSubcommand $Segment
+        if ($GitContentSubcommands -contains $sub) { return "git $sub" }
+        if ($sub -eq 'log' -and $Segment -match $GitPatchFlag) { return 'git log -p' }
+    }
     if (($Interpreters -contains $word) -and ($Segment -match $InlineCodeFlag)) {
         return "$word with inline code"
     }

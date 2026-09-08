@@ -40,6 +40,25 @@
  */
 const PUBLIC_ENV_SUFFIXES = ['example', 'sample', 'template', 'dist'];
 
+/**
+ * `secrets/` came straight from the deny list, and on its own it is too wide:
+ * `src/lib/secrets/masker.ts` is code that handles secrets, not a secret. Source
+ * and prose under a secrets/ directory are not treated as secret.
+ *
+ * Config extensions are deliberately absent. `secrets/prod.yaml` is exactly the
+ * kind of file this is for.
+ */
+const NON_SECRET_EXTENSIONS = [
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs',
+  '.java', '.php', '.cs', '.sql',
+  '.md', '.txt', '.html', '.css', '.scss',
+];
+
+const hasNonSecretExtension = (hit) => {
+  const dot = hit.lastIndexOf('.');
+  return dot > 0 && NON_SECRET_EXTENSIONS.includes(hit.slice(dot).toLowerCase());
+};
+
 const SECRET_PATTERNS = [
   {
     label: 'dotenv file',
@@ -56,7 +75,11 @@ const SECRET_PATTERNS = [
   { label: 'private key', re: /(?<![\w.\-])[\w.\-/~]*\.pem(?![\w])/g },
   { label: 'ssh private key', re: /(?<![\w.\-])[\w.\-/~]*id_(?:rsa|dsa|ecdsa|ed25519)[\w.\-]*/g },
   { label: 'service account key', re: /(?<![\w.\-])[\w.\-/~]*service-account[\w.\-]*\.json(?![\w])/g },
-  { label: 'secrets directory', re: /(?<![\w.\-])[\w.\-/~]*secrets\/[\w.\-]*/g },
+  {
+    label: 'secrets directory',
+    re: /(?<![\w.\-])[\w.\-/~]*secrets\/[\w.\-/]*/g,
+    exempt: hasNonSecretExtension,
+  },
   { label: 'ssh directory', re: /(?<![\w.\-])[\w.\-/~]*\.ssh\/[\w.\-]*/g },
 ];
 
@@ -78,6 +101,16 @@ const READ_COMMANDS = [
 /** Interpreters only read a file when they are handed inline code to run. */
 const INTERPRETERS = ['python', 'python3', 'node', 'perl', 'ruby', 'php'];
 const INLINE_CODE_FLAG = /(?:^|\s)-{1,2}[cer](?:\s|$)/;
+
+/**
+ * `git` prints file contents, and `git show HEAD:.env` is one move, not two.
+ * Only these subcommands do it: `checkout`, `add` and `rm` name the same path
+ * without revealing anything, so `git` alone is not enough to count as a read.
+ */
+const GIT_CONTENT_SUBCOMMANDS = ['show', 'diff', 'cat-file', 'blame'];
+const GIT_PATCH_FLAG = /(?:^|\s)(?:-p|--patch)(?:\s|$)/;
+/** Global options that swallow the next word, which is therefore not the subcommand. */
+const GIT_OPTIONS_WITH_VALUE = ['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path'];
 
 /** PowerShell can read a file without naming a cmdlet at all. */
 const DOTNET_READ = /\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*Read(?:AllText|AllBytes|AllLines)/i;
@@ -129,9 +162,15 @@ function secretPathIn(text) {
   return null;
 }
 
+/** `"/usr/bin/cat"` is still `cat`. */
+function leafOf(token) {
+  const bare = token.replace(/^['"]+|['"]+$/g, '');
+  return (bare.split(/[\\/]/).pop() || bare).toLowerCase();
+}
+
 /**
  * The command word of a segment: leading environment assignments and `sudo`
- * are prefixes, not the command, and `/usr/bin/cat` is still `cat`.
+ * are prefixes, not the command.
  */
 function commandWord(segment) {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
@@ -143,9 +182,28 @@ function commandWord(segment) {
     i++;
   }
   if (i >= tokens.length) return '';
-  const bare = tokens[i].replace(/^['"]+|['"]+$/g, '');
-  const leaf = bare.split(/[\\/]/).pop() || bare;
-  return leaf.toLowerCase();
+  return leafOf(tokens[i]);
+}
+
+/**
+ * The subcommand of a git call. Walking the tokens rather than searching the
+ * whole segment is what keeps `git commit -m "show the .env format"` out of it:
+ * the subcommand there is `commit`, and the word `show` is a message.
+ */
+function gitSubcommand(segment) {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  let i = tokens.findIndex((t) => leafOf(t) === 'git');
+  if (i < 0) return '';
+
+  for (i += 1; i < tokens.length; i++) {
+    if (GIT_OPTIONS_WITH_VALUE.includes(tokens[i])) {
+      i++;
+      continue;
+    }
+    if (tokens[i].startsWith('-')) continue;
+    return tokens[i].toLowerCase();
+  }
+  return '';
 }
 
 /** Why this segment counts as a read, or null if it does not. */
@@ -153,6 +211,12 @@ function readerIn(segment) {
   const word = commandWord(segment);
 
   if (READ_COMMANDS.includes(word)) return word;
+
+  if (word === 'git') {
+    const sub = gitSubcommand(segment);
+    if (GIT_CONTENT_SUBCOMMANDS.includes(sub)) return `git ${sub}`;
+    if (sub === 'log' && GIT_PATCH_FLAG.test(segment)) return 'git log -p';
+  }
   if (INTERPRETERS.includes(word) && INLINE_CODE_FLAG.test(segment)) {
     return `${word} with inline code`;
   }

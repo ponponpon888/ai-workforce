@@ -92,6 +92,13 @@ assert('ssh key', BLOCK, callHook('Bash', { command: 'cat ~/.ssh/id_rsa' }));
 assert('service account json', BLOCK,
   callHook('Bash', { command: 'cat config/service-account-prod.json' }));
 assert('secrets directory', BLOCK, callHook('Bash', { command: 'cat secrets/stripe.key' }));
+// git prints file contents, and this is one move rather than two.
+assert('git show', BLOCK, callHook('Bash', { command: 'git show HEAD:.env' }));
+assert('git diff a path', BLOCK, callHook('Bash', { command: 'git diff .env' }));
+assert('git log -p', BLOCK, callHook('Bash', { command: 'git log -p .env' }));
+assert('git cat-file', BLOCK, callHook('Bash', { command: 'git cat-file -p HEAD:.env' }));
+assert('git blame', BLOCK, callHook('Bash', { command: 'git blame .env' }));
+assert('git -C then show', BLOCK, callHook('Bash', { command: 'git -C /srv/app show HEAD:.env' }));
 assert('PowerShell Get-Content', BLOCK, callHook('PowerShell', { command: 'Get-Content .env' }));
 assert('PowerShell Select-String', BLOCK,
   callHook('PowerShell', { command: 'Select-String -Path .env -Pattern KEY' }));
@@ -108,6 +115,19 @@ assert('appending to .env', ALLOW, callHook('Bash', { command: 'echo "KEY=1" >> 
 assert('vercel env pull', ALLOW, callHook('Bash', { command: 'vercel env pull .env.local' }));
 assert('deleting a backup', ALLOW, callHook('Bash', { command: 'rm .env.bak' }));
 assert('git status', ALLOW, callHook('Bash', { command: 'git status' }));
+// Naming the path is not printing it, and a subcommand word inside a commit
+// message is not a subcommand.
+assert('git log --oneline', ALLOW, callHook('Bash', { command: 'git log --oneline -5' }));
+assert('git checkout a path', ALLOW, callHook('Bash', { command: 'git checkout .env' }));
+assert('git add a path', ALLOW, callHook('Bash', { command: 'git add .env' }));
+assert('subcommand word in a message', ALLOW,
+  callHook('Bash', { command: 'git commit -m "document the .env format"' }));
+// secrets/ came from the deny list and is too wide on its own: code that
+// handles secrets is not a secret.
+assert('code under secrets/', ALLOW, callHook('Bash', { command: 'cat src/lib/secrets/masker.ts' }));
+assert('nested code under secrets/', ALLOW,
+  callHook('Bash', { command: 'cat src/lib/secrets/util/mask.ts' }));
+assert('prose under secrets/', ALLOW, callHook('Bash', { command: 'cat secrets/README.md' }));
 assert('ls -la', ALLOW, callHook('Bash', { command: 'ls -la' }));
 assert('cat README.md', ALLOW, callHook('Bash', { command: 'cat README.md' }));
 assert('grep over src', ALLOW, callHook('Bash', { command: 'grep -r TODO src/' }));

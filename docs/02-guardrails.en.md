@@ -54,10 +54,10 @@ line, not an excuse to be sloppy here.
   "Read(.env)",
   "Read(./**/.env.*)",
   "Read(**/*.pem)",
-  "Bash(rm -rf *)",
-  "Bash(git push --force *)",
-  "Bash(git reset --hard *)",
-  "Bash(supabase db reset *)"
+  "Bash(rm -rf:*)",
+  "Bash(git push --force:*)",
+  "Bash(git reset --hard:*)",
+  "Bash(supabase db reset:*)"
 ]
 ```
 
@@ -77,8 +77,8 @@ The real file: [kit/claude/settings.json](../kit/claude/settings.json)
 
 ### Where the deny list ends
 
-`Bash(rm -rf *)` only catches commands that *start* with `rm -rf`. `cd /tmp && rm -rf x` slips
-through, as does PowerShell's `Remove-Item` spelling.
+`Bash(rm -rf:*)` only catches `rm -rf` when the next character is a **space**. `rm -rfv /foo`
+slips through on one extra flag character (see "Two spellings, and both of them worked" below).
 
 So the deny list closes **the common accident shapes**, not the space of all of them. Layer 3
 exists because that coverage gap is permanent.
@@ -413,6 +413,82 @@ And until I read the log, I could not tell "a test failed" from "the runner coul
 success". There is now a separate check for that: a job called
 `entry points report success`, which calls each entry point the way Actions does, on the
 happy path, and looks only at the exit code.
+
+---
+
+## Two spellings, and both of them worked
+
+`kit/` denied with `Bash(rm -rf *)`. My own live config denied with `Bash(rm -rf:*)`.
+**Every line differed.** If one of the two spellings does nothing, then one of those
+files had been protecting nothing from the start.
+
+Nothing I could find said which. So I measured it.
+
+### How
+
+Three deny lines in a throwaway config, and `echo`.
+
+```
+"Bash(echo exact)"       <- no wildcard
+"Bash(echo pfx:*)"       <- colon spelling
+"Bash(echo sfx *)"       <- space spelling
+```
+
+The results.
+
+| Pattern | `echo x` | `echo x hello` | `echo xhello` |
+|---|---|---|---|
+| `Bash(echo x)` | blocked | allowed | allowed |
+| `Bash(echo x:*)` | blocked | blocked | allowed |
+| `Bash(echo x *)` | blocked | blocked | allowed |
+
+**The colon spelling and the space spelling behave identically.** Both are a prefix match
+on the command, and neither cuts a word in half. Only the form without a wildcard is an
+exact match.
+
+The thing I was afraid of — one spelling being dead — had not happened. Only the
+spelling differed. I aligned `kit/` on the colon form anyway, so that the next person
+to diff these two files does not spend the same hour.
+
+### Without a control, I would have drawn the wrong conclusion
+
+The first run used only the two wildcard lines. **Both of them let the command through.**
+
+That did not mean "neither spelling works". It meant **the config file was never read**.
+The session's working directory was not where I assumed, so the settings I had carefully
+placed were not in scope at all.
+
+Adding one line without a wildcard, `Bash(echo exact)`, and **checking first that it
+blocks**, is what surfaced it on the next run.
+
+An experiment that never stops has two possible reasons. **The rule is not working, or
+you are not measuring.** You need the one line that tells those apart.
+
+### Both spellings share the same hole
+
+`echo xhello` being allowed is another way of saying this.
+
+```
+Bash(rm -rf:*)  ->  rm -rf /foo    blocked
+                ->  rm -rfv /foo   allowed
+```
+
+**One extra flag character walks straight past it.** So does `rm -fr`. What is being
+blocked is the string `rm -rf`, not dangerous uses of `rm`.
+
+I have not closed it. Closing it means denying `rm` itself, which also stops everyday
+work like `rm -rf ./dist`. The argument this page keeps making — a rule with too many
+false positives gets switched off — applies to this one too. For now it stays open,
+and documented.
+
+### This layer cannot have tests
+
+The decision is made by Claude Code itself, not by any code in this repository. There is
+no way to build a suite like `guard-sql`'s. All you can do is place a config, type the
+command, and see whether it stopped. The table above is that, done by hand.
+
+**The layer that sits furthest forward, and works best, is the hardest one to verify.**
+It is also where all five typos were.
 
 ---
 

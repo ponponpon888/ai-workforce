@@ -104,7 +104,8 @@ if (skipSettings) {
   // The shipped deny list contains a few Windows-only entries. Harmless, but
   // say so rather than let someone wonder why Remove-Item is in their config.
   install(settings, join(claudeHome, 'settings.json'));
-  console.log('  note: one deny rule is Windows-specific (Remove-Item -Recurse).');
+  console.log('  note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).');
+  console.log('        That is every Remove-Item, not just the recursive ones.');
   console.log('        It is inert here. Trim it if you like.');
 }
 

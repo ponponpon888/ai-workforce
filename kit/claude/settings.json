@@ -30,14 +30,23 @@
 
     "ask": [
       "Bash(npm install:*)",
+      "PowerShell(npm install:*)",
       "Bash(npm uninstall:*)",
+      "PowerShell(npm uninstall:*)",
       "Bash(git push:*)",
+      "PowerShell(git push:*)",
       "Bash(git merge:*)",
+      "PowerShell(git merge:*)",
       "Bash(git rebase:*)",
+      "PowerShell(git rebase:*)",
       "Bash(vercel:*)",
+      "PowerShell(vercel:*)",
       "Bash(supabase:*)",
+      "PowerShell(supabase:*)",
       "Bash(curl:*)",
-      "PowerShell(Invoke-WebRequest:*)"
+      "PowerShell(Invoke-WebRequest:*)",
+      "PowerShell(Invoke-RestMethod:*)",
+      "PowerShell(curl.exe:*)"
     ],
 
     "deny": [
@@ -57,12 +66,19 @@
       "Bash(rm -r:*)",
       "PowerShell(Remove-Item:*)",
       "Bash(git push --force:*)",
+      "PowerShell(git push --force:*)",
       "Bash(git push -f:*)",
+      "PowerShell(git push -f:*)",
       "Bash(git reset --hard:*)",
+      "PowerShell(git reset --hard:*)",
       "Bash(git clean -fd:*)",
+      "PowerShell(git clean -fd:*)",
       "Bash(git clean -fdx:*)",
+      "PowerShell(git clean -fdx:*)",
       "Bash(git branch -D:*)",
-      "Bash(supabase db reset:*)"
+      "PowerShell(git branch -D:*)",
+      "Bash(supabase db reset:*)",
+      "PowerShell(supabase db reset:*)"
     ]
   },
 

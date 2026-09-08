@@ -492,6 +492,65 @@ It is also where all five typos were.
 
 ---
 
+## The PowerShell aliases were not the problem I expected
+
+`deny` was almost entirely Bash-side. `git push --force` and `git reset --hard` both walk
+straight through when they go via the PowerShell tool. I was going to write the missing
+lines, but there was one thing to check first.
+
+In PowerShell, `rm` is an alias for `Remove-Item`. So are `del`, `rd`, `rmdir`, `erase`
+and `ri`. If `deny` is a prefix match on the command string, then
+**`PowerShell(Remove-Item:*)` does not stop `rm -rf x`** — and all six words need their
+own line.
+
+I measured it. **It stopped.**
+
+```
+deny has PowerShell(Remove-Item:*) / allow has PowerShell(rm:*)
+
+rm <file>            -> blocked
+Remove-Item <file>   -> blocked
+```
+
+Aliases are resolved to a name before the pattern is matched. The word I actually typed
+was `rm`; `del`, `rd`, `rmdir`, `erase` and `ri` resolve to the same `Remove-Item`
+according to `Get-Alias`, so that one line covers them too (I did not type those five).
+It works in the other direction as well: write `PowerShell(gci:*)` and `Get-ChildItem`
+is blocked.
+
+**And `deny` beats `allow`.** The `rm` above was in the allow list, and it was still
+blocked.
+
+The number of lines to add dropped from 33 to 16.
+
+### What escapes is naming the executable itself
+
+On PowerShell 5.1, `curl` is an alias for `Invoke-WebRequest`, so
+`PowerShell(Invoke-WebRequest:*)` stops it. **Write `curl.exe` and it does not.** That is
+not an alias — it calls `C:\Windows\system32\curl.exe` directly.
+
+PowerShell 7 reverses this. It has no `curl` or `wget` alias, so typing `curl` resolves
+straight to `curl.exe`. **The spelling that closes the hole on 5.1 leaves it open on 7.**
+Write both and both are covered.
+
+### I got the measurement wrong the first time
+
+The first run had only one kind of control. I had the line that shows the rules are being
+evaluated at all (a command that must be blocked), but not the one that shows an
+unmatched command gets through.
+
+All six commands came back blocked. That reads two ways. **Either `deny` is working, or
+everything on this path is coming back denied.** With `defaultMode` set to `default`, a
+command that is not in `allow` sits waiting for confirmation and returns as denied — so
+the two are indistinguishable.
+
+Adding one command that should pass, and running it again, settled it.
+
+**You need two controls: one that must be blocked, and one that must get through.** With
+only one of them, you cannot tell that your experiment is not running.
+
+---
+
 ## Verifying it
 
 ### 1. Run the test suite

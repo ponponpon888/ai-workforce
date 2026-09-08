@@ -40,9 +40,17 @@ Ubuntu / macOS / Windows の CI で通っています。
       `244106608+ponponpon888@users.noreply.github.com` に統一済みですが、
       `git config --global user.email` は個人のアドレスのままなので、
       設定を忘れた状態でコミットすると混ざります
-- [ ] **`deny` / `ask` を PowerShell 側にも書き分ける。** いま `git push --force` などは
-      Bash 限定で、PowerShell ツール経由なら素通りします。PowerShell 側にあるのは
-      `PowerShell(Remove-Item:*)` と `PowerShell(Invoke-WebRequest:*)` の 2 行だけです
+- [x] **`deny` / `ask` を PowerShell 側にも書き分けた。** deny 7 行・ask 9 行を追加。
+      エイリアスは名前解決されてから照合されるので、`PowerShell(Remove-Item:*)` の
+      1 行で `rm` `del` `rd` `rmdir` `erase` `ri` が全部止まります
+      （実測したのは `rm` です。残る 5 語は `Get-Alias` で同じ `Remove-Item` の
+      別名であることを確認しました）。実体名の `curl.exe` だけは別に書きました
+- [ ] **`.env` が PowerShell 経由で読めます。** `Read(./.env)` は Read ツールにしか
+      効かず、`Get-Content .env` や `cat .env` は素通りします。`Get-Content` ごと
+      deny すると全ファイル読み取りが死ぬので、`permissions` では解けません。
+      フック側で見るしかない
+- [ ] `deny` に `Set-Content` を足すなら、エイリアスの `sc` は書かないこと。
+      Windows の `sc.exe`（サービス制御）に前方一致で巻き込みます
 
 ---
 

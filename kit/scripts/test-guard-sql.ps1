@@ -152,3 +152,10 @@ Write-Host ''
 Write-Host ("pass: {0}   fail: {1}" -f $pass, $fail) -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })
 Write-Host ''
 if ($fail -gt 0) { exit 1 }
+
+# Exit explicitly on success. Without this the script just ends, and $LASTEXITCODE
+# is still whatever the last hook invocation returned -- 2, because the final test
+# is a must-block case. GitHub Actions ends a pwsh step with `exit $LASTEXITCODE`,
+# so a fully passing suite reported itself as a failed step. Running the file with
+# -File hides it, which is why this only ever showed up in CI.
+exit 0

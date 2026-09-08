@@ -132,6 +132,41 @@ jobs:
       - name: Run pull-all tests against the PowerShell implementation
         shell: powershell
         run: node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
+      - name: Run guard-secrets tests against the PowerShell implementation
+        shell: powershell
+        run: node ./kit/scripts/test-guard-secrets.mjs --target ps --pwsh powershell.exe
+
+  guard-secrets-node:
+    name: guard-secrets (node)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node kit/scripts/test-guard-secrets.mjs
+
+  guard-secrets-powershell:
+    name: guard-secrets (powershell)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # One suite drives both implementations, so guard-secrets.mjs and
+      # guard-secrets.ps1 cannot drift apart. The driver is Node either way;
+      # --target ps only changes which file the payload is piped into.
+      - run: node kit/scripts/test-guard-secrets.mjs --target ps
+        shell: bash
 
   pull-all:
     name: pull-all never destroys work

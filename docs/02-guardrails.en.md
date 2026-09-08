@@ -341,6 +341,81 @@ and you will be the one switching the hook off next week.
 
 ---
 
+## Everything passed, and then it went red
+
+Every "green" up to here had been green on this machine. I pushed to GitHub, CI ran in a
+real environment for the first time, and **three of fourteen jobs were red**.
+
+The three were the PowerShell guard-sql jobs (5.1, pwsh on ubuntu, pwsh on windows). The
+end of the log:
+
+```
+  PASS  DROP still blocked inside an approved batch
+
+pass: 29   fail: 0
+##[error]Process completed with exit code 1.
+```
+
+**All 29 tests passed.** It failed after finishing them. Not one line of error output.
+
+### I never wrote the `exit 0` for the success path
+
+The end of `test-guard-sql.ps1` read:
+
+```
+if ($fail -gt 0) { exit 1 }
+```
+
+It exits on failure. On success it says nothing. And the last test in the suite is a
+must-block case, so the hook it calls returns `exit 2`. **That 2 is still sitting in
+`$LASTEXITCODE` when the script ends.**
+
+GitHub Actions wraps the body of a `run:` in a temporary script and appends
+`exit $LASTEXITCODE`. So it leaks.
+
+### It was green locally, because I was calling it differently
+
+```
+wrapped the way CI wraps it  -> exit 1
+powershell -File directly    -> exit 0
+```
+
+Called with `-File`, that `exit` is never reached, and the run ends 0. No amount of running
+it here would ever have reached that red.
+
+**"The tests pass" and "the test runner can report that they passed" are two different
+things.** I had only ever checked the first.
+
+The Node version was fine. It writes `process.exit(fail > 0 ? 1 : 0)` — both branches. Of
+two implementations of the same thing, only one was right.
+
+### Having found one, I looked for every instance of the shape
+
+This time I did. I called each entry-point `.ps1` the way Actions calls it and read the exit
+code. There was one more.
+
+`pull-all.ps1`. Hand it one directory that is not a git repository and the final
+`git rev-parse` returns non-zero, which survives to the end. **Skipping a single repository
+is enough.** It runs unattended at logon, so this is not a corner case.
+
+It also turned up a contract that did not match: the Node version returns 1 on failure, the
+PowerShell version returned 0. They are supposed to be twins. Fixed.
+
+### This is a false positive, which is what makes it dangerous
+
+It is not a miss. On real failure it does return 1. It was reporting failure on success.
+
+But this repository has been saying all along that a hook with too many false positives gets
+switched off. **The same is true of CI.** Red builds that turn out to be all PASS inside,
+often enough, and people stop looking at red.
+
+And until I read the log, I could not tell "a test failed" from "the runner could not report
+success". There is now a separate check for that: a job called
+`entry points report success`, which calls each entry point the way Actions does, on the
+happy path, and looks only at the exit code.
+
+---
+
 ## Verifying it
 
 ### 1. Run the test suite

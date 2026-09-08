@@ -177,4 +177,7 @@ Write-Log "done. log: $logFile"
 # whatever the last `git` call returned -- non-zero for any repository that was
 # skipped or left alone, which is the normal path, not a failure. A scheduler or
 # a CI step reading the exit code would see a run that did its job as failed.
-exit 0
+#
+# Non-zero only when something actually failed, which is what the Node twin does.
+# Skips are the normal, safe path and must not read as failure.
+exit $(if ($summary | Where-Object { $_.Result -like 'fail*' }) { 1 } else { 0 })

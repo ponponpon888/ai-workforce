@@ -81,25 +81,33 @@ if (process.platform !== 'win32') {
 const claudeMd = readFileSync(join(srcClaude, lang === 'en' ? 'CLAUDE.en.md' : 'CLAUDE.md'), 'utf8');
 install(claudeMd, join(claudeHome, 'CLAUDE.md'));
 
-// --- 2. guard-sql hook ------------------------------------------------------
+// --- 2. hooks ---------------------------------------------------------------
 
-console.log('2. guard-sql hook (node)');
-const hookDest = join(claudeHome, 'hooks', 'guard-sql.mjs');
-install(readFileSync(join(srcClaude, 'hooks', 'guard-sql.mjs'), 'utf8'), hookDest);
+console.log('2. hooks (node)');
+const sqlDest = join(claudeHome, 'hooks', 'guard-sql.mjs');
+install(readFileSync(join(srcClaude, 'hooks', 'guard-sql.mjs'), 'utf8'), sqlDest);
 
-const hookCommand = `node "${hookDest}"`;
+const secretsDest = join(claudeHome, 'hooks', 'guard-secrets.mjs');
+install(readFileSync(join(srcClaude, 'hooks', 'guard-secrets.mjs'), 'utf8'), secretsDest);
+
+const hookCommand = `node "${sqlDest}"`;
+const secretsCommand = `node "${secretsDest}"`;
 
 // --- 3. settings.json -------------------------------------------------------
 
 console.log('3. settings.json');
+// JSON string value: escape backslashes and quotes.
+const forJson = (s) => s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+
 if (skipSettings) {
-  console.log('  skipped (--skip-settings). Add this PreToolUse hook to your own settings.json:');
+  console.log('  skipped (--skip-settings). Add these PreToolUse hooks to your own settings.json:');
   console.log(`    ${hookCommand}`);
+  console.log(`    ${secretsCommand}`);
 } else {
   const settings = readFileSync(join(srcClaude, 'settings.json'), 'utf8')
     .replaceAll('{{CLAUDE_HOME}}', claudeHome.replaceAll('\\', '/'))
-    // JSON string value: escape backslashes and quotes.
-    .replaceAll('{{GUARD_SQL_COMMAND}}', hookCommand.replaceAll('\\', '\\\\').replaceAll('"', '\\"'));
+    .replaceAll('{{GUARD_SQL_COMMAND}}', forJson(hookCommand))
+    .replaceAll('{{GUARD_SECRETS_COMMAND}}', forJson(secretsCommand));
 
   // One deny rule is Windows-only. On Windows it is live, and wider than the
   // name suggests; anywhere else it is dead weight. Say which, rather than let
@@ -119,13 +127,15 @@ if (skipSettings) {
 console.log('');
 console.log('Done. Two things are deliberately left to you:');
 console.log('');
-console.log('  a) Verify the hook fires. In Claude Code, ask it to run:');
-console.log('       select 1; drop table nothing;');
-console.log('     It must be blocked with a [guard-sql] message. If it is not, the hook');
-console.log('     is not wired up and you are unprotected.');
+console.log('  a) Verify both hooks fire. In Claude Code, ask it to run:');
+console.log('       select 1; drop table nothing;      -> [guard-sql] must block it');
+console.log('       cat .env                           -> [guard-secrets] must block it');
+console.log('     If either goes through, that hook is not wired up and you are');
+console.log('     unprotected on that side.');
 console.log('');
-console.log('     The test suite covers behaviour, not wiring:');
+console.log('     The test suites cover behaviour, not wiring:');
 console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-sql.mjs')}`);
+console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-secrets.mjs')}`);
 console.log('');
 console.log('  b) Register pull-all if you want it. It brings every repo under a root');
 console.log('     up to date at login without ever touching work in progress.');

@@ -57,6 +57,8 @@
       "Read(**/*.pem)",
       "Read(**/id_rsa*)",
       "Read(**/service-account*.json)",
+      "Read(./secrets/**)",
+      "Read(//**/.ssh/**)",
       "Write(.env)",
       "Write(./**/.env)",
       "Edit(.env)",
@@ -92,6 +94,18 @@
             "command": "{{GUARD_SQL_COMMAND}}",
             "timeout": 15,
             "statusMessage": "guard-sql: checking statement"
+          }
+        ]
+      },
+      {
+        "//": "Only the shell tools. Read(.env) in deny binds the Read tool alone; cat and Get-Content arrive here instead. No database tool can read a file, so none is matched.",
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{GUARD_SECRETS_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-secrets: checking for secret files"
           }
         ]
       }

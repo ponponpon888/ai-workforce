@@ -79,6 +79,16 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
 ```
 
+同じ形のフックがもう 1 つあります。`guard-secrets` は、`.env` や秘密鍵を
+**シェル経由で読むのを止めます**。`deny` の `Read(./.env)` は Read ツールにしか
+効かないので、`cat .env` も `Get-Content .env` も素通りしていました。
+落とすのは「秘密ファイルのパス」と「読み出しの形」が両方あるときだけです
+（合計 51 ケース: 落とす 26 / 通す 25）。
+
+```bash
+node kit/scripts/test-guard-secrets.mjs   # pass: 51   fail: 0
+```
+
 フックは 2 種類あって、挙動は同じです。
 
 | | 動く場所 | 備考 |

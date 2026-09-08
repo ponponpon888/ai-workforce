@@ -551,6 +551,102 @@ only one of them, you cannot tell that your experiment is not running.
 
 ---
 
+## The `.env` I denied was never denied to `cat .env`
+
+These lines had been in `deny` from the start.
+
+```
+"Read(./.env)",
+"Read(./.env.*)",
+"Read(./**/.env)",
+```
+
+They work. **They work on the Read tool.**
+
+There is more than one route to the contents of `.env`. Opening it with the Read tool is
+one. Typing `cat .env` into the Bash tool is another. Typing `Get-Content .env` into the
+PowerShell tool is a third. `Read(...)` in `deny` sees the first. The other two get through
+no matter what is written there.
+
+`permissions` cannot close it. `Bash(cat:*)` would stop `cat .env`, and also
+`cat package.json`. `PowerShell(Get-Content:*)` would stop reading any file at all. The
+thing I need to decide on is neither "this command" nor "this file" but **this command
+touching this file**, and `permissions` has no way to spell that.
+
+So it became a hook. The same `PreToolUse` shape as `guard-sql`, looking at the `Bash` and
+`PowerShell` tools and nothing else.
+
+The rule is one line. **Block when the command both names a secret file and is a shape that
+reads a file.**
+
+| Command | Secret path | Reader | Result |
+|---|---|---|---|
+| `cat .env` | yes | yes | blocked |
+| `rm .env.bak` | yes | no | allowed |
+| `grep -r createClient src/` | no | yes | allowed |
+| `cat .env.example` | no (exempt) | yes | allowed |
+
+Requiring both is the whole design. Blocking on the string `.env` alone would block
+`grep -r "process.env" src/`. Blocking on the reader alone would block `cat package.json`.
+Either one is reason enough to switch a guard off.
+
+And **this layer can have tests.** `permissions` is decided by Claude Code itself and I
+cannot reach it (see "This layer cannot have tests"). The hook is decided by code in this
+repository.
+
+### One of the paths was too wide, so I narrowed it
+
+The path set started as a copy of the `Read(...)` lines in `deny`, which is why `secrets/`
+is in it. That also catches `src/lib/secrets/masker.ts` — code that handles secrets, not a
+secret. Source and prose extensions under a `secrets/` directory are no longer treated as
+secret. Same reasoning as exempting `.env.example`.
+
+**So `Read(./secrets/**)` in `deny` and this hook now disagree.** Opening
+`src/lib/secrets/masker.ts` with the Read tool is blocked; `cat`-ing it is allowed. I
+narrowed the side I can narrow. `deny` is decided by Claude Code, and there is no spelling
+that makes it narrower.
+
+---
+
+## What I thought I had closed opened in one move with `git show`
+
+Right after the suite went green I noticed that `git show HEAD:.env` gets through.
+`git diff .env` does too. Both print the contents.
+
+Copying with `cp .env /tmp/x` and reading `/tmp/x` was on the "not closing this" list from
+the start, because it takes two moves. `git show` takes one. Thinking about what a model
+tries next after `cat .env` is refused, I could not leave it there.
+
+My first thought was that adding `git` to the reader list would take `git status` and
+`git log` with it, so I left it out. **That was wrong.** The rule is "a secret path *and* a
+reader", and `git status` contains no `.env`. It does not get blocked.
+
+What does get blocked is naming the path, as in `git diff .env`. Of those, the subcommands
+that print contents are `show`, `diff`, `cat-file`, `blame` and `log -p`; `checkout`, `rm`
+and `add` do not. Filtering on the subcommand was all it needed.
+
+I nearly got a decision wrong there. "It would cause false positives" was a conclusion I
+reached before recalling the shape of the rule I had written myself. I was predicting what
+my design implied instead of checking it — the same move as in "Two spellings, and both of
+them worked". This time I caught it before writing it down, but only after the
+implementation was finished.
+
+### What is still open
+
+Where it is not closed, I say it is not closed.
+
+- **Copying to another name first, `cp .env /tmp/x`.** Copying is not reading, so `cp` is
+  not on the list. Two moves gets you past it
+- **Any reader not on the list.** `myreader .env` gets through
+- **A secret file whose name looks nothing like `.env`.** `config/prod-creds.yaml` is
+  invisible from here
+- **Writes.** `> .env` and `sed -i` are out of scope. This hook is about reading
+
+This stops accidents, not an adversary. It is a wall where a hand reaches for `cat .env`.
+Stopping a service-role key from landing in a transcript once already pays for it.
+
+---
+
 ## Verifying it
 
 ### 1. Run the test suite

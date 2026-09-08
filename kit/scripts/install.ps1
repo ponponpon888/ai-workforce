@@ -94,38 +94,46 @@ $claudeMd = Get-Content -LiteralPath (Join-Path $srcClaude $claudeMdSource) -Raw
 Write-Host '1. shared CLAUDE.md' -ForegroundColor White
 Install-File -Content $claudeMd -Destination (Join-Path $ClaudeHome 'CLAUDE.md')
 
-# --- 2. guard-sql hook -----------------------------------------------------
+# --- 2. hooks --------------------------------------------------------------
 
-Write-Host "2. guard-sql hook ($Hook)" -ForegroundColor White
+Write-Host "2. hooks ($Hook)" -ForegroundColor White
 
 $homeSlash = $ClaudeHome -replace '\\', '/'
 if ($Hook -eq 'node') {
-    $hookFile    = 'guard-sql.mjs'
-    $hookCommand = "node `"$homeSlash/hooks/guard-sql.mjs`""
+    $sqlFile        = 'guard-sql.mjs'
+    $secretsFile    = 'guard-secrets.mjs'
+    $hookCommand    = "node `"$homeSlash/hooks/guard-sql.mjs`""
+    $secretsCommand = "node `"$homeSlash/hooks/guard-secrets.mjs`""
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         Write-Step 'WARNING: node was not found on PATH. Install Node, or re-run with -Hook powershell.'
     }
 } else {
-    $hookFile    = 'guard-sql.ps1'
-    $hookCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
+    $sqlFile        = 'guard-sql.ps1'
+    $secretsFile    = 'guard-secrets.ps1'
+    $hookCommand    = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
+    $secretsCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
 }
 
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would
 # assign file content to the $Hook parameter and trip its ValidateSet.
-$hookContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\$hookFile") -Raw -Encoding UTF8
-Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
+foreach ($hookFile in @($sqlFile, $secretsFile)) {
+    $hookContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\$hookFile") -Raw -Encoding UTF8
+    Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
+}
 
 # --- 3. settings.json ------------------------------------------------------
 
 Write-Host '3. settings.json' -ForegroundColor White
 if ($SkipSettings) {
-    Write-Step 'skipped (-SkipSettings). Add this PreToolUse hook to your own settings.json:'
+    Write-Step 'skipped (-SkipSettings). Add these PreToolUse hooks to your own settings.json:'
     Write-Step "  $hookCommand"
+    Write-Step "  $secretsCommand"
 } else {
     $settings = Get-Content -LiteralPath (Join-Path $srcClaude 'settings.json') -Raw -Encoding UTF8
     $settings = $settings.Replace('{{CLAUDE_HOME}}', $homeSlash)
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
+    $settings = $settings.Replace('{{GUARD_SECRETS_COMMAND}}', ($secretsCommand -replace '\\', '\\\\' -replace '"', '\"'))
     Install-File -Content $settings -Destination (Join-Path $ClaudeHome 'settings.json')
     # One deny rule is Windows-only. On Windows it is live, and wider than the
     # name suggests; under pwsh on Linux or macOS it is dead weight. Say which.
@@ -146,14 +154,17 @@ if ($SkipSettings) {
 Write-Host ''
 Write-Host 'Done. Two things are deliberately left to you:' -ForegroundColor Green
 Write-Host ''
-Write-Host '  a) Verify the hook fires. In Claude Code, ask it to run:' -ForegroundColor White
-Write-Host '       select 1; drop table nothing;'
-Write-Host '     It must be blocked with a [guard-sql] message. If it is not, the hook'
-Write-Host '     is not wired up and you are unprotected.'
+Write-Host '  a) Verify both hooks fire. In Claude Code, ask it to run:' -ForegroundColor White
+Write-Host '       select 1; drop table nothing;      -> [guard-sql] must block it'
+Write-Host '       Get-Content .env                   -> [guard-secrets] must block it'
+Write-Host '     If either goes through, that hook is not wired up and you are'
+Write-Host '     unprotected on that side.'
 Write-Host ''
-Write-Host '     The test suites cover behaviour, not wiring. Both must pass:' -ForegroundColor Gray
+Write-Host '     The test suites cover behaviour, not wiring. All must pass:' -ForegroundColor Gray
 Write-Host "       node `"$kitRoot\scripts\test-guard-sql.mjs`""
 Write-Host "       & `"$kitRoot\scripts\test-guard-sql.ps1`""
+Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`""
+Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`" --target ps"
 Write-Host ''
 Write-Host '  b) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
 Write-Host '       $a = New-ScheduledTaskAction -Execute "powershell.exe" ``'

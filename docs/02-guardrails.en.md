@@ -556,9 +556,10 @@ only one of them, you cannot tell that your experiment is not running.
 These lines had been in `deny` from the start.
 
 ```
-"Read(./.env)",
-"Read(./.env.*)",
+"Read(.env)",
+"Read(.env.*)",
 "Read(./**/.env)",
+"Read(./**/.env.*)",
 ```
 
 They work. **They work on the Read tool.**

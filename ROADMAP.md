@@ -25,20 +25,24 @@ Ubuntu / macOS / Windows の CI で通っています。
 - [ ] **アンインストール手順**を書く。`~/.claude/` を書き換えるツールなのに、
       戻し方が書かれていないのは不親切です
 - [ ] 「まず `guard-sql` だけ試す」最小手順を書く。全部入れる前に 1 個だけ確かめたい人向け
-- [ ] **`permissions` のリストにテストを書く。** いまテストがあるのはフックだけで、
-      `allow` / `ask` / `deny` は 1 行も検証されていません。書き間違いが
-      そのまま通ります
-- [ ] `permissions` のパターン記法を実測で確定する。コロン記法
-      `Bash(git status:*)` とスペース記法 `Bash(git status *)` のどちらが
-      実際にマッチするのか、まだ確かめていません
+- [x] **`permissions` のパターン記法を実測で確定した。** コロン記法
+      `Bash(git status:*)` と空白記法 `Bash(git status *)` は**挙動が同じ**でした
+      （どちらもコマンド名の前方一致、単語の途中では切れない）。`kit/` を
+      実物と同じコロン記法に揃えました。結果は [02](docs/02-guardrails.md)
+- [x] **`permissions` にテストは書けないと分かった。** 判定しているのは
+      Claude Code 本体で、こちらのコードではありません。書けるのは手順と
+      測定結果だけなので、[02](docs/02-guardrails.md) に残しました
+- [ ] **`deny` のフラグ変種をどうするか決める。** `Bash(rm -rf:*)` は
+      `rm -rfv /` を止めません（前方一致が単語の途中で切れないため）。
+      `rm` ごと deny すれば止まりますが、`rm -rf ./dist` まで巻き込みます。
+      塞ぐか、穴として書いて残すか
 - [ ] **公開前に、コミットのメールアドレスをもう一度確認する。** いまは
       `244106608+ponponpon888@users.noreply.github.com` に統一済みですが、
       `git config --global user.email` は個人のアドレスのままなので、
       設定を忘れた状態でコミットすると混ざります
 - [ ] **`deny` / `ask` を PowerShell 側にも書き分ける。** いま `git push --force` などは
-      Bash 限定で、PowerShell ツール経由なら素通りします。ただし書き足す前に
-      パターン記法を確定させること（上の項目）。今回入れた
-      `PowerShell(Remove-Item -Recurse *)` と `PowerShell(Invoke-WebRequest *)` も、
+      Bash 限定で、PowerShell ツール経由なら素通りします。今回入れた
+      `PowerShell(Remove-Item:*)` と `PowerShell(Invoke-WebRequest:*)` も、
       記法が確定するまでは効いている保証がありません
 
 ---

@@ -556,9 +556,10 @@ allow に無いコマンドは確認待ちのまま denied で返るので、区
 `settings.json` の `deny` には、最初からこう書いてありました。
 
 ```
-"Read(./.env)",
-"Read(./.env.*)",
+"Read(.env)",
+"Read(.env.*)",
 "Read(./**/.env)",
+"Read(./**/.env.*)",
 ```
 
 これは効いています。ただし **Read ツールにしか効きません。**

@@ -172,3 +172,9 @@ Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction Silentl
     Remove-Item -Force -ErrorAction SilentlyContinue
 
 Write-Log "done. log: $logFile"
+
+# Exit explicitly. Without this the script just ends, and $LASTEXITCODE is still
+# whatever the last `git` call returned -- non-zero for any repository that was
+# skipped or left alone, which is the normal path, not a failure. A scheduler or
+# a CI step reading the exit code would see a run that did its job as failed.
+exit 0

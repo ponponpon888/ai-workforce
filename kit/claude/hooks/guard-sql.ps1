@@ -74,7 +74,16 @@ What to do:
 # Replace string literals and comments with harmless placeholders so that
 # keywords inside them cannot trigger a false positive, and semicolons inside
 # them cannot split a statement.
-function Get-NeutralizedSql([string] $Sql) {
+#
+# This is SQL grammar, so it may only be applied to something that is SQL. On a
+# shell command line '--' opens an option, not a comment: applying it to
+# "npx supabase db execute --sql 'truncate bookings'" leaves
+# "npx supabase db execute" and the TRUNCATE is no longer in view. The quoting
+# is the shell's too, and the statement we need to read sits inside it. So a
+# command line is scanned exactly as it arrived.
+function Get-NeutralizedSql([string] $Sql, [string] $Grammar) {
+    if ($Grammar -eq 'shell') { return $Sql }
+
     $pattern = @(
         "'(?:[^']|'')*'",                 # single-quoted literal, '' escape
         '\$([A-Za-z0-9_]*)\$.*?\$\1\$',   # postgres dollar-quoted body
@@ -108,17 +117,21 @@ function Test-Approved([string] $Sql) {
     return ($age.TotalMinutes -le $ApprovalTtlMinutes)
 }
 
-# Pull SQL out of whichever tool is being called.
+# Pull SQL out of whichever tool is being called, and report which field it came
+# from. The field name is half of how the grammar is decided.
 function Get-SqlFromToolInput($ToolName, $ToolInput) {
-    if ($null -eq $ToolInput) { return '' }
+    $none = [pscustomobject]@{ Value = ''; Key = '' }
+    if ($null -eq $ToolInput) { return $none }
 
     foreach ($key in @('query', 'sql', 'statement', 'command')) {
         if ($ToolInput.PSObject.Properties.Name -contains $key) {
             $value = $ToolInput.$key
-            if ($value -is [string] -and $value.Trim()) { return $value }
+            if ($value -is [string] -and $value.Trim()) {
+                return [pscustomobject]@{ Value = $value; Key = $key }
+            }
         }
     }
-    return ''
+    return $none
 }
 
 # ---------------------------------------------------------------------------
@@ -133,23 +146,33 @@ try {
     $toolName = if ($payload.PSObject.Properties.Name -contains 'tool_name') { [string]$payload.tool_name } else { '' }
     $toolInput = if ($payload.PSObject.Properties.Name -contains 'tool_input') { $payload.tool_input } else { $null }
 
-    $sql = Get-SqlFromToolInput $toolName $toolInput
+    $extracted = Get-SqlFromToolInput $toolName $toolInput
+    $sql = $extracted.Value
     if (-not $sql.Trim()) { exit 0 }
 
     # Only inspect tools that actually talk to a database. The settings.json
     # matcher should already do this, but a matcher is one edit away from being
     # widened, and a `query` field on some unrelated MCP tool must not be read
     # as SQL. Defence in depth, and it costs nothing.
-    if ($toolName -notmatch '^(Bash|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)') {
+    if ($toolName -notmatch '^(Bash|PowerShell|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)') {
         exit 0
     }
 
-    # A Bash call only counts as SQL if it actually invokes a database client.
-    if ($toolName -eq 'Bash' -and $sql -notmatch '(?is)\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b') {
+    # Tool name and field name together decide which grammar the same string is
+    # read under: a shell tool handing us its 'command' is a command line,
+    # anything else is a SQL statement.
+    if ($toolName -match '^(Bash|PowerShell)$' -and $extracted.Key -eq 'command') {
+        $grammar = 'shell'
+    } else {
+        $grammar = 'sql'
+    }
+
+    # A shell call only counts as SQL if it actually invokes a database client.
+    if ($grammar -eq 'shell' -and $sql -notmatch '(?is)\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b') {
         exit 0
     }
 
-    $clean = Get-NeutralizedSql $sql
+    $clean = Get-NeutralizedSql $sql $grammar
 
     $firstDdl = $null
 

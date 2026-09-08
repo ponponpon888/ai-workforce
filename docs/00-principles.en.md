@@ -146,7 +146,7 @@ I was moving on with "it probably builds".
 
 → Each project's `CLAUDE.md` now says `npm run build` must pass before pushing. This repository
 runs, on itself, in CI on Ubuntu / macOS / Windows: a parse
-check, a non-ASCII check, 25 guard-sql cases, 21 pull-all cases, and both installers.
+check, a non-ASCII check, 29 guard-sql cases, 23 pull-all cases, and both installers.
 
 ### 3. I did not keep migrations
 

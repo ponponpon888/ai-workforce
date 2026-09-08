@@ -48,6 +48,44 @@ jobs:
           done < <(find . -name '*.ps1')
           exit $bad
 
+  exit-codes:
+    name: entry points report success
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A .ps1 that ends without an explicit `exit` leaves $LASTEXITCODE holding
+      # whatever the last native command returned. Actions ends a pwsh step with
+      # `exit $LASTEXITCODE`, so a script that did its job can still report the
+      # step as failed -- which is exactly how a fully passing guard-sql suite
+      # (pass: 29 fail: 0) turned three jobs red. Running the file with -File
+      # hides it, so it is invisible outside CI. Call each entry point the way
+      # Actions does, on its success path, and require 0.
+      - name: Every entry point exits 0 on success
+        shell: pwsh
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'exitcode-probe'
+          New-Item -ItemType Directory -Path "$probe/notarepo" -Force | Out-Null
+          $wrapper = Join-Path $probe 'wrapper.ps1'
+          $cases = @(
+            './kit/scripts/test-guard-sql.ps1',
+            "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos notarepo",
+            "./kit/scripts/install.ps1 -ClaudeHome '$probe/fake-claude' -Hook powershell",
+            "./kit/scripts/approve-ddl.ps1 -Sql 'create table probe_t (id int)' -ApprovalDir '$probe/approvals' -Force"
+          )
+          $bad = 0
+          foreach ($case in $cases) {
+            $body = "`$ErrorActionPreference = 'stop'`n$case`nif ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit `$LASTEXITCODE }`n"
+            [System.IO.File]::WriteAllText($wrapper, $body, (New-Object System.Text.UTF8Encoding($false)))
+            & pwsh -NoProfile -Command ". '$wrapper'" *> $null
+            if ($LASTEXITCODE -ne 0) {
+              $bad++
+              Write-Host "::error::$case did its job but exited $LASTEXITCODE"
+            } else {
+              Write-Host "ok: $case"
+            }
+          }
+          if ($bad -gt 0) { exit 1 }
+
   guard-sql-node:
     name: guard-sql (node)
     runs-on: ${{ matrix.os }}

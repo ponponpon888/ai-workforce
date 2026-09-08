@@ -128,6 +128,15 @@ const repos = {
   diverged: clone('diverged'),
 };
 
+// A repository that genuinely fails, kept in a root of its own so the run over
+// `repos` stays a clean-and-skips run. Cloned here, at FIRST, for the same reason
+// as the others: origin has to move afterwards for its main to diverge.
+const failDir = join(rootDir, 'repos-fail');
+mkdirSync(failDir, { recursive: true });
+git(failDir, 'clone', '--quiet', originDir, 'fail-on-main');
+const failRepo = join(failDir, 'fail-on-main');
+git(failRepo, 'remote', 'set-head', 'origin', '--auto');
+
 // Advance origin so there is genuinely something to pull.
 writeFileSync(join(workDir, 'a.txt'), 'one\ntwo\n');
 git(workDir, 'commit', '-am', 'second');
@@ -173,6 +182,14 @@ git(repos.detached, 'checkout', '-q', '--detach', FIRST);
 }
 const DIVERGED_MAIN = shaOf(repos.diverged, 'main');
 
+// fail-on-main: still on the default branch and clean, but carrying a commit of
+// its own while origin has moved too. `git pull --ff-only` cannot fast-forward
+// and refuses, which is a fail/*, not a skip. Nothing else in the fixture can
+// produce one, and without one the failure half of the exit code is untested.
+writeFileSync(join(failRepo, 'local-only.txt'), 'local\n');
+git(failRepo, 'add', '-A');
+git(failRepo, 'commit', '-m', 'local only commit on main');
+
 // Snapshot everything before the run.
 const before = Object.fromEntries(
   Object.entries(repos).map(([k, p]) => [
@@ -209,6 +226,20 @@ check(
 check(
   'feature commit still exists',
   existsSync(join(repos.featureBranch, 'feature.txt'))
+);
+// Unattended has to mean unattended. Asserted against the source of whichever
+// target is under test, because a script that stops to ask for credentials
+// blocks forever — there is no way to observe that from outside without
+// hanging the suite on the very failure it is meant to catch.
+const targetSource = readFileSync(
+  resolve(here, targetArg === 'ps' ? 'pull-all.ps1' : 'pull-all.mjs'),
+  'utf8'
+);
+check(
+  'credential prompts are disabled',
+  /GIT_TERMINAL_PROMPT\s*=\s*'0'/.test(targetSource) &&
+    /GCM_INTERACTIVE\s*=\s*'never'/.test(targetSource),
+  'must set GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never before any git call'
 );
 
 console.log('\ndestroys nothing:');
@@ -253,6 +284,16 @@ check(
 
 console.log('\nreports honestly:');
 check('exit code is 0 (skips are not failures)', run.status === 0, `status=${run.status}`);
+// The pair of the check above, over a root holding one repo that really fails.
+// A skip must not read as failure, and a failure must not read as success — the
+// PowerShell twin returned 0 either way until this test existed.
+const [failExe, failArgs] = invocation(failDir);
+const failRun = spawnSync(failExe, failArgs, { encoding: 'utf8', env: GIT_ENV });
+check(
+  'exit code is 1 when a repo actually fails',
+  failRun.status === 1,
+  `status=${failRun.status} out=${((failRun.stdout || '') + (failRun.stderr || '')).trim().slice(-300)}`
+);
 
 const logDir = join(reposDir, '_logs');
 const logName = readdirSync(logDir)

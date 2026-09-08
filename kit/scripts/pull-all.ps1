@@ -44,6 +44,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
+# This runs unattended at logon, so git has to fail rather than wait. Without
+# these, a repository whose credentials have expired stops on a prompt nobody is
+# there to answer, and the run hangs silently instead of reporting. The second
+# one covers Git Credential Manager, which pops a window of its own that
+# GIT_TERMINAL_PROMPT does not reach.
+$env:GIT_TERMINAL_PROMPT = '0'
+$env:GCM_INTERACTIVE = 'never'
+
 # --- logging ---------------------------------------------------------------
 
 if (-not (Test-Path -LiteralPath $LogDir)) {
@@ -164,3 +172,12 @@ Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction Silentl
     Remove-Item -Force -ErrorAction SilentlyContinue
 
 Write-Log "done. log: $logFile"
+
+# Exit explicitly. Without this the script just ends, and $LASTEXITCODE is still
+# whatever the last `git` call returned -- non-zero for any repository that was
+# skipped or left alone, which is the normal path, not a failure. A scheduler or
+# a CI step reading the exit code would see a run that did its job as failed.
+#
+# Non-zero only when something actually failed, which is what the Node twin does.
+# Skips are the normal, safe path and must not read as failure.
+exit $(if ($summary | Where-Object { $_.Result -like 'fail*' }) { 1 } else { 0 })

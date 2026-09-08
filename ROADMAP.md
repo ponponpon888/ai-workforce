@@ -41,9 +41,8 @@ Ubuntu / macOS / Windows の CI で通っています。
       `git config --global user.email` は個人のアドレスのままなので、
       設定を忘れた状態でコミットすると混ざります
 - [ ] **`deny` / `ask` を PowerShell 側にも書き分ける。** いま `git push --force` などは
-      Bash 限定で、PowerShell ツール経由なら素通りします。今回入れた
-      `PowerShell(Remove-Item:*)` と `PowerShell(Invoke-WebRequest:*)` も、
-      記法が確定するまでは効いている保証がありません
+      Bash 限定で、PowerShell ツール経由なら素通りします。PowerShell 側にあるのは
+      `PowerShell(Remove-Item:*)` と `PowerShell(Invoke-WebRequest:*)` の 2 行だけです
 
 ---
 

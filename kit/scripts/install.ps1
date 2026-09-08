@@ -127,11 +127,18 @@ if ($SkipSettings) {
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     Install-File -Content $settings -Destination (Join-Path $ClaudeHome 'settings.json')
-    # This installer only runs on Windows, so the rule below is always live.
-    # It is wider than its name suggests, and that is worth knowing up front.
+    # One deny rule is Windows-only. On Windows it is live, and wider than the
+    # name suggests; under pwsh on Linux or macOS it is dead weight. Say which.
+    # $IsWindows only exists from PowerShell 6 on, and 5.1 is Windows-only, so
+    # a missing variable means Windows.
+    $onWindows = (-not (Test-Path variable:IsWindows)) -or $IsWindows
     Write-Step 'note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).'
-    Write-Step '      It is live here, and it stops every Remove-Item,'
-    Write-Step '      not just the recursive ones.'
+    if ($onWindows) {
+        Write-Step '      It is live here, and it stops every Remove-Item,'
+        Write-Step '      not just the recursive ones.'
+    } else {
+        Write-Step '      It is inert here. Trim it if you like.'
+    }
 }
 
 # --- 4. what is left to do by hand -----------------------------------------

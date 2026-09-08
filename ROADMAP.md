@@ -31,6 +31,10 @@ Ubuntu / macOS / Windows の CI で通っています。
 - [ ] `permissions` のパターン記法を実測で確定する。コロン記法
       `Bash(git status:*)` とスペース記法 `Bash(git status *)` のどちらが
       実際にマッチするのか、まだ確かめていません
+- [ ] **公開前に、コミットのメールアドレスをもう一度確認する。** いまは
+      `244106608+ponponpon888@users.noreply.github.com` に統一済みですが、
+      `git config --global user.email` は個人のアドレスのままなので、
+      設定を忘れた状態でコミットすると混ざります
 - [ ] **`deny` / `ask` を PowerShell 側にも書き分ける。** いま `git push --force` などは
       Bash 限定で、PowerShell ツール経由なら素通りします。ただし書き足す前に
       パターン記法を確定させること（上の項目）。今回入れた

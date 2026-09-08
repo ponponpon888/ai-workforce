@@ -101,12 +101,17 @@ if (skipSettings) {
     // JSON string value: escape backslashes and quotes.
     .replaceAll('{{GUARD_SQL_COMMAND}}', hookCommand.replaceAll('\\', '\\\\').replaceAll('"', '\\"'));
 
-  // The shipped deny list contains a few Windows-only entries. Harmless, but
-  // say so rather than let someone wonder why Remove-Item is in their config.
+  // One deny rule is Windows-only. On Windows it is live, and wider than the
+  // name suggests; anywhere else it is dead weight. Say which, rather than let
+  // someone wonder why Remove-Item is in their config.
   install(settings, join(claudeHome, 'settings.json'));
   console.log('  note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).');
-  console.log('        That is every Remove-Item, not just the recursive ones.');
-  console.log('        It is inert here. Trim it if you like.');
+  if (process.platform === 'win32') {
+    console.log('        It is live here, and it stops every Remove-Item,');
+    console.log('        not just the recursive ones.');
+  } else {
+    console.log('        It is inert here. Trim it if you like.');
+  }
 }
 
 // --- 4. what is left to do by hand -----------------------------------------

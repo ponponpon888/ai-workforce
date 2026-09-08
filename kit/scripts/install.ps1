@@ -127,6 +127,11 @@ if ($SkipSettings) {
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     Install-File -Content $settings -Destination (Join-Path $ClaudeHome 'settings.json')
+    # This installer only runs on Windows, so the rule below is always live.
+    # It is wider than its name suggests, and that is worth knowing up front.
+    Write-Step 'note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).'
+    Write-Step '      It is live here, and it stops every Remove-Item,'
+    Write-Step '      not just the recursive ones.'
 }
 
 # --- 4. what is left to do by hand -----------------------------------------

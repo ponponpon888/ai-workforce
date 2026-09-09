@@ -59,14 +59,16 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       docs に `grep -r TODO src/` のような例を書くと赤くなります。マーカー形
       （`TODO:` など）だけ拾うように狭めるか、例に `TODO` を使わないか。
       いまは後者で回避しています
-- [ ] **`deny` のパス側グロブ記法を実測する。** 素 / `**/` / `./**/` / `//**/` の
+- [ ] **`deny` のパス側グロブ記法を実測する。**
+      手順は [実測 第2回](measurements/2026-09-10-modes-and-paths.md) のラウンド 2（18 観測、対照 4 件）。 素 / `**/` / `./**/` / `//**/` の
       4 種類が混ざっていますが、どれが効くか測っていません。コマンド側
       （`Bash(x:*)`）は実測済みですが、パス側は手つかずです。再起動と設定の
       戻しが要るので、専用セッションで行います
 - [ ] **`Write` / `Edit` が `.pem` `id_rsa` `secrets/` `.ssh/` を 1 行も
       守っていません。** `deny` の `Write` / `Edit` は `.env` 系だけです。
       上の記法の実測が終わってから着手します
-- [ ] **`kit` の `defaultMode: "ask"` は存在しない値です。** 公式ドキュメントに載って
+- [ ] **`kit` の `defaultMode: "ask"` は存在しない値です。**
+      手順は [実測 第2回](measurements/2026-09-10-modes-and-paths.md) のラウンド 0〜2。 公式ドキュメントに載って
       いる値は `default`（別名 `manual`）/ `acceptEdits` / `plan` / `auto` / `dontAsk` /
       `bypassPermissions` の 6 つで、`ask` は allow / **ask** / deny のルール配列側の
       名前であってモード名ではありません。**無効値を書いたときの挙動は公式に記載が
@@ -83,7 +85,8 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       流します。仕様として受け入れるか、緩めるかを決めていません。あわせて、
       引用符の剥がし方が甘く `...\nonexistent-probe.sql"}}` のような候補が
       混ざります（判定は変わりませんが、メッセージに出ます）
-- [ ] **`disableAutoMode` の値が `true` か `"disable"` か未確定。** `kit/` では
+- [ ] **`disableAutoMode` の値が `true` か `"disable"` か未確定。**
+      手順は [実測 第2回](measurements/2026-09-10-modes-and-paths.md) のラウンド 3〜4。`kit/` では
       `true` にしています
 - [ ] 前身リポジトリ `ai-workforce-os` のログ 14 ファイル（ログ 10・
       `.backup` / `.broken` 4）を削除する

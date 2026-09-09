@@ -17,9 +17,9 @@
       "unverified": 1
     },
     "by_status": {
-      "closed": 2,
+      "closed": 3,
       "open_recorded": 1,
-      "untouched": 3,
+      "untouched": 2,
       "none": 2
     },
     "by_kind": {
@@ -70,15 +70,16 @@
       "kind": "trap",
       "severity": "high",
       "confidence": "measured",
-      "status": "untouched",
+      "status": "closed",
       "stale_risk": "ok",
-      "origin": "ROADMAP.md#v01-までに終わらせること",
+      "origin": "docs/02-guardrails.md#macos-のジョブが無料枠を食い潰していました",
       "checkable": false,
       "related": [],
       "tags": [
         "github-actions",
         "runner",
-        "unresolved",
+        "billing",
+        "cost-per-minute",
         "not-our-code"
       ]
     },

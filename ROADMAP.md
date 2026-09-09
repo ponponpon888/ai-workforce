@@ -70,13 +70,13 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       `true` にしています
 - [ ] 前身リポジトリ `ai-workforce-os` のログ 14 ファイル（ログ 10・
       `.backup` / `.broken` 4）を削除する
-- [ ] **CI の全ジョブが数秒で落ちる状態の原因を確定させる。** 2026-09-09、PR #9 で
-      21 ジョブ全部が failure になりました。ジョブは作られるのに `steps` が空、
-      `runner_name` も空で、**変更を 1 行も含まない `main` を回しても同じ形**です。
-      コードでもワークフローの YAML でもありません。githubstatus.com に障害は出ておらず、
-      `actions/permissions` も `enabled` のままです。アカウント側の設定が候補ですが、
-      `billing` の確認には別のスコープが要るため未確認です。
-      観測は [`data/pitfalls/ci-001.json`](data/pitfalls/ci-001.json) に置きました
+- [x] **CI の全ジョブが数秒で落ちた件の原因を確定させた。** GitHub Actions の
+      無料枠 $12 の使い切りでした。**分数が最小の macOS が金額では最大**で
+      （9/8: macOS 51 分 $3.16 / Linux 298 分 $1.79 / Windows 177 分 $1.77）、
+      単価は Linux の約 10 倍。macOS を `pull_request` から外しました。
+      経緯は [02](docs/02-guardrails.md)、記録は
+      [`data/pitfalls/ci-001.json`](data/pitfalls/ci-001.json)。
+      **設定そのものは、Actions が再び動くまで回せていません**
 - [ ] **`test-pull-all.mjs` がソース文字列を grep しています。** `GIT_TERMINAL_PROMPT` と
       `GCM_INTERACTIVE` の検査が、ソースにその文字列があることしか見ていません。
       [MUSUBU の事例](docs/case-studies/musubu.md)に「文字列の grep はテストでは
@@ -113,7 +113,8 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
 - **レコード発の観測を、どう受けるか決める。** `origin` はファイルと見出しアンカーの
       実在を要求します（[08](docs/08-pitfall-records.md) の R13 / R14）。散文がまだ
       無い観測をレコードにするには、**先に docs 側を書き足す必要がある**わけです。
-      `ci-001` がその形で、この ROADMAP に項目を足して `origin` の宛先にしました。
+      `ci-001` がその形でした。観測をそのままレコードにできず、[02](docs/02-guardrails.md)
+      に節を書いてから `origin` の宛先にしています。
       他の人が Issue から 1 件足すときにも同じ負担が出ます。候補は 2 つで、
       `origin` を任意にして「このレコード自身が一次記録」を表せるようにするか、
       レコード発の観測を受ける docs を 1 本用意するか。**どちらにするかはまだ

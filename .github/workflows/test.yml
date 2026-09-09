@@ -6,6 +6,22 @@ on:
   pull_request:
   workflow_dispatch:
 
+# WHY macOS ONLY RUNS ON push AND workflow_dispatch
+# On 2026-09-08 macOS billed $3.16 for 51 minutes, Linux $1.79 for 298 and Windows $1.77 for
+# 177. The macOS rate is roughly 10x Linux, so the runner with the fewest minutes cost the
+# most, and the next day it finished off the $12 free allowance. Past that, jobs stop being
+# given a runner at all: they are created, no step runs, and nothing in the log mentions
+# billing. Pull requests are what runs many times a day, so that is where the expensive
+# runner comes out.
+#
+# It is done by swapping the matrix list on the event rather than by a job-level `if`, for
+# two reasons. The matrix context is not available in a job-level `if`, so the condition
+# could not see which OS it was about. And even where a condition can be written, the runner
+# is allocated -- and charged -- before a step is skipped, which would not have saved
+# anything. Removing the entry from the matrix is the only form where macOS never starts.
+#
+# Job names are unchanged. See docs/02-guardrails.md and data/pitfalls/ci-001.json.
+
 jobs:
   parse:
     name: parse all scripts
@@ -92,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -142,7 +158,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -174,7 +190,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

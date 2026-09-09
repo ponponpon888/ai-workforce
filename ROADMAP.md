@@ -90,6 +90,25 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
 
 ---
 
+## 10/05 の公開前にやること
+
+Actions の無料枠は 10/01 にリセットされます。枠が戻ったら、macOS を `pull_request`
+から外した設定が意図どおり効いているかを確認します
+（[02](docs/02-guardrails.md) ／ [`ci-001`](data/pitfalls/ci-001.json)）。
+
+- [ ] **PR で macOS のチェックが 1 本も出ないこと。** `guard-sql (node)` /
+      `guard-secrets (node)` / `pull-all never destroys work` の 3 ジョブぶんです
+- [ ] **`main` への push では macOS が 3 本出ること。** 外したのは PR だけで、
+      main の網は狭めていません。ここまで消えていたら外しすぎです
+- [ ] **全ジョブが緑になること。** PR #9 は枠切れ以降、CI が一度も通っていません。
+      actionlint は指摘ゼロで通っていますが、それは静的検査の結果であって、
+      走らせた結果ではありません
+
+**public にすれば標準ランナーは無料**になるので、この節は公開した時点で役目を
+終えます。それまでの間だけの話です。
+
+---
+
 ## v0.1 以降
 
 優先度順。

@@ -28,7 +28,7 @@
   ],
 
   "status": "closed",
-  "fix": "repro の最後に残った未確認は、あとから請求画面を見て確定した（無料枠 $12 の使い切り）。対処として macOS のジョブを pull_request から外し、.github/workflows/test.yml の matrix を github.event_name で切り替えて、PR では ubuntu と windows だけを回すようにした。macOS は push（main）と workflow_dispatch のときだけ走る。単価が約 10 倍のランナーを、1 日に何度も回る経路から抜くのが消費に一番効く。ジョブ単位の if では足りない: matrix コンテキストはジョブレベルの if から参照できず、仮に書けてもステップが飛ばされる前にランナーが割り当てられて課金されるので、matrix から要素ごと外すしかない。ジョブ名は変えていない。なお、この設定そのものは Actions が再び動くまで回せていない。",
+  "fix": "repro の最後に残った未確認は、あとから請求画面を見て確定した（無料枠 $12 の使い切り）。対処として macOS のジョブを pull_request から外し、.github/workflows/test.yml の matrix を github.event_name で切り替えて、PR では ubuntu と windows だけを回すようにした。macOS は push（main）と workflow_dispatch のときだけ走る。単価が約 10 倍のランナーを、1 日に何度も回る経路から抜くのが消費に一番効く。ジョブ単位の if では足りない: matrix コンテキストはジョブレベルの if から参照できず、仮に書けてもステップが飛ばされる前にランナーが割り当てられて課金されるので、matrix から要素ごと外すしかない。ジョブ名は変えていない。なお、この設定そのものは Actions が再び動くまで回せていない。actionlint 1.7.12 は指摘ゼロで通り、三項式の中の fromJSON が両側とも解決されること、matrix 行が配列として型検査されることは、わざと壊した写し 3 通り（関数名の誤り / 存在しないコンテキスト / matrix を文字列にする）で actionlint がそれぞれ検出することを見て裏を取ってある。ただしこれは静的検査が通ったというだけで、実際に走らせた結果ではない。",
 
   "detection": {
     "checkable": false,

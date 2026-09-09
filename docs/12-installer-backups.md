@@ -35,7 +35,20 @@ WindowsとPowerShellインストーラの引用処理には、このPOSIX向け�
 
 ## ローカル検証
 
-リポジトリのルートで実行します。テストは一時ディレクトリを使用し、実際のClaudeホームを変更しません。
+まとめて確認する場合は、リポジトリのルートで次を実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs
+# 結果をJSONで保存する場合
+node kit/scripts/verify-installers.mjs --json > installer-verification.json
+```
+
+Node、PowerShell 7、Windows PowerShell 5.1を順に確認します。終了コードは、全対象成功が0、
+テスト失敗が1、未導入・対象OS外などで未検証が残る場合は2です。失敗と未検証が混在すれば1です。
+Linux上の成功をWindowsでの検証として扱いません。実行環境のインストールやCI設定の変更はしません。
+JSONには失敗時のテスト出力も含むため、外部共有前にローカルパス等を確認してください。
+
+個別に実行する場合も、リポジトリのルートで実行します。テストは一時ディレクトリを使用し、実際のClaudeホームを変更しません。
 Node.jsが必要です。PowerShell用テストは、指定した実行ファイルが見つからなければ失敗します。
 
 ```powershell

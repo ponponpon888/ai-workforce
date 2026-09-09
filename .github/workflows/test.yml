@@ -260,6 +260,7 @@ jobs:
           node-version: 20
       - run: node kit/scripts/validate-pitfalls.mjs
       - run: node kit/scripts/test-validate-pitfalls.mjs
+      - run: node kit/scripts/test-check-doc-todos.mjs
       # The index is a build product that is committed, so it can go stale without anyone
       # noticing -- a record added without regenerating it would leave a linter reading
       # yesterday's data while the records look right. Rebuild and require no diff.
@@ -282,8 +283,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          if grep -rn 'TODO' docs README.md README.en.md; then
-            echo "::warning::TODO markers still present"
-            exit 1
-          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node kit/scripts/check-doc-todos.mjs
+

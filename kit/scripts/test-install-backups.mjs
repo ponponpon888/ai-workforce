@@ -111,8 +111,12 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
     const home = join(root, name); run(home);
     const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
     const commands = settings.hooks.PreToolUse.flatMap(rule => rule.hooks.map(h => h.command));
-    assert.ok(commands.includes(`node "${join(home, 'hooks', 'guard-sql.mjs')}"`));
-    assert.ok(commands.includes(`node "${join(home, 'hooks', 'guard-secrets.mjs')}"`));
+    assert.equal(commands.length, 2);
+    for (const command of commands) {
+      const r = spawnSync(command, { shell: true, cwd: root, encoding: 'utf8', timeout: 10000,
+        input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'pwd' }, cwd: root }) });
+      assert.equal(r.error, undefined); assert.equal(r.status, 0, r.stderr);
+    }
   }));
 }
 
@@ -183,3 +187,22 @@ for (const [name, command, expected] of [
     if (expected[i] === 2) assert.match(r.stderr, i === 0 ? /\[guard-sql\]/ : /\[guard-secrets\]/);
   }
 }));
+
+if (!ps && process.platform !== 'win32') {
+  for (const name of ['home-$AIWF_TEST_PATH', 'home-`printf changed`', 'home-"quoted"', "home-'single'"]) {
+    test(`POSIX installed hook treats path literally: ${name}`, () => fixture(({ root, run }) => {
+      const home = join(root, name); run(home);
+      const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+      const commands = settings.hooks.PreToolUse.flatMap(rule => rule.hooks.map(h => h.command));
+      assert.equal(commands.length, 2);
+      for (const command of commands) {
+        const r = spawnSync(command, {
+          shell: true, cwd: root, encoding: 'utf8', timeout: 10000,
+          env: { ...process.env, AIWF_TEST_PATH: 'expanded-not-literal' },
+          input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'pwd' }, cwd: root }),
+        });
+        assert.equal(r.error, undefined); assert.equal(r.status, 0, r.stderr);
+      }
+    }));
+  }
+}

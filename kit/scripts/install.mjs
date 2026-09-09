@@ -112,8 +112,13 @@ install(readFileSync(join(srcClaude, 'hooks', 'guard-sql.mjs'), 'utf8'), sqlDest
 const secretsDest = join(claudeHome, 'hooks', 'guard-secrets.mjs');
 install(readFileSync(join(srcClaude, 'hooks', 'guard-secrets.mjs'), 'utf8'), secretsDest);
 
-const hookCommand = `node "${sqlDest}"`;
-const secretsCommand = `node "${secretsDest}"`;
+// JSON escaping and shell quoting are separate layers. Inside POSIX double
+// quotes these four characters still have shell meaning.
+const quoteHookPath = (path) => '"' + (process.platform === 'win32'
+  ? path
+  : path.replace(/[\\"$`]/g, character => '\\' + character)) + '"';
+const hookCommand = `node ${quoteHookPath(sqlDest)}`;
+const secretsCommand = `node ${quoteHookPath(secretsDest)}`;
 
 // --- 2b. approval script ----------------------------------------------------
 //

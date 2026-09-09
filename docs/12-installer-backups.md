@@ -25,3 +25,8 @@ node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
 既存の設定を保持してフックを手動追加する場合は、Node版の `--skip-settings`、
 PowerShell版の `-SkipSettings` を使用してください。
 この変更は複数インストーラの同時実行を排他制御するものではありません。
+
+Node版は書き込み前に全引数を検証します。未知のオプション、値の欠落・空文字、
+同じオプションの重複、余分な位置引数は終了コード1で停止します。
+`--dryrun` のようなタイプミスを無視して実インストールすることはありません。
+値は `--claude-home "C:/work/claude"` のように別の引数として渡してください。

@@ -20,22 +20,30 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
-const has = (f) => argv.includes(f);
-const val = (f, d) => {
-  const i = argv.indexOf(f);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : d;
-};
-
-const dryRun = has('--dry-run');
-const lang = val('--lang', 'ja');
-const skipSettings = has('--skip-settings');
-const skipClaudeMd = has('--skip-claude-md');
-const claudeHome = resolve(val('--claude-home', join(homedir(), '.claude')));
-
-if (!['ja', 'en'].includes(lang)) {
-  process.stderr.write(`install: --lang must be ja or en\n`);
+const options = new Map();
+const flags = new Set(['--dry-run', '--skip-settings', '--skip-claude-md']);
+const valued = new Set(['--lang', '--claude-home']);
+try {
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i];
+    if (options.has(key)) throw Error('duplicate option');
+    if (flags.has(key)) options.set(key, true);
+    else if (valued.has(key)) {
+      const value = argv[++i];
+      if (typeof value !== 'string' || !value.trim() || value.startsWith('--')) throw Error('missing option value');
+      options.set(key, value);
+    } else throw Error('unknown argument');
+  }
+  if (!['ja', 'en'].includes(options.get('--lang') ?? 'ja')) throw Error('invalid language');
+} catch (error) {
+  process.stderr.write(`install: ${error.message}\nUsage: node install.mjs [--claude-home <path>] [--lang ja|en] [--dry-run] [--skip-settings] [--skip-claude-md]\n`);
   process.exit(1);
 }
+const dryRun = options.has('--dry-run');
+const lang = options.get('--lang') ?? 'ja';
+const skipSettings = options.has('--skip-settings');
+const skipClaudeMd = options.has('--skip-claude-md');
+const claudeHome = resolve(options.get('--claude-home') ?? join(homedir(), '.claude'));
 
 const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcClaude = join(kitRoot, 'claude');

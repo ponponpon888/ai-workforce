@@ -48,3 +48,24 @@ test('skip flags preserve custom settings and instructions', () => fixture(({ ro
   run(home, { skip: true });
   for (const name of ['settings.json', 'CLAUDE.md']) { assert.equal(readFileSync(join(home, name), 'utf8'), 'custom'); assert.equal(readdirSync(home).filter(n => n.startsWith(name + '.bak.')).length, 0); }
 }));
+
+if (!ps) {
+  for (const [name, extra] of [
+    ['unknown flag', ['--dryrun']],
+    ['missing language', ['--lang']],
+    ['flag used as language', ['--lang', '--dry-run']],
+    ['duplicate destination', ['--claude-home']],
+    ['unexpected positional', ['unexpected']],
+    ['empty language', ['--lang', '']],
+  ]) test(`invalid CLI rejects ${name} before any write`, () => fixture(({ root }) => {
+    const home = join(root, 'home');
+    const r = spawnSync(process.execPath, [installer, '--claude-home', home, ...extra], { cwd: root, encoding: 'utf8' });
+    assert.notEqual(r.status, 0);
+    assert.equal(existsSync(home), false);
+  }));
+  test('destination cannot consume a following flag', () => fixture(({ root }) => {
+    const r = spawnSync(process.execPath, [installer, '--claude-home', '--skip-settings'], { cwd: root, encoding: 'utf8' });
+    assert.notEqual(r.status, 0);
+    assert.equal(existsSync(join(root, '--skip-settings')), false);
+  }));
+}

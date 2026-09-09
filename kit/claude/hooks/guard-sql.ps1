@@ -54,6 +54,20 @@ param(
 
 Set-StrictMode -Version Latest
 
+# Where to tell the human to run the approval script. Installed, the hook sits in
+# <claude home>\hooks and approve-ddl in <claude home>\scripts, so an absolute path
+# can be given -- the repo-relative one only works from a checkout of this repo,
+# which is not where anyone hits this message.
+#
+# $PSCommandPath is resolved here rather than in param(): Windows PowerShell 5.1
+# leaves it empty inside a param() default when [CmdletBinding()] is present.
+$installedApprove = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'scripts\approve-ddl.ps1'
+$approveCommand = if (Test-Path -LiteralPath $installedApprove) {
+    "& '$installedApprove'"
+} else {
+    '.\kit\scripts\approve-ddl.ps1'
+}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,7 +85,7 @@ Statement:
 What to do:
   1. Show this statement to the human and explain what it changes.
   2. If it is DDL and they agree, ask them to run:
-       .\kit\scripts\approve-ddl.ps1 -Sql '<the exact statement>'
+       $approveCommand -Sql '<the exact statement>'
      then retry the call unchanged.
   3. If it is a DELETE or UPDATE, add a WHERE clause.
   4. DROP and TRUNCATE are never approved by this hook. Do them by hand.

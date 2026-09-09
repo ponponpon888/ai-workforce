@@ -6,40 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 10,
+    "total": 12,
     "by_set": {
-      "pitfalls": 10
+      "pitfalls": 12
     },
     "by_confidence": {
-      "measured": 6,
+      "measured": 8,
       "inferred": 2,
       "documented": 1,
       "unverified": 1
     },
     "by_status": {
-      "closed": 5,
+      "closed": 6,
       "open_recorded": 1,
       "untouched": 2,
-      "none": 2
+      "none": 3
     },
     "by_kind": {
-      "trap": 6,
+      "trap": 7,
       "limitation": 2,
-      "behaviour": 2
+      "behaviour": 3
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 3,
+      "hook": 4,
+      "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 5,
-      "ok": 1,
+      "unknown_version": 6,
+      "ok": 2,
       "not_applicable": 4
     },
-    "without_prose": 2,
-    "checkable": 4
+    "without_prose": 4,
+    "checkable": 5
   },
   "checks": [
     {
@@ -68,6 +69,15 @@
       "expect": "present",
       "message": "@() を外すと候補1件のときに .Count が落ち、フックは fail open で素通りする。",
       "severity": "high"
+    },
+    {
+      "id": "install-001",
+      "kind": "file-content",
+      "target": "kit/scripts/install.mjs",
+      "pattern": "approve-ddl.mjs",
+      "expect": "present",
+      "message": "インストーラが approve-ddl を置かなくなると、DDL を止められた人が承認できなくなる。",
+      "severity": "medium"
     },
     {
       "id": "perm-004",
@@ -170,6 +180,27 @@
         "powershell",
         "fail-open",
         "strict-mode"
+      ]
+    },
+    {
+      "id": "install-001",
+      "set": "pitfalls",
+      "file": "data/pitfalls/install-001.json",
+      "title": "kit は approve-ddl を入れないので、DDL を止められた人は承認できない",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [],
+      "tags": [
+        "install",
+        "approve-ddl",
+        "usability"
       ]
     },
     {
@@ -314,6 +345,27 @@
         "deny",
         "prefix-match",
         "rm"
+      ]
+    },
+    {
+      "id": "shell-001",
+      "set": "pitfalls",
+      "file": "data/pitfalls/shell-001.json",
+      "title": "powershell -Command \"...\" は、外側のシェルが先に $変数 を展開する",
+      "layer": "runtime",
+      "kind": "behaviour",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": null,
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "powershell",
+        "quoting",
+        "instructions"
       ]
     }
   ]

@@ -35,7 +35,20 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * Where to tell the human to run the approval script. Installed, the hook sits in
+ * <claude home>/hooks and approve-ddl in <claude home>/scripts, so an absolute path
+ * can be given -- the repo-relative one only works from a checkout of this repo,
+ * which is not where anyone hits this message.
+ */
+const hookDir = dirname(fileURLToPath(import.meta.url));
+const installedApprove = resolve(hookDir, '..', 'scripts', 'approve-ddl.mjs');
+const APPROVE_COMMAND = existsSync(installedApprove)
+  ? `node "${installedApprove}"`
+  : 'node kit/scripts/approve-ddl.mjs';
 
 const APPROVAL_TTL_MINUTES = 15;
 const APPROVAL_DIR =
@@ -86,7 +99,7 @@ function deny(reason, statement) {
       `What to do:\n` +
       `  1. Show this statement to the human and explain what it changes.\n` +
       `  2. If it is DDL and they agree, ask them to run:\n` +
-      `       node kit/scripts/approve-ddl.mjs '<the exact statement>'\n` +
+      `       ${APPROVE_COMMAND} '<the exact statement>'\n` +
       `     then retry the call unchanged.\n` +
       `  3. If it is a DELETE or UPDATE, add a WHERE clause.\n` +
       `  4. DROP and TRUNCATE are never approved by this hook. Do them by hand.\n`

@@ -28,6 +28,7 @@ const val = (f, d) => {
 const dryRun = has('--dry-run');
 const lang = val('--lang', 'ja');
 const skipSettings = has('--skip-settings');
+const skipClaudeMd = has('--skip-claude-md');
 const claudeHome = resolve(val('--claude-home', join(homedir(), '.claude')));
 
 if (!['ja', 'en'].includes(lang)) {
@@ -78,8 +79,12 @@ if (process.platform !== 'win32') {
   console.log('  note: section 5 of CLAUDE.md describes a Windows PowerShell environment.');
   console.log('        Rewrite it for your machine after installing.');
 }
-const claudeMd = readFileSync(join(srcClaude, lang === 'en' ? 'CLAUDE.en.md' : 'CLAUDE.md'), 'utf8');
-install(claudeMd, join(claudeHome, 'CLAUDE.md'));
+if (skipClaudeMd) {
+  console.log('  skipped (--skip-claude-md). Keeping the CLAUDE.md you already have.');
+} else {
+  const claudeMd = readFileSync(join(srcClaude, lang === 'en' ? 'CLAUDE.en.md' : 'CLAUDE.md'), 'utf8');
+  install(claudeMd, join(claudeHome, 'CLAUDE.md'));
+}
 
 // --- 2. hooks ---------------------------------------------------------------
 
@@ -92,6 +97,18 @@ install(readFileSync(join(srcClaude, 'hooks', 'guard-secrets.mjs'), 'utf8'), sec
 
 const hookCommand = `node "${sqlDest}"`;
 const secretsCommand = `node "${secretsDest}"`;
+
+// --- 2b. approval script ----------------------------------------------------
+//
+// guard-sql refuses DDL until a human approves the exact statement, and its refusal
+// message names the script that issues the approval. Without this the message points
+// at a path inside a checkout of this repo, which is not where anyone reads it.
+
+console.log('2b. approval script');
+install(
+  readFileSync(join(kitRoot, 'scripts', 'approve-ddl.mjs'), 'utf8'),
+  join(claudeHome, 'scripts', 'approve-ddl.mjs')
+);
 
 // --- 3. settings.json -------------------------------------------------------
 

@@ -215,17 +215,40 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Exiting 0 is not the same as having installed anything. Every file the
+      # kit promises is checked by name, because a step that only asserts the
+      # exit code passes just as happily when the installer writes nothing.
       - name: install.mjs into a throwaway home
         shell: bash
         run: |
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8')); console.log('settings.json is valid JSON')"
+          for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs scripts/approve-ddl.mjs; do
+            test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
+            echo "  present: $f"
+          done
+      - name: install.mjs honours the skip flags
+        shell: bash
+        run: |
+          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-skip" --skip-settings --skip-claude-md
+          for f in CLAUDE.md settings.json; do
+            test -e "$RUNNER_TEMP/fake-skip/$f" && { echo "::error::--skip flags did not skip $f"; exit 1; }
+          done
+          test -f "$RUNNER_TEMP/fake-skip/hooks/guard-sql.mjs" || { echo "::error::hook missing"; exit 1; }
+          echo '  skipped CLAUDE.md and settings.json, installed the hooks'
       - name: install.ps1 into a throwaway home
         shell: pwsh
         run: |
           ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           Write-Host 'settings.json is valid JSON'
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
+            if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) {
+              Write-Host "::error::installer did not write $f"
+              exit 1
+            }
+            Write-Host "  present: $f"
+          }
 
   pitfalls:
     name: pitfall records validate, index is current

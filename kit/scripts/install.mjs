@@ -57,7 +57,10 @@ console.log(`  language    : ${lang}`);
 if (dryRun) console.log('  mode        : dry run, nothing will be written');
 console.log('');
 
-function install(content, destination) {
+const pending = [];
+function install(content, destination) { pending.push({ content, destination }); }
+
+function writeInstalledFile(content, destination) {
   const dir = dirname(destination);
   if (!existsSync(dir)) {
     if (dryRun) console.log(`  would create -> ${dir}`);
@@ -139,6 +142,8 @@ if (skipSettings) {
   // One deny rule is Windows-only. On Windows it is live, and wider than the
   // name suggests; anywhere else it is dead weight. Say which, rather than let
   // someone wonder why Remove-Item is in their config.
+  const parsed = JSON.parse(settings);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error('install: settings must be a JSON object');
   install(settings, join(claudeHome, 'settings.json'));
   console.log('  note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).');
   if (process.platform === 'win32') {
@@ -148,6 +153,9 @@ if (skipSettings) {
     console.log('        It is inert here. Trim it if you like.');
   }
 }
+
+// All selected sources are read and settings are parsed before the first write.
+for (const entry of pending) writeInstalledFile(entry.content, entry.destination);
 
 // --- 4. what is left to do by hand -----------------------------------------
 

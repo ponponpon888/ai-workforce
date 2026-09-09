@@ -51,7 +51,13 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Step([string] $Message) { Write-Host "  $Message" -ForegroundColor Gray }
 
+$pending = New-Object 'System.Collections.Generic.List[object]'
 function Install-File {
+    param([string] $Content, [string] $Destination)
+    $pending.Add(@{ Content = $Content; Destination = $Destination })
+}
+
+function Write-InstalledFile {
     param(
         [Parameter(Mandatory)][string] $Content,
         [Parameter(Mandatory)][string] $Destination
@@ -153,6 +159,11 @@ if ($SkipSettings) {
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     $settings = $settings.Replace('{{GUARD_SECRETS_COMMAND}}', ($secretsCommand -replace '\\', '\\\\' -replace '"', '\"'))
+    # Validate JSON before any destination is changed.
+    $parsed = ConvertFrom-Json -InputObject $settings -ErrorAction Stop
+    if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) {
+        throw 'install: settings must be a JSON object'
+    }
     Install-File -Content $settings -Destination (Join-Path $ClaudeHome 'settings.json')
     # One deny rule is Windows-only. On Windows it is live, and wider than the
     # name suggests; under pwsh on Linux or macOS it is dead weight. Say which.
@@ -166,6 +177,11 @@ if ($SkipSettings) {
     } else {
         Write-Step '      It is inert here. Trim it if you like.'
     }
+}
+
+# All selected sources have been read before the first write.
+foreach ($entry in $pending) {
+    Write-InstalledFile -Content $entry.Content -Destination $entry.Destination
 }
 
 # --- 4. what is left to do by hand -----------------------------------------

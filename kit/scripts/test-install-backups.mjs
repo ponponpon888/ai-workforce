@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,5 +67,22 @@ if (!ps) {
     const r = spawnSync(process.execPath, [installer, '--claude-home', '--skip-settings'], { cwd: root, encoding: 'utf8' });
     assert.notEqual(r.status, 0);
     assert.equal(existsSync(join(root, '--skip-settings')), false);
+  }));
+}
+
+{
+  for (const failure of ['missing-approval', 'invalid-settings']) test(`preflight ${failure} leaves existing home untouched`, () => fixture(({ root, run }) => {
+    const home = join(root, 'home'); run(home);
+    const before = readFileSync(join(home, 'CLAUDE.md'));
+    const kit = join(root, 'kit');
+    cpSync(fileURLToPath(new URL('../', import.meta.url)), kit, { recursive: true });
+    if (failure === 'missing-approval') rmSync(join(kit, 'scripts', 'approve-ddl.mjs'));
+    else writeFileSync(join(kit, 'claude', 'settings.json'), '{broken');
+    const r = ps
+      ? spawnSync(shell, ['-NoProfile', '-File', join(kit, 'scripts', 'install.ps1'), '-ClaudeHome', home], { encoding: 'utf8' })
+      : spawnSync(process.execPath, [join(kit, 'scripts', 'install.mjs'), '--claude-home', home], { encoding: 'utf8' });
+    assert.notEqual(r.status, 0);
+    assert.deepEqual(readFileSync(join(home, 'CLAUDE.md')), before);
+    assert.equal(readdirSync(home).some(n => n.includes('.bak.')), false);
   }));
 }

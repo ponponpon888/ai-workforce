@@ -3,11 +3,10 @@
 
   "//": "AI Workforce - user-level Claude Code settings. See github.com/ponponpon888/ai-workforce",
 
-  "disableAutoMode": true,
-
   "permissions": {
-    "defaultMode": "ask",
-    "disableBypassPermissionsMode": true,
+    "defaultMode": "default",
+    "disableBypassPermissionsMode": "disable",
+    "disableAutoMode": "disable",
 
     "allow": [
       "Read(**)",
@@ -60,10 +59,6 @@
       "Read(./secrets/**)",
       "Read(//**/.ssh/**)",
       "Read(./**/.ssh/**)",
-      "Write(.env)",
-      "Write(.env.*)",
-      "Write(./**/.env)",
-      "Write(./**/.env.*)",
       "Edit(.env)",
       "Edit(.env.*)",
       "Edit(./**/.env)",

@@ -199,17 +199,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Diagnose the kit template
+        run: node kit/scripts/doctor.mjs --template
+      - name: Test read-only diagnostics
+        run: node kit/scripts/test-doctor.mjs
       - name: install.mjs into a throwaway home
         shell: bash
         run: |
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8')); console.log('settings.json is valid JSON')"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
       - name: install.ps1 into a throwaway home
         shell: pwsh
         run: |
           ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           Write-Host 'settings.json is valid JSON'
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
 
   todos:
     name: no TODO left in docs

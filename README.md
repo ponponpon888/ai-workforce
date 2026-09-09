@@ -163,6 +163,19 @@ node kit/scripts/install.mjs
 
 ---
 
+## 設定と導入状態を診断する
+
+```powershell
+node kit/scripts/doctor.mjs --template  # 配布設定の静的チェック
+node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを確認
+```
+
+設定や登録されたコマンドは変更・実行しません。結果は `static-pass` / `error` /
+`incomplete` に分かれます。**静的チェックの成功は、Claude Code本体での動作確認を意味しません。**
+判定範囲と終了コードは [診断の説明](docs/09-settings-doctor.md) に記載しています。
+
+---
+
 ## ドキュメント
 
 | | |

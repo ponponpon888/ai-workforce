@@ -59,3 +59,20 @@ Git Credential Manager 本体の GUI 抑制は検査しておらず、`GCM_INTER
 
 実際の `.git/refs/heads/main.lock` を作った検査でも、失敗の報告と両ブランチの保持を確認しました。
 今回追加した PowerShell 実装の実行確認はまだです。
+
+## 3環境の結果をまとめて確認する
+
+既存の検証ランナーで自動更新スイートを選べます。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite pull-all
+node kit/scripts/verify-installers.mjs --suite pull-all --json
+```
+
+Node、PowerShell 7、Windows PowerShell 5.1 の利用可否を調べ、利用できる環境でテストします。
+終了コード0は全対象成功、1はテスト失敗あり、2は一部未検証です。
+使えないランタイムを成功扱いにはしません。インストールや更新は一時的な検査用フォルダ内だけで行います。
+`--suite` を省略すると従来のインストーラ検査です。
+
+Linux でこのコマンドを実行し、Node は成功、PowerShell 7 は未導入、5.1 は Windows が必要として、終了コード2になりました。
+ランナー自体のテスト6項目も成功しました。Windows 本体での今回の実行は未検証です。

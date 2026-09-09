@@ -1,13 +1,24 @@
 #!/usr/bin/env node
-// Runs tests only in temporary homes. Never installs into the user's home.
+// Runs installer or pull-all tests in temporary fixtures, never user repositories.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const args = process.argv.slice(2);
-if (args.some(arg => arg !== '--json') || args.length > 1) {
-  console.error('Usage: node kit/scripts/verify-installers.mjs [--json]');
+let suiteName = 'installers';
+const seen = new Set();
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (!['--json', '--suite'].includes(arg) || seen.has(arg)) usage();
+  seen.add(arg);
+  if (arg === '--suite') {
+    suiteName = args[++i];
+    if (!['installers', 'pull-all'].includes(suiteName)) usage();
+  }
+}
+function usage() {
+  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite installers|pull-all] [--json]');
   process.exit(2);
 }
-const suite = fileURLToPath(new URL('./test-install-backups.mjs', import.meta.url));
+const suite = fileURLToPath(new URL(suiteName === 'installers' ? './test-install-backups.mjs' : './test-pull-all.mjs', import.meta.url));
 const targets = [
   { name: 'node', executable: process.execPath, probe: ['--version'], args: [] },
   { name: 'powershell-7', executable: 'pwsh', probe: ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], args: ['--target', 'ps', '--pwsh', 'pwsh'] },
@@ -34,7 +45,7 @@ const results = targets.map(target => {
     ...(run.error || run.status !== 0 ? { output: (run.stdout + run.stderr).slice(-16000) } : {}) };
 });
 const exitCode = results.some(r => r.status === 'failed') ? 1 : results.some(r => r.status === 'unverified') ? 2 : 0;
-const report = { schema_version: 1, platform: process.platform, scope: 'installer-tests-on-this-machine', results, exit_code: exitCode };
+const report = { schema_version: 1, platform: process.platform, scope: suiteName === 'installers' ? 'installer-tests-on-this-machine' : 'pull-all-tests-on-this-machine', results, exit_code: exitCode };
 if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
 else {
   for (const r of results) {

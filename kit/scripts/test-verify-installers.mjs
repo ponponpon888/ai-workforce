@@ -47,3 +47,18 @@ test('invalid argument stops before launching tests', () => fixture("import { wr
 test('text output exposes failure', () => fixture('process.exit(3);', ({ run }) => {
   const r = run([]); assert.equal(r.status, 1); assert.match(r.stdout, /node: failed/);
 }));
+
+test('pull-all selection executes the selected suite and reports its scope', () => fixture('process.exit(9);', ({ root, run }) => {
+  writeFileSync(join(root, 'test-pull-all.mjs'), 'process.exit(0);');
+  const r = run(['--suite', 'pull-all', '--json']);
+  assert.equal(r.error, undefined);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.scope, 'pull-all-tests-on-this-machine');
+  assert.equal(report.results.find(r => r.target === 'node').status, 'passed');
+}));
+test('invalid suite selections stop before tests', () => fixture("import { writeFileSync } from 'node:fs'; writeFileSync(new URL('./ran', import.meta.url), 'ran');", ({ root, run }) => {
+  for (const args of [['--suite'], ['--suite', 'unknown'], ['--suite', 'pull-all', '--suite', 'installers'], ['--json', '--json']]) {
+    assert.equal(run(args).status, 2);
+    assert.equal(existsSync(join(root, 'ran')), false);
+  }
+}));

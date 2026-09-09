@@ -158,3 +158,9 @@ Node / PowerShell 両版で現在のブランチ取得結果を検査し、失�
 結果には選択範囲を明記し、終了コード0は選択した対象についてのみ成功を意味します。
 検証ランナー13件成功。実スイートも `--suite pull-all --target node` で成功を確認しました。
 Linux で Windows PowerShell 5.1 を指定した場合は未検証・終了コード2でした。PowerShell 本体は未実行です。
+
+## 追加: 秘密ファイルガードの Windows パス対応
+
+`guard-secrets` の Node / PowerShell 両版で、パス区切りを統一してから秘密ファイルを判定します。
+Windows形式の secrets 配下の設定・.ssh 配下の読み取りを検出し、文書とソースコードの例外は維持しました。
+修正前に2ケースの検出漏れを再現。修正後の秘密ファイルガードは Linux / Node で55件成功。PowerShell 本体は未実行です。

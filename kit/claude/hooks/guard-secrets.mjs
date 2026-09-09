@@ -151,6 +151,8 @@ function deny(command, hit) {
 
 /** The first secret path named anywhere in this segment, or null. */
 function secretPathIn(text) {
+  // Classify Windows paths using the same patterns as slash-separated paths.
+  text = text.replaceAll('\\', '/');
   for (const pattern of SECRET_PATTERNS) {
     pattern.re.lastIndex = 0;
     let m;

@@ -162,6 +162,8 @@ What to do:
 
 # The first secret path named anywhere in this segment, or $null.
 function Find-SecretPath([string] $Text) {
+    # Classify Windows paths using the same patterns as slash-separated paths.
+    $Text = $Text.Replace('\', '/')
     foreach ($p in $SecretPatterns) {
         foreach ($m in [regex]::Matches($Text, $p.Pattern)) {
             if ($p.Dotenv) {

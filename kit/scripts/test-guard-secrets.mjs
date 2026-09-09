@@ -106,6 +106,16 @@ assert('PowerShell type', BLOCK, callHook('PowerShell', { command: 'type .env' }
 assert('PowerShell .NET read', BLOCK,
   callHook('PowerShell', { command: "[System.IO.File]::ReadAllText('.env')" }));
 
+// Windows path separators must retain the same secret classification.
+assert('Windows secrets config', BLOCK,
+  callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\app\secrets\prod.yaml` }));
+assert('Windows ssh directory', BLOCK,
+  callHook('PowerShell', { command: String.raw`Get-Content C:\Users\dev\.ssh\config` }));
+assert('Windows code under secrets', ALLOW,
+  callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\app\secrets\masker.ts` }));
+assert('Windows prose under secrets', ALLOW,
+  callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\app\secrets\README.md` }));
+
 console.log('\nmust allow:');
 assert('.env.example', ALLOW, callHook('Bash', { command: 'cat .env.example' }));
 assert('.env.sample', ALLOW, callHook('Bash', { command: 'cat .env.sample' }));

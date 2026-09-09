@@ -770,3 +770,10 @@ supabase で `select 1; drop table nothing;` を実行して
 
 `[guard-sql] BLOCKED: DROP is never allowed from an agent.` が出れば正常。
 何も起きずに実行されたら、フックが配線されていません。
+
+## Windows 形式の秘密ファイルパス
+
+`guard-secrets` はパス判定時にバックスラッシュをスラッシュへ統一します。
+`Get-Content C:\Dev\app\secrets\prod.yaml` や `.ssh\config` の読み取りも検出対象です。
+`secrets\README.md` や `secrets\masker.ts` など、既存の文書・ソースコードの例外は維持します。
+これはコマンド文字列の事故防止検査であり、シェルの全構文を解析するものではありません。

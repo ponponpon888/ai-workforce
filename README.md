@@ -88,10 +88,10 @@ node kit/scripts/test-guard-sql.mjs    # pass: 44   fail: 0
 **シェル経由で読むのを止めます**。`deny` の `Read(./.env)` は Read ツールにしか
 効かないので、`cat .env` も `Get-Content .env` も素通りしていました。
 落とすのは「秘密ファイルのパス」と「読み出しの形」が両方あるときだけです
-（合計 51 ケース: 落とす 26 / 通す 25）。
+（合計 55 ケース: 落とす 28 / 通す 27）。
 
 ```bash
-node kit/scripts/test-guard-secrets.mjs   # pass: 51   fail: 0
+node kit/scripts/test-guard-secrets.mjs   # pass: 55   fail: 0
 ```
 
 フックは 2 種類あって、挙動は同じです。

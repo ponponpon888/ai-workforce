@@ -67,6 +67,9 @@ function Write-InstalledFile {
     if (-not (Test-Path -LiteralPath $dir)) {
         if ($PSCmdlet.ShouldProcess($dir, 'create directory')) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        } elseif (-not $WhatIfPreference) {
+            Write-Step "skipped (directory creation declined) -> $Destination"
+            return
         }
     }
 
@@ -78,6 +81,10 @@ function Write-InstalledFile {
             Write-Step "backed up -> $backup"
         } else {
             Write-Step "would back up -> $backup"
+            if (-not $WhatIfPreference) {
+                Write-Step "skipped (backup declined) -> $Destination"
+                return
+            }
         }
     }
 

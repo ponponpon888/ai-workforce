@@ -86,3 +86,20 @@ if (!ps) {
     assert.equal(readdirSync(home).some(n => n.includes('.bak.')), false);
   }));
 }
+
+if (ps) test('declining backup prevents a later yes from overwriting that file', () => fixture(({ root, run }) => {
+  const home = join(root, 'home'); run(home);
+  const target = join(home, 'CLAUDE.md');
+  writeFileSync(target, 'preserve my instructions');
+  // No to the first backup; Yes to all later prompts. Before the fix, the
+  // second prompt allowed CLAUDE.md to be overwritten without a backup.
+  const r = spawnSync(shell, ['-NoProfile', '-File', installer, '-ClaudeHome', home, '-Confirm'], {
+    input: 'n\na\n', encoding: 'utf8', timeout: 15000,
+  });
+  assert.equal(r.error, undefined);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readFileSync(target, 'utf8'), 'preserve my instructions');
+  assert.equal(readdirSync(home).some(n => n.startsWith('CLAUDE.md.bak.')), false);
+  // Prove the confirmation driver proceeded to later files.
+  assert.ok(readdirSync(home).some(n => n.startsWith('settings.json.bak.')));
+}));

@@ -16,6 +16,15 @@
     Blocked until a human approves the exact statement (see approve-ddl.ps1):
       - CREATE / ALTER / GRANT / REVOKE / REINDEX / VACUUM
 
+    NOTE ON FILE ROUTES
+    SQL does not have to appear on the command line. "psql -f x.sql", "psql < x.sql",
+    "cat x.sql | psql" and "\i x.sql" all hand a database client a file, and a guard
+    that reads only the command line sees none of it. The hook runs before the tool
+    does, but the file was written by an earlier call and is already on disk, so it
+    can be opened and scanned as SQL. When a file route is detected and nothing can
+    be read, the call needs the same approval a DDL statement needs: an unreadable
+    path is not a reason to assume the file is harmless.
+
     NOTE ON SCOPE
     This stops accidents, not an adversary. Any agent holding a shell could write an
     approval file itself. The point is that a model doing the wrong thing by mistake
@@ -134,6 +143,92 @@ function Get-SqlFromToolInput($ToolName, $ToolInput) {
     return $none
 }
 
+# Markers that hand a database client a file instead of a statement. Each one is
+# scanned only inside a command segment that invokes a client, so an "rm -f /tmp/junk"
+# sitting after && is not mistaken for "psql -f".
+#
+# "<(?!<)" matters: "psql <<'EOF'" is a here-document, not a redirect, and reading
+# "<'EOF'" as a path would demand approval for every harmless here-document.
+$script:FileRoutePatterns = @(
+    '(?:^|\s)(?:-f|--file)[=\s]+(\S+)',       # psql -f x.sql / --file=x.sql
+    '(?:^|\s)<(?!<)\s*(\S+)',                 # psql < x.sql
+    '\\ir?\s+(\S+)',                          # psql -c "\i x.sql"
+    '\bcat\s+(\S+)',                          # cat x.sql | psql
+    '(?:^|[\s"''`=])([^\s"''`;|<>]+\.sql)\b'  # any .sql path, however it got there
+)
+
+# A pipeline stays whole: "cat x.sql | psql" is one segment.
+$script:SegmentPattern = '&&|\|\||;|\r?\n'
+
+# Files larger than this are not scanned; an unread file takes the approval path.
+$script:MaxSqlFileBytes = 1048576
+
+$script:SqlClientPattern = '(?is)\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b'
+
+# Strip one layer of shell quoting from a token pulled out of a command line.
+function Get-Unquoted([string] $Token) {
+    return ($Token -replace '^["''`]+', '') -replace '["''`]+$', ''
+}
+
+# Paths a command line hands to a database client. Only segments that invoke a
+# client are scanned, so an unrelated -f elsewhere on the line is left alone.
+function Get-FileRouteCandidate([string] $Command) {
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($segment in ($Command -split $script:SegmentPattern)) {
+        if ($segment -notmatch $script:SqlClientPattern) { continue }
+        foreach ($pattern in $script:FileRoutePatterns) {
+            foreach ($m in [regex]::Matches($segment, $pattern)) {
+                $path = Get-Unquoted $m.Groups[1].Value
+                if ($path -and -not $found.Contains($path)) { $found.Add($path) | Out-Null }
+            }
+        }
+    }
+    return $found
+}
+
+# Read a candidate path, or $null when there is nothing readable there.
+function Read-SqlFile([string] $Path, [string] $Cwd) {
+    try {
+        if ([System.IO.Path]::IsPathRooted($Path)) { $absolute = $Path }
+        elseif ($Cwd) { $absolute = Join-Path $Cwd $Path }
+        else { $absolute = Join-Path (Get-Location).Path $Path }
+
+        if (-not (Test-Path -LiteralPath $absolute -PathType Leaf)) { return $null }
+        $item = Get-Item -LiteralPath $absolute
+        if ($item.Length -gt $script:MaxSqlFileBytes) { return $null }
+        return [System.IO.File]::ReadAllText($absolute)
+    } catch {
+        return $null
+    }
+}
+
+# Run the destructive-statement rules over one blob. Hard hits deny immediately;
+# the first DDL statement is handed back so the approval is checked once for the
+# whole call. $Where names the source in the block message.
+function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where) {
+    $firstDdl = $null
+    foreach ($stmt in ((Get-NeutralizedSql $Text $Grammar) -split ';')) {
+        if (-not $stmt.Trim()) { continue }
+
+        if ($stmt -match '(?is)\bDROP\b') {
+            Deny "DROP is never allowed from an agent.$Where" $stmt
+        }
+        if ($stmt -match '(?is)\bTRUNCATE\b') {
+            Deny "TRUNCATE is never allowed from an agent.$Where" $stmt
+        }
+        if ($stmt -match '(?is)\bDELETE\s+FROM\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
+            Deny "DELETE without a WHERE clause.$Where" $stmt
+        }
+        if ($stmt -match '(?is)\bUPDATE\b[\s\S]*\bSET\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
+            Deny "UPDATE without a WHERE clause.$Where" $stmt
+        }
+        if ($null -eq $firstDdl -and $stmt -match '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b') {
+            $firstDdl = $stmt
+        }
+    }
+    return $firstDdl
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -172,27 +267,31 @@ try {
         exit 0
     }
 
-    $clean = Get-NeutralizedSql $sql $grammar
+    $firstDdl = Invoke-StatementScan $sql $grammar ''
 
-    $firstDdl = $null
-
-    foreach ($stmt in ($clean -split ';')) {
-        if (-not $stmt.Trim()) { continue }
-
-        if ($stmt -match '(?is)\bDROP\b') {
-            Deny 'DROP is never allowed from an agent.' $stmt
-        }
-        if ($stmt -match '(?is)\bTRUNCATE\b') {
-            Deny 'TRUNCATE is never allowed from an agent.' $stmt
-        }
-        if ($stmt -match '(?is)\bDELETE\s+FROM\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
-            Deny 'DELETE without a WHERE clause.' $stmt
-        }
-        if ($stmt -match '(?is)\bUPDATE\b[\s\S]*\bSET\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
-            Deny 'UPDATE without a WHERE clause.' $stmt
-        }
-        if ($null -eq $firstDdl -and $stmt -match '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b') {
-            $firstDdl = $stmt
+    # The statement need not be on the command line. Read what the client is being
+    # pointed at and scan that too; a file route with nothing readable behind it
+    # takes the approval path rather than being waved through.
+    if ($grammar -eq 'shell') {
+        # @() is load-bearing. PowerShell unrolls a returned collection, so a single
+        # candidate comes back as a bare string, and under Set-StrictMode -Version
+        # Latest reading .Count off a string throws -- which the catch below turns
+        # into exit 0. The guard failed open on exactly the calls it was added for.
+        $candidates = @(Get-FileRouteCandidate $sql)
+        if ($candidates.Count -gt 0) {
+            $cwd = if ($payload.PSObject.Properties.Name -contains 'cwd') { [string]$payload.cwd } else { '' }
+            $readAny = $false
+            foreach ($path in $candidates) {
+                $content = Read-SqlFile $path $cwd
+                if ($null -eq $content) { continue }
+                $readAny = $true
+                $ddl = Invoke-StatementScan $content 'sql' " (from $path)"
+                if ($null -eq $firstDdl) { $firstDdl = $ddl }
+            }
+            if (-not $readAny -and -not (Test-Approved $sql)) {
+                $joined = $candidates -join ', '
+                Deny "this call feeds a SQL file to a database client, and none of the files could be read ($joined), so what runs is unknown." $sql
+            }
         }
     }
 

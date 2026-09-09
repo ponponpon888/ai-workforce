@@ -6,40 +6,40 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 9,
+    "total": 10,
     "by_set": {
-      "pitfalls": 9
+      "pitfalls": 10
     },
     "by_confidence": {
-      "measured": 5,
+      "measured": 6,
       "inferred": 2,
       "documented": 1,
       "unverified": 1
     },
     "by_status": {
-      "closed": 3,
+      "closed": 5,
       "open_recorded": 1,
-      "untouched": 3,
+      "untouched": 2,
       "none": 2
     },
     "by_kind": {
-      "trap": 5,
+      "trap": 6,
       "limitation": 2,
       "behaviour": 2
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 2,
+      "hook": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 4,
+      "unknown_version": 5,
       "ok": 1,
       "not_applicable": 4
     },
-    "without_prose": 1,
-    "checkable": 2
+    "without_prose": 2,
+    "checkable": 4
   },
   "checks": [
     {
@@ -49,6 +49,24 @@
       "pattern": "grammar === 'shell'",
       "expect": "present",
       "message": "シェル文法の分岐が消えると、--sql の後ろが再びコメント扱いで消える。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-002",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-sql.mjs",
+      "pattern": "fileRouteCandidates",
+      "expect": "present",
+      "message": "ファイル経由の検出が消えると、psql -f x.sql で書いてから流す2段が再び素通りする。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-003",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-sql.ps1",
+      "pattern": "@(Get-FileRouteCandidate",
+      "expect": "present",
+      "message": "@() を外すと候補1件のときに .Count が落ち、フックは fail open で素通りする。",
       "severity": "high"
     },
     {
@@ -115,18 +133,43 @@
       "kind": "trap",
       "severity": "high",
       "confidence": "measured",
-      "status": "untouched",
+      "status": "closed",
       "stale_risk": "unknown_version",
       "origin": "record",
       "has_prose": false,
-      "checkable": false,
+      "checkable": true,
       "related": [
-        "hook-001"
+        "hook-001",
+        "hook-003"
       ],
       "tags": [
         "guard-sql",
         "false-negative",
         "file-route"
+      ]
+    },
+    {
+      "id": "hook-003",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-003.json",
+      "title": "PowerShell が返り値のコレクションを展開するので、.Count が落ちてフックが素通りした",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "hook-002"
+      ],
+      "tags": [
+        "guard-sql",
+        "powershell",
+        "fail-open",
+        "strict-mode"
       ]
     },
     {

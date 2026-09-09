@@ -1,0 +1,44 @@
+{
+  "id": "hook-003",
+  "title": "PowerShell が返り値のコレクションを展開するので、.Count が落ちてフックが素通りした",
+  "summary": "関数が List[string] を返すと PowerShell はそれを展開する。候補が1件のときは裸の文字列になり、Set-StrictMode -Version Latest の下でその .Count を読むと例外になる。guard-sql は「壊れたガードは全部を止めない」方針で例外を握って exit 0 するので、ファイル経由の検査を足したその日に、足したまさにその呼び出しだけが素通りしていた。Node 版は 44/0 で緑、PowerShell 版も既存の 29 件は緑のまま。新しい経路だけが黙って通っていた。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-09",
+  "environment": {
+    "os": "Ubuntu 24.04.4 LTS",
+    "shell": "pwsh",
+    "shell_version": "7.4.6",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "guard-sql.ps1 に $candidates = Get-FileRouteCandidate $sql と書いた状態で、psql -f <存在しないパス> を流す",
+    "対照2件は正しく動いていた: psql -c \"DROP TABLE users\" は BLOCK、ls -la は ALLOW。だから「フックが動いていない」ではなく「この経路だけ通っている」と分かった",
+    "ファイル経由 9 件がすべて ALLOW。Node 版は同じ入力で BLOCK",
+    "stderr に [guard-sql] hook error (allowing call): The property 'Count' cannot be found on this object. が出ていた。終了コードは 0 なので、呼び出し側からは成功と区別がつかない",
+    "$candidates = @(Get-FileRouteCandidate $sql) に直すと 9 件とも BLOCK に変わり、PowerShell 版のテストも 44/0 になった"
+  ],
+  "status": "closed",
+  "fix": "返り値を @() で配列に固定する。展開されて裸の文字列になっても、空になっても、.Count が読める形にする。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-sql.ps1",
+    "pattern": "@(Get-FileRouteCandidate",
+    "expect": "present",
+    "message": "@() を外すと候補1件のときに .Count が落ち、フックは fail open で素通りする。"
+  },
+  "related": [
+    "hook-002"
+  ],
+  "tags": [
+    "guard-sql",
+    "powershell",
+    "fail-open",
+    "strict-mode"
+  ]
+}

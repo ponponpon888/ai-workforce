@@ -20,23 +20,29 @@
     "対照 2 件を先に置いた。落ちるはず: {tool_name:'Bash', tool_input:{command:'psql -c \"DROP TABLE users\"'}} -> BLOCK。通るはず: {command:'ls -la'} -> ALLOW。どちらも期待どおりだったので、測定そのものは成立している",
     "ファイル経由 8 件はすべて ALLOW: psql -f /tmp/x.sql / psql --file=migrations/danger.sql / psql < /tmp/x.sql / cat /tmp/x.sql | psql / psql -c '\\i /tmp/x.sql' / mysql mydb < dump.sql / sqlite3 app.db < wipe.sql / npx supabase db execute --file danger.sql",
     "コマンド行に SQL が出る 2 件は BLOCK: echo \"DELETE FROM users\" | psql / psql <<'EOF' ... DROP TABLE users; ... EOF",
-    "Write 側も ALLOW: {tool_name:'Write', tool_input:{file_path:'/tmp/x.sql', content:'DROP TABLE users;'}}。SQL_TOOL_RE が Write に一致せず、extractSql も content を見ない"
+    "Write 側も ALLOW: {tool_name:'Write', tool_input:{file_path:'/tmp/x.sql', content:'DROP TABLE users;'}}。SQL_TOOL_RE が Write に一致せず、extractSql も content を見ない",
+    "塞いだあと、同じ 8 経路がすべて BLOCK に変わり、無害な .sql（select 1）・文字列内の drop・&& のあとの rm -f・無害なヒアドキュメントは ALLOW のままであることを確認した。test-guard-sql は 29 件から 44 件になった"
   ],
-  "status": "untouched",
+  "status": "closed",
   "sources": [
     "https://qiita.com/dai_chi/items/8c351cf7812dd31b7767"
   ],
-  "detection": {
-    "checkable": false,
-    "kind": "manual",
-    "note": "いま検査すべき対象のコードが存在しない。ファイル参照を解決して中身を読む経路を実装したら、その分岐の有無を file-content で見張れるようになる。"
-  },
   "related": [
-    "hook-001"
+    "hook-001",
+    "hook-003"
   ],
   "tags": [
     "guard-sql",
     "false-negative",
     "file-route"
-  ]
+  ],
+  "fix": "コマンド行を、DB クライアントを呼んでいるセグメントごとに見て、-f / --file= / < / \\i / cat / 末尾が .sql のトークンからファイルパスを取り出す。PreToolUse は実行前に走るが、攻撃の第1段で ファイルは既に書かれているので読める。読めたら中身に同じ SQL 判定を当て、DROP・TRUNCATE は即拒否、DDL は承認トークンを要求する。1つも読めなかったときは「何が走るか不明」として、DDL と同じ承認を要求する。誤検知側も測った: && のあとの rm -f、無害なヒアドキュメント（<< を < と読まない）、.sql ファイルへの書き込みは通る。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-sql.mjs",
+    "pattern": "fileRouteCandidates",
+    "expect": "present",
+    "message": "ファイル経由の検出が消えると、psql -f x.sql で書いてから流す2段が再び素通りする。"
+  }
 }

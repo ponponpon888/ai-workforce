@@ -24,6 +24,7 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
+  utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -346,6 +347,28 @@ for (const kind of ['missing', 'file']) {
     : readFileSync(invalidPath, 'utf8') === 'keep root file';
   check(`${kind} root fails before creating logs`, result.status === 1 && unchanged &&
     ((result.stdout || '') + (result.stderr || '')).includes('Root must be an existing directory'));
+}
+
+if (targetArg !== 'ps') {
+  const previewRoot = join(rootDir, 'repos-preview');
+  mkdirSync(previewRoot);
+  git(previewRoot, 'clone', '--quiet', originDir, 'preview');
+  const previewRepo = join(previewRoot, 'preview');
+  git(previewRepo, 'reset', '--hard', FIRST); // fixture setup only
+  const previewArgs = [resolve(here, 'pull-all.mjs'), '--root', previewRoot, '--dry-run'];
+  const firstPreview = spawnSync(process.execPath, previewArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('dry-run creates no log directory', firstPreview.status === 0 && !existsSync(join(previewRoot, '_logs')));
+  const oldLogDir = join(rootDir, 'preview-logs');
+  mkdirSync(oldLogDir);
+  const oldLog = join(oldLogDir, 'pull-all_old.log');
+  writeFileSync(oldLog, 'keep historical log');
+  utimesSync(oldLog, new Date(0), new Date(0));
+  const preview = spawnSync(process.execPath, [...previewArgs, '--log-dir', oldLogDir],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('dry-run preserves expired logs and creates no new log', preview.status === 0 &&
+    readdirSync(oldLogDir).length === 1 && existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep historical log');
+  check('dry-run leaves checkout behind remote without pulling', head(previewRepo) === FIRST &&
+    readFileSync(join(previewRepo, 'a.txt'), 'utf8') === 'one\n' && /would pull/.test(preview.stdout));
 }
 
 // Node's CLI used to ignore misspellings and consume a following flag as a value.

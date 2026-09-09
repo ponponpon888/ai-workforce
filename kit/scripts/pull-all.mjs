@@ -72,6 +72,7 @@ const logDir = resolve(options.get('--log-dir') ?? join(root, '_logs'));
 const retentionDays = Number(retentionText);
 const dryRun = options.has('--dry-run');
 const quiet = options.has('--quiet');
+if (dryRun) process.env.GIT_OPTIONAL_LOCKS = '0';
 
 // Check before mkdir(logDir): the default log directory is inside root,
 // so creating it first would silently create a misspelled/missing root too.
@@ -84,7 +85,7 @@ try {
 
 // --- logging ----------------------------------------------------------------
 
-mkdirSync(logDir, { recursive: true });
+if (!dryRun) mkdirSync(logDir, { recursive: true });
 const logFile = join(
   logDir,
   `pull-all_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.log`
@@ -93,6 +94,7 @@ const logFile = join(
 function log(message) {
   const line = `${new Date().toTimeString().slice(0, 8)}  ${message}`;
   if (!quiet) console.log(line);
+  if (dryRun) return;
   try {
     appendFileSync(logFile, line + '\n', 'utf8');
   } catch {
@@ -224,7 +226,7 @@ for (const repo of targets) {
 log('--- summary ---');
 for (const s of summary) log(`${s.name.padEnd(28)} ${s.result}`);
 
-try {
+if (!dryRun) try {
   const cutoff = Date.now() - retentionDays * 86400000;
   for (const f of readdirSync(logDir)) {
     if (!/^pull-all_.*\.log$/.test(f)) continue;
@@ -235,7 +237,7 @@ try {
   /* pruning old logs is not worth failing the run over */
 }
 
-log(`done. log: ${logFile}`);
+log(dryRun ? 'done. dry run: no log file written.' : `done. log: ${logFile}`);
 
 // Non-zero only when something actually failed. Skips are the normal, safe path.
 process.exit(summary.some((s) => s.result.startsWith('fail')) ? 1 : 0);

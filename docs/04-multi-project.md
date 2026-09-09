@@ -195,7 +195,14 @@ Node 版の `--dry-run` は、更新予定を画面に表示し、ログファ�
 以前は dry-run でもログを作成し、古いログを削除していました。
 `--quiet` を併用すると通常の表示も抑止されるため、予定を確認する際は付けないでください。
 Git の任意のインデックス更新を抑止するため、dry-run では `GIT_OPTIONAL_LOCKS=0` を設定します。
-PowerShell 版にはこの `--dry-run` オプションはありません。
+PowerShell 版では `-DryRun` を指定すると、同じく取得・ブランチ更新・ログの作成や削除をせずに予定を表示します。
+
+```powershell
+.\kit\scripts\pull-all.ps1 -Root C:\Dev -Repos api,web -DryRun
+```
+
+リモートには接続しないため、実際に fast-forward できるかや認証が成功するかは確認しません。
+PowerShell 版の実行検証は未完了です。
 変更後の Linux / Node スイートは44件成功しています。
 
 ## 作業状態を検査できない場合

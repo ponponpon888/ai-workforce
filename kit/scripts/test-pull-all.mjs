@@ -368,21 +368,24 @@ for (const kind of ['missing', 'file']) {
     ((result.stdout || '') + (result.stderr || '')).includes('Root must be an existing directory'));
 }
 
-if (targetArg !== 'ps') {
+{
   const previewRoot = join(rootDir, 'repos-preview');
   mkdirSync(previewRoot);
   git(previewRoot, 'clone', '--quiet', originDir, 'preview');
   const previewRepo = join(previewRoot, 'preview');
   git(previewRepo, 'reset', '--hard', FIRST); // fixture setup only
-  const previewArgs = [resolve(here, 'pull-all.mjs'), '--root', previewRoot, '--dry-run'];
-  const firstPreview = spawnSync(process.execPath, previewArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const previewExe = targetArg === 'ps' ? pwshExe : process.execPath;
+  const previewArgs = targetArg === 'ps'
+    ? ['-NoProfile', '-File', resolve(here, 'pull-all.ps1'), '-Root', previewRoot, '-DryRun']
+    : [resolve(here, 'pull-all.mjs'), '--root', previewRoot, '--dry-run'];
+  const firstPreview = spawnSync(previewExe, previewArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
   check('dry-run creates no log directory', firstPreview.status === 0 && !existsSync(join(previewRoot, '_logs')));
   const oldLogDir = join(rootDir, 'preview-logs');
   mkdirSync(oldLogDir);
   const oldLog = join(oldLogDir, 'pull-all_old.log');
   writeFileSync(oldLog, 'keep historical log');
   utimesSync(oldLog, new Date(0), new Date(0));
-  const preview = spawnSync(process.execPath, [...previewArgs, '--log-dir', oldLogDir],
+  const preview = spawnSync(previewExe, [...previewArgs, targetArg === 'ps' ? '-LogDir' : '--log-dir', oldLogDir],
     { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
   check('dry-run preserves expired logs and creates no new log', preview.status === 0 &&
     readdirSync(oldLogDir).length === 1 && existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep historical log');

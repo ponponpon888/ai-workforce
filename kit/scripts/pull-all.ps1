@@ -38,7 +38,10 @@ param(
     [string] $LogDir = $(Join-Path $Root '_logs'),
 
     # Keep this many days of logs.
-    [int] $LogRetentionDays = 30
+    [int] $LogRetentionDays = 30,
+
+    # Preview local decisions without fetching or writing logs.
+    [switch] $DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -51,6 +54,7 @@ $ErrorActionPreference = 'Continue'
 # GIT_TERMINAL_PROMPT does not reach.
 $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
+if ($DryRun) { $env:GIT_OPTIONAL_LOCKS = '0' }
 
 # Validate before log creation, which otherwise creates a missing root too.
 if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
@@ -105,7 +109,7 @@ if ($hasSelection) {
 
 # --- logging ---------------------------------------------------------------
 
-if (-not (Test-Path -LiteralPath $LogDir)) {
+if (-not $DryRun -and -not (Test-Path -LiteralPath $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 }
 $logFile = Join-Path $LogDir ('pull-all_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -114,7 +118,9 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 function Write-Log([string] $Message, [string] $Color = 'Gray') {
     $line = '{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
     Write-Host $line -ForegroundColor $Color
-    [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+    if (-not $DryRun) {
+        [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+    }
 }
 
 # --- discovery -------------------------------------------------------------
@@ -182,6 +188,16 @@ foreach ($repo in $targets) {
     $head = (Invoke-Git $repo @('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD')).Output
     if ($head -match '^origin/(.+)$') { $default = $Matches[1] } else { $default = 'main' }
 
+    if ($DryRun) {
+        if ($branch -eq $default) {
+            Write-Log "$name : would pull --ff-only ($default)"
+        } else {
+            Write-Log "$name : would fetch origin $default and attempt local fast-forward (on '$branch')"
+        }
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'dry-run' }
+        continue
+    }
+
     if ($branch -eq $default) {
         $r = Invoke-Git $repo @('pull', '--ff-only')
         if ($r.ExitCode -eq 0) {
@@ -229,11 +245,14 @@ foreach ($repo in $targets) {
 Write-Log '--- summary ---'
 foreach ($s in $summary) { Write-Log ('{0,-28} {1}' -f $s.Repo, $s.Result) }
 
-Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction SilentlyContinue |
-    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogRetentionDays) } |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-
-Write-Log "done. log: $logFile"
+if (-not $DryRun) {
+    Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogRetentionDays) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Log "done. log: $logFile"
+} else {
+    Write-Log 'done. dry-run; no logs written.'
+}
 
 # Exit explicitly. Without this the script just ends, and $LASTEXITCODE is still
 # whatever the last `git` call returned -- non-zero for any repository that was

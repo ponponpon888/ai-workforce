@@ -15,6 +15,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { checkPullAuthentication } from './check-pull-auth-fixture.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -227,20 +228,14 @@ check(
   'feature commit still exists',
   existsSync(join(repos.featureBranch, 'feature.txt'))
 );
-// Unattended has to mean unattended. Asserted against the source of whichever
-// target is under test, because a script that stops to ask for credentials
-// blocks forever — there is no way to observe that from outside without
-// hanging the suite on the very failure it is meant to catch.
-const targetSource = readFileSync(
-  resolve(here, targetArg === 'ps' ? 'pull-all.ps1' : 'pull-all.mjs'),
-  'utf8'
-);
-check(
-  'credential prompts are disabled',
-  /GIT_TERMINAL_PROMPT\s*=\s*'0'/.test(targetSource) &&
-    /GCM_INTERACTIVE\s*=\s*'never'/.test(targetSource),
-  'must set GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never before any git call'
-);
+// Exercise actual HTTP authentication and observe the environment in Git's
+// credential helper. The fixture has a deadline so a regression cannot hang CI.
+try {
+  await checkPullAuthentication(targetArg, pwshExe);
+  check('HTTP authentication fails promptly with noninteractive Git settings', true);
+} catch (error) {
+  check('HTTP authentication fails promptly with noninteractive Git settings', false, error.message);
+}
 
 console.log('\ndestroys nothing:');
 check(

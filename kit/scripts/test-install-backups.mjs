@@ -156,3 +156,30 @@ for (const conflict of ['parent-file', 'destination-directory']) {
     assert.equal(existsSync(join(home, 'scripts')), false);
   }));
 }
+
+// Execute the installed settings commands, not the checkout's hook files.
+// tool_input is JSON data only; the psql/cat commands are never executed.
+for (const [name, command, expected] of [
+  ['destructive SQL', 'psql -c "drop table aiwf_test"', [2, 0]],
+  ['secret read', 'cat .env', [0, 2]],
+  ['read-only SQL', 'psql -c "select 1"', [0, 0]],
+  ['ordinary file read', 'cat README.md', [0, 0]],
+]) test(`installed settings wire ${name} correctly`, () => fixture(({ root, run }) => {
+  const home = join(root, 'home with spaces'); run(home);
+  const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+  const hooks = settings.hooks.PreToolUse
+    .filter(rule => new RegExp(`^(?:${rule.matcher})$`).test('Bash'))
+    .flatMap(rule => rule.hooks);
+  assert.equal(hooks.length, 2);
+  const payload = JSON.stringify({ session_id: 'installation-test', hook_event_name: 'PreToolUse', cwd: root, tool_name: 'Bash', tool_input: { command } });
+  for (let i = 0; i < hooks.length; i++) {
+    assert.equal(hooks[i].type, 'command');
+    const r = spawnSync(hooks[i].command, {
+      shell: true, cwd: root, input: payload, encoding: 'utf8', timeout: 10000,
+      env: { ...process.env, AIWF_APPROVAL_DIR: join(root, 'isolated-approvals') },
+    });
+    assert.equal(r.error, undefined);
+    assert.equal(r.status, expected[i], r.stderr);
+    if (expected[i] === 2) assert.match(r.stderr, i === 0 ? /\[guard-sql\]/ : /\[guard-secrets\]/);
+  }
+}));

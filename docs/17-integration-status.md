@@ -22,8 +22,8 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 
 ## 現在の統合版の検証結果
 
-検証対象コード: `8961b4171d6d4e1f1b8f5fec772467ab2b93527e`。
-Linux / Node v24.19.0 で全11スイートを再実行し、合計323件成功・失敗0件でした。
+検証対象コード: `81de706a1ac2970f2082e35021663097d5ceebb7`。
+Linux / Node v24.19.0 で全11スイートを再実行し、合計346件成功・失敗0件でした。
 この記録の更新は文書のみです。
 
 | スクリプト（`kit/scripts/`） | 成功数 |
@@ -35,12 +35,12 @@ Linux / Node v24.19.0 で全11スイートを再実行し、合計323件成功�
 | `test-install-backups.mjs` | 27 |
 | `test-installed-approval.mjs` | 1 |
 | `test-lint-pitfalls.mjs` | 38 |
-| `test-pull-all.mjs` | 47 |
+| `test-pull-all.mjs` | 67 |
 | `test-sql-boundaries.mjs` | 18 |
 | `test-validate-pitfalls.mjs` | 51 |
-| `test-verify-installers.mjs` | 6 |
+| `test-verify-installers.mjs` | 9 |
 
-テンプレートの doctor は `static-pass`。落とし穴の静的検査は5件成功・違反0・不明0で、7レコードは検査対象外です。
+前回の静的検証（`8961b417`）では、テンプレートの doctor は `static-pass`。落とし穴の静的検査は5件成功・違反0・不明0で、7レコードは検査対象外です。
 12レコードの形式検証、生成インデックスと保存済みデータの一致、文書の未完了マーカー0件を確認しました。
 静的検査は実行環境全体の安全性を証明するものではありません。
 
@@ -62,10 +62,10 @@ Linux / Node v24.19.0 で全11スイートを再実行し、合計323件成功�
 
 | 対象 | 状況 |
 |---|---|
-| Linux / Node | 上記323件成功 |
-| PowerShell 7 / Windows PowerShell 5.1 | 今回の統合コードは未実行。自動更新スイートは32項目の構成 |
+| Linux / Node | 上記346件成功 |
+| PowerShell 7 / Windows PowerShell 5.1 | 今回の統合コードは未実行。自動更新スイートは55項目の構成 |
 | macOS / Windows の Node | 今回の統合コードは未実行 |
-| GitHub Actions | run `34413819687` は18ジョブ・実行ステップ0件で失敗 |
+| GitHub Actions | run `34415839194` は18ジョブ・実行ステップ0件で失敗 |
 | Claude Code 本体 | 設定受理・設定優先順位・実際のフック接続は未検証 |
 | 素の Windows 環境 | 新規導入からの動作確認が未完了 |
 | 実プロジェクトの DB ロール | 未検証。対象 DB に変更は加えていない |
@@ -87,12 +87,14 @@ node kit/scripts/verify-installers.mjs --suite pull-all --json
 これら2コマンドはインストーラと自動更新の検証であり、SQL ガードなど全スイートをまとめた検証ではありません。
 PowerShell が利用できない Linux での実行は、Node 成功・PowerShell 未検証で終了コード2を確認済みです。
 
+以下は各変更時点の履歴です。現在の全体検証は上記346件を参照してください。
+
 ## 検証後の追加: 名前指定した更新先の確認
 
 Node の `--repos` が存在しない指定を黙って除外する問題を修正しました。
 指定先をすべて事前確認し、不正な対象があれば残りの更新も始めず終了コード1で停止します。
 変更後の pull-all スイートは Linux / Node で51件成功（4件追加）。
-上記323件は前回の全体検証で、今回の再実行は変更した pull-all が対象です。
+323件は当時の全体検証で、今回の再実行は変更した pull-all が対象です。
 PowerShell の `-Repos` は今回変更していません。
 
 ## 追加: PowerShell の名前指定も事前確認

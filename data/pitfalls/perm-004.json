@@ -24,6 +24,6 @@
     "message": "sc は Set-Content の別名だが、前方一致で sc.exe を巻き込む。Set-Content と書くこと。"
   },
 
-  "related": ["perm-001", "perm-002"],
+  "related": ["perm-001", "perm-002", "perm-005"],
   "tags": ["deny", "prefix-match", "alias", "windows"]
 }

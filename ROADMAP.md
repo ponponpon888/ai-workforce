@@ -36,10 +36,9 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       `rm -rfv /` を止めません（前方一致が単語の途中で切れないため）。
       `rm` ごと deny すれば止まりますが、`rm -rf ./dist` まで巻き込みます。
       塞ぐか、穴として書いて残すか
-- [ ] **公開前に、コミットのメールアドレスをもう一度確認する。** いまは
-      `244106608+ponponpon888@users.noreply.github.com` に統一済みですが、
-      `git config --global user.email` は個人のアドレスのままなので、
-      設定を忘れた状態でコミットすると混ざります
+- [x] **コミットのメールアドレスを統一した。** `git config` の local / global とも
+      `244106608+ponponpon888@users.noreply.github.com` です。ただし
+      **初期の 3 コミットには個人アドレスが残っています**。履歴は書き換えません
 - [x] **`deny` / `ask` を PowerShell 側にも書き分けた。** deny 7 行・ask 9 行を追加。
       エイリアスは名前解決されてから照合されるので、`PowerShell(Remove-Item:*)` の
       1 行で `rm` `del` `rd` `rmdir` `erase` `ri` が全部止まります
@@ -71,6 +70,13 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       `true` にしています
 - [ ] 前身リポジトリ `ai-workforce-os` のログ 14 ファイル（ログ 10・
       `.backup` / `.broken` 4）を削除する
+- [ ] **CI の全ジョブが数秒で落ちる状態の原因を確定させる。** 2026-09-09、PR #9 で
+      21 ジョブ全部が failure になりました。ジョブは作られるのに `steps` が空、
+      `runner_name` も空で、**変更を 1 行も含まない `main` を回しても同じ形**です。
+      コードでもワークフローの YAML でもありません。githubstatus.com に障害は出ておらず、
+      `actions/permissions` も `enabled` のままです。アカウント側の設定が候補ですが、
+      `billing` の確認には別のスコープが要るため未確認です。
+      観測は [`data/pitfalls/ci-001.json`](data/pitfalls/ci-001.json) に置きました
 - [ ] **`test-pull-all.mjs` がソース文字列を grep しています。** `GIT_TERMINAL_PROMPT` と
       `GCM_INTERACTIVE` の検査が、ソースにその文字列があることしか見ていません。
       [MUSUBU の事例](docs/case-studies/musubu.md)に「文字列の grep はテストでは

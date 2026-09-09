@@ -1,0 +1,40 @@
+{
+  "id": "ci-001",
+  "title": "CI の全ジョブが数秒で落ちたが、コードにもワークフローにも原因が無かった",
+  "summary": "PR #9 で 21 ジョブ全部が 2〜4 秒で failure になった。ジョブは作られるのに steps が空で runner_name も空——ランナーが割り当たる前に落ちている。変更を 1 行も含まない main を workflow_dispatch で回しても同じ形になるので、コードでもワークフローの YAML でもない。原因は未確定。候補はアカウント側の Actions の支出上限や支払い方法、リポジトリまたはアカウントに対する制限、GitHub 側の一時的な割り当て失敗のいずれかだが、どれも裏を取っていない。billing の確認には別の認可スコープが要るため未確認のまま。",
+  "layer": "ci",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "ROADMAP.md#v01-までに終わらせること",
+
+  "measured_on": "2026-09-09",
+  "environment": {
+    "os": "Windows 11 Pro 10.0.26200",
+    "shell": "bash",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "24.13.0"
+  },
+  "repro": [
+    "PR #9 の run 34301940944: 21 ジョブ全部が failure。所要 2〜4 秒。steps は空配列、runner_name も空文字列",
+    "触っていないジョブでも落ちるか: parse all scripts / no TODO left in docs / guard-sql (node) も同じ形で落ちた",
+    "再実行で変わるか: gh run rerun 34301940944 --failed → 21/21 が同じ形のまま",
+    "変更を含まない main でも落ちるか: gh workflow run test.yml --ref main → run 34302208624 で 20 ジョブ全部が同じ形で落ちた",
+    "直近の成功はいつか: main の run 34189086919（2026-09-08、PR #8 のマージ）が最後の成功",
+    "GitHub 側の障害か: githubstatus.com は All Systems Operational。Actions の未解決インシデントは出ていない",
+    "リポジトリ設定か: gh api repos/ponponpon888/ai-workforce/actions/permissions は {\"enabled\": true, \"allowed_actions\": \"all\"}",
+    "課金か: gh api users/ponponpon888/settings/billing/actions は user スコープが要るため未確認。スコープを増やす操作はしていない"
+  ],
+
+  "status": "untouched",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "CI 側の観測で、リポジトリの中身からは検査できない。同じ形が出たら、変更を含まない main を workflow_dispatch で回して、コード起因かどうかをまず切り分ける。"
+  },
+
+  "related": [],
+  "tags": ["github-actions", "runner", "unresolved", "not-our-code"]
+}

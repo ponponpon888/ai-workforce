@@ -15,6 +15,7 @@
 
 まず1つだけ試す場合は、[SQLガード単体の最小手順](docs/14-try-guard-sql.md)へ。
 既存設定を変更せず、データベースへの接続も不要です。
+既存設定がある場合は、[フックだけ取り込む手順](docs/16-merge-existing-settings.md)へ。
 導入後に戻す場合は、[復元手順](docs/15-restore-after-install.md)を参照してください。
 
 ## これは何か

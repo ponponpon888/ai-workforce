@@ -336,6 +336,18 @@ check('local branch lock is fail/update, not skip/diverged', /locked\s+fail\/upd
 check('local branch lock preserves checkout and main', head(lockedRepo) === lockedBefore &&
   shaOf(lockedRepo, 'main') === FIRST && branchOf(lockedRepo) === 'feat/locked');
 
+// Validate the root before creating the default log directory beneath it.
+for (const kind of ['missing', 'file']) {
+  const invalidPath = join(rootDir, `root-${kind}`);
+  if (kind === 'file') writeFileSync(invalidPath, 'keep root file');
+  const [rootExe, rootArgs] = invocation(invalidPath);
+  const result = spawnSync(rootExe, rootArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const unchanged = kind === 'missing' ? !existsSync(invalidPath)
+    : readFileSync(invalidPath, 'utf8') === 'keep root file';
+  check(`${kind} root fails before creating logs`, result.status === 1 && unchanged &&
+    ((result.stdout || '') + (result.stderr || '')).includes('Root must be an existing directory'));
+}
+
 // Node's CLI used to ignore misspellings and consume a following flag as a value.
 // PowerShell has a separate parameter binder; these cases target the Node CLI.
 if (targetArg !== 'ps') {

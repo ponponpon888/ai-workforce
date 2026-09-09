@@ -73,6 +73,15 @@ const retentionDays = Number(retentionText);
 const dryRun = options.has('--dry-run');
 const quiet = options.has('--quiet');
 
+// Check before mkdir(logDir): the default log directory is inside root,
+// so creating it first would silently create a misspelled/missing root too.
+try {
+  if (!statSync(root).isDirectory()) throw new Error('not a directory');
+} catch {
+  process.stderr.write('pull-all: Root must be an existing directory. Nothing was updated.\n');
+  process.exit(1);
+}
+
 // --- logging ----------------------------------------------------------------
 
 mkdirSync(logDir, { recursive: true });
@@ -103,10 +112,6 @@ function git(cwd, args) {
 
 if (spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) {
   log('git not found on PATH. Nothing to do.');
-  process.exit(1);
-}
-if (!existsSync(root)) {
-  log(`Root not found: ${root}`);
   process.exit(1);
 }
 

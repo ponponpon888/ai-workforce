@@ -52,6 +52,12 @@ $ErrorActionPreference = 'Continue'
 $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
 
+# Validate before log creation, which otherwise creates a missing root too.
+if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+    Write-Error 'Root must be an existing directory. Nothing was updated.'
+    exit 1
+}
+
 # --- logging ---------------------------------------------------------------
 
 if (-not (Test-Path -LiteralPath $LogDir)) {
@@ -81,10 +87,6 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (-not (Test-Path -LiteralPath $Root)) {
-    Write-Log "Root not found: $Root" 'Red'
-    exit 1
-}
 
 if ($Repos) {
     $targets = $Repos | ForEach-Object { Join-Path $Root $_ } | Where-Object { Test-Path -LiteralPath $_ }

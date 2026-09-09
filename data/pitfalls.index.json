@@ -6,12 +6,12 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 8,
+    "total": 9,
     "by_set": {
-      "pitfalls": 8
+      "pitfalls": 9
     },
     "by_confidence": {
-      "measured": 4,
+      "measured": 5,
       "inferred": 2,
       "documented": 1,
       "unverified": 1
@@ -19,26 +19,26 @@
     "by_status": {
       "closed": 3,
       "open_recorded": 1,
-      "untouched": 2,
+      "untouched": 3,
       "none": 2
     },
     "by_kind": {
-      "trap": 4,
+      "trap": 5,
       "limitation": 2,
       "behaviour": 2
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 1,
+      "hook": 2,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 3,
+      "unknown_version": 4,
       "ok": 1,
       "not_applicable": 4
     },
-    "without_prose": 0,
+    "without_prose": 1,
     "checkable": 2
   },
   "checks": [
@@ -104,6 +104,29 @@
         "guard-sql",
         "false-negative",
         "grammar"
+      ]
+    },
+    {
+      "id": "hook-002",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-002.json",
+      "title": "guard-sql はファイル経由で実行される SQL を 1 件も見ていない",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "untouched",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "hook-001"
+      ],
+      "tags": [
+        "guard-sql",
+        "false-negative",
+        "file-route"
       ]
     },
     {

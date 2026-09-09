@@ -83,6 +83,15 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       スタブと本物は機械から区別できません。形式に落ちるくらいなら、散文が無いことを
       レコードに言わせます。無料にはせず、インデックスが `has_prose` を派生させて
       `counts.without_prose` に数えます（[08](docs/08-pitfall-records.md)）
+- [ ] **`guard-sql` がファイル経由の SQL を 1 件も見ていません（`hook-002`）。**
+      読んでいるのはコマンド行の文字列だけなので、`psql -f x.sql` / `psql < x.sql` /
+      `cat x.sql | psql` / `psql -c '\i x.sql'` / `mysql db < dump.sql` /
+      `npx supabase db execute --file` が全部 ALLOW で返ります（2026-09-09 実測、
+      対照 2 件つき）。**Write で SQL ファイルを作る側にも検査が無い**ので、
+      書いてから流す 2 段で 3 層とも抜けます。塞ぎ方に判断が要ります —
+      参照先ファイルを読んで同じ文法で検査するか、ファイル経由の実行を
+      DDL と同じ承認トークン必須にするか。きっかけは
+      [他の人の突破テスト](https://qiita.com/dai_chi/items/8c351cf7812dd31b7767)
 - [ ] **`test-pull-all.mjs` がソース文字列を grep しています。** `GIT_TERMINAL_PROMPT` と
       `GCM_INTERACTIVE` の検査が、ソースにその文字列があることしか見ていません。
       [MUSUBU の事例](docs/case-studies/musubu.md)に「文字列の grep はテストでは
@@ -129,7 +138,8 @@ Actions の無料枠は 10/01 にリセットされます。枠が戻ったら�
 - `docs/` の残りの英訳（00 と 02 は済み）
 - **落とし穴のレコードを増やす。** docs を読み直して列挙した候補は 140 件
       （うちアプリ実装側が 38 件）でしたが、`data/pitfalls/` に入っているのは
-      **8 件だけ**です。残り 132 件は 1 件も入っていません。形は
+      **候補リスト由来が 8 件だけ**です（レコード総数は 9 件。`hook-002` は
+      候補リストにない、あとから測った観測）。残り 132 件は 1 件も入っていません。形は
       [08](docs/08-pitfall-records.md) で決まっているので、あとは埋める作業です
 - **他の人が報告した落とし穴を `data/pitfalls/` に受け入れる。** Issue の
       [pitfall テンプレート](.github/ISSUE_TEMPLATE/pitfall.yml)からレコードに

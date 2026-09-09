@@ -103,3 +103,13 @@ if (ps) test('declining backup prevents a later yes from overwriting that file',
   // Prove the confirmation driver proceeded to later files.
   assert.ok(readdirSync(home).some(n => n.startsWith('settings.json.bak.')));
 }));
+
+if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
+  test(`template preserves literal destination ${name}`, () => fixture(({ root, run }) => {
+    const home = join(root, name); run(home);
+    const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+    const commands = settings.hooks.PreToolUse.flatMap(rule => rule.hooks.map(h => h.command));
+    assert.ok(commands.includes(`node "${join(home, 'hooks', 'guard-sql.mjs')}"`));
+    assert.ok(commands.includes(`node "${join(home, 'hooks', 'guard-secrets.mjs')}"`));
+  }));
+}

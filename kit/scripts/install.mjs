@@ -127,17 +127,22 @@ install(
 
 console.log('3. settings.json');
 // JSON string value: escape backslashes and quotes.
-const forJson = (s) => s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+const forJson = (s) => JSON.stringify(s).slice(1, -1);
 
 if (skipSettings) {
   console.log('  skipped (--skip-settings). Add these PreToolUse hooks to your own settings.json:');
   console.log(`    ${hookCommand}`);
   console.log(`    ${secretsCommand}`);
 } else {
+  const replacements = {
+    CLAUDE_HOME: claudeHome.replaceAll('\\', '/'),
+    GUARD_SQL_COMMAND: hookCommand,
+    GUARD_SECRETS_COMMAND: secretsCommand,
+  };
+  // One pass; replacement values are literal data, never replacement syntax.
   const settings = readFileSync(join(srcClaude, 'settings.json'), 'utf8')
-    .replaceAll('{{CLAUDE_HOME}}', claudeHome.replaceAll('\\', '/'))
-    .replaceAll('{{GUARD_SQL_COMMAND}}', forJson(hookCommand))
-    .replaceAll('{{GUARD_SECRETS_COMMAND}}', forJson(secretsCommand));
+    .replace(/\{\{(CLAUDE_HOME|GUARD_SQL_COMMAND|GUARD_SECRETS_COMMAND)\}\}/g,
+      (_, key) => forJson(replacements[key]));
 
   // One deny rule is Windows-only. On Windows it is live, and wider than the
   // name suggests; anywhere else it is dead weight. Say which, rather than let

@@ -106,6 +106,15 @@ assert('PowerShell type', BLOCK, callHook('PowerShell', { command: 'type .env' }
 assert('PowerShell .NET read', BLOCK,
   callHook('PowerShell', { command: "[System.IO.File]::ReadAllText('.env')" }));
 
+// Native Windows executable names must retain reader detection.
+assert('git.exe show secret', BLOCK, callHook('PowerShell', { command: 'git.exe show HEAD:.env' }));
+assert('absolute git.exe path', BLOCK, callHook('PowerShell', { command: String.raw`C:\Tools\git.exe diff .env` }));
+assert('python.exe inline secret read', BLOCK,
+  callHook('PowerShell', { command: `python.exe -c "print(open('.env').read())"` }));
+assert('uppercase executable suffix', BLOCK, callHook('PowerShell', { command: 'CAT.EXE .env' }));
+assert('git.exe add allowed', ALLOW, callHook('PowerShell', { command: 'git.exe add .env' }));
+assert('cat.exe public template allowed', ALLOW, callHook('PowerShell', { command: 'cat.exe .env.example' }));
+
 // Windows path separators must retain the same secret classification.
 assert('Windows secrets config', BLOCK,
   callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\app\secrets\prod.yaml` }));

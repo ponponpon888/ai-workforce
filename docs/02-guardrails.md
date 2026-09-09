@@ -777,3 +777,7 @@ supabase で `select 1; drop table nothing;` を実行して
 `Get-Content C:\Dev\app\secrets\prod.yaml` や `.ssh\config` の読み取りも検出対象です。
 `secrets\README.md` や `secrets\masker.ts` など、既存の文書・ソースコードの例外は維持します。
 これはコマンド文字列の事故防止検査であり、シェルの全構文を解析するものではありません。
+
+秘密ファイルガードは、コマンド名末尾の `.exe`（大小文字を区別しない）を除いて読み取り操作を判定します。
+`git.exe show HEAD:.env` や `python.exe -c` による秘密ファイル読み取りも検出し、
+`git.exe add .env` と公開テンプレートの読み取りは引き続き許可します。

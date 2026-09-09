@@ -196,7 +196,7 @@ function Get-Leaf([string] $Token) {
     $parts = @($bare -split '[\\/]')
     $leaf = $parts[$parts.Count - 1]
     if (-not $leaf) { $leaf = $bare }
-    return $leaf.ToLowerInvariant()
+    return ($leaf.ToLowerInvariant() -replace '\.exe$', '')
 }
 
 # The command word of a segment: leading environment assignments and 'sudo' are

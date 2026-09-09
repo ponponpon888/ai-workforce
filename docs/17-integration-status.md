@@ -164,3 +164,9 @@ Linux で Windows PowerShell 5.1 を指定した場合は未検証・終了コ�
 `guard-secrets` の Node / PowerShell 両版で、パス区切りを統一してから秘密ファイルを判定します。
 Windows形式の secrets 配下の設定・.ssh 配下の読み取りを検出し、文書とソースコードの例外は維持しました。
 修正前に2ケースの検出漏れを再現。修正後の秘密ファイルガードは Linux / Node で55件成功。PowerShell 本体は未実行です。
+
+## 追加: 拡張子付き実行ファイルの秘密読み取り検出
+
+Node / PowerShell 両版で、読取コマンド判定時に `.exe` 接尾辞を正規化します。
+Git のサブコマンド検査にも適用し、show/diff と add の区別を維持しました。
+修正前に4ケースの検出漏れを再現し、修正後の Linux / Node は61件成功。PowerShell 本体は未実行です。

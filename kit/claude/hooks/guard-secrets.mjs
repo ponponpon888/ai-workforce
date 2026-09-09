@@ -167,7 +167,7 @@ function secretPathIn(text) {
 /** `"/usr/bin/cat"` is still `cat`. */
 function leafOf(token) {
   const bare = token.replace(/^['"]+|['"]+$/g, '');
-  return (bare.split(/[\\/]/).pop() || bare).toLowerCase();
+  return (bare.split(/[\\/]/).pop() || bare).toLowerCase().replace(/\.exe$/, '');
 }
 
 /**

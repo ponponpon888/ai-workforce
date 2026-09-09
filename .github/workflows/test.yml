@@ -260,6 +260,7 @@ jobs:
           node-version: 20
       - run: node kit/scripts/validate-pitfalls.mjs
       - run: node kit/scripts/test-validate-pitfalls.mjs
+      - run: node kit/scripts/test-lint-pitfalls.mjs
       # The index is a build product that is committed, so it can go stale without anyone
       # noticing -- a record added without regenerating it would leave a linter reading
       # yesterday's data while the records look right. Rebuild and require no diff.
@@ -275,6 +276,8 @@ jobs:
             exit 1
           fi
 
+      - run: node kit/scripts/lint-pitfalls.mjs
+
   todos:
     name: no TODO left in docs
     runs-on: ubuntu-latest
@@ -287,3 +290,4 @@ jobs:
             echo "::warning::TODO markers still present"
             exit 1
           fi
+

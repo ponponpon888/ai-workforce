@@ -56,6 +56,11 @@ $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
 if ($DryRun) { $env:GIT_OPTIONAL_LOCKS = '0' }
 
+if ($LogRetentionDays -lt 1) {
+    Write-Error 'LogRetentionDays must be a positive integer. Nothing was updated.'
+    exit 2
+}
+
 # Validate before log creation, which otherwise creates a missing root too.
 if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
     Write-Error 'Root must be an existing directory. Nothing was updated.'

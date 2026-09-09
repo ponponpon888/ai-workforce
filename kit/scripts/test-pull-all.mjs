@@ -444,6 +444,27 @@ for (const kind of ['file', 'parent-file']) {
     !existsSync(join(repo, '.git', 'FETCH_HEAD')));
 }
 
+// Bad retention values must not prune existing history or start updates.
+for (const retention of ['0', '-1']) {
+  const retentionRoot = join(rootDir, `repos-retention-${retention}`);
+  mkdirSync(retentionRoot);
+  git(retentionRoot, 'clone', '--quiet', originDir, 'ready');
+  const repo = join(retentionRoot, 'ready');
+  git(repo, 'reset', '--hard', FIRST); // fixture setup only
+  const logs = join(retentionRoot, '_logs');
+  mkdirSync(logs);
+  const oldLog = join(logs, 'pull-all_old.log');
+  writeFileSync(oldLog, 'keep history');
+  utimesSync(oldLog, new Date(0), new Date(0));
+  const [exe, args] = invocation(retentionRoot);
+  const result = spawnSync(exe, [...args, targetArg === 'ps' ? '-LogRetentionDays' : '--retention-days', retention],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check(`retention ${retention} preserves history and stops before updates`, result.status === 2 &&
+    /positive/.test((result.stdout || '') + (result.stderr || '')) && head(repo) === FIRST &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')) && readdirSync(logs).length === 1 &&
+    existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep history');
+}
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

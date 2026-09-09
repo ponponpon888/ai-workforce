@@ -139,6 +139,9 @@ jobs:
       # 5.1 leaves $PSCommandPath empty inside a param() default value when
       # [CmdletBinding()] is present, which crashed this suite before a single
       # test ran. 7.x populates it, so CI on pwsh alone never saw it.
+      - name: Installer backups on Windows PowerShell 5.1
+        shell: powershell
+        run: node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
       - name: Report the version actually in use
         shell: powershell
         run: $PSVersionTable.PSVersion
@@ -218,6 +221,10 @@ jobs:
       # Exiting 0 is not the same as having installed anything. Every file the
       # kit promises is checked by name, because a step that only asserts the
       # exit code passes just as happily when the installer writes nothing.
+      - name: Installer backup regression tests (node)
+        run: node kit/scripts/test-install-backups.mjs
+      - name: Installer backup regression tests (PowerShell)
+        run: node kit/scripts/test-install-backups.mjs --target ps
       - name: install.mjs into a throwaway home
         shell: bash
         run: |
@@ -287,3 +294,4 @@ jobs:
             echo "::warning::TODO markers still present"
             exit 1
           fi
+

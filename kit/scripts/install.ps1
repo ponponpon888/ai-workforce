@@ -65,9 +65,10 @@ function Install-File {
     }
 
     if (Test-Path -LiteralPath $Destination) {
-        $backup = "$Destination.bak.$stamp"
+        $backup = "$Destination.bak.$stamp.$([Guid]::NewGuid().ToString('N'))"
         if ($PSCmdlet.ShouldProcess($Destination, "back up to $(Split-Path $backup -Leaf)")) {
-            Copy-Item -LiteralPath $Destination -Destination $backup -Force
+            # Fail before writing the destination if a backup already exists.
+            [System.IO.File]::Copy($Destination, $backup, $false)
             Write-Step "backed up -> $backup"
         } else {
             Write-Step "would back up -> $backup"

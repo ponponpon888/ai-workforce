@@ -13,7 +13,8 @@
  *   node kit/scripts/install.mjs --lang en --skip-settings
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,10 +57,11 @@ function install(content, destination) {
   }
 
   if (existsSync(destination)) {
-    const backup = `${destination}.bak.${stamp}`;
+    const backup = `${destination}.bak.${stamp}.${randomUUID()}`;
     if (dryRun) console.log(`  would back up-> ${backup}`);
     else {
-      copyFileSync(destination, backup);
+      // Never overwrite an earlier backup, even if the name collides.
+      copyFileSync(destination, backup, constants.COPYFILE_EXCL);
       console.log(`  backed up    -> ${backup}`);
     }
   }

@@ -88,3 +88,39 @@ test('test target parser preserves explicit PowerShell executable paths', () => 
   const executable = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
   assert.deepEqual(parseTestTargetOptions(['--pwsh', executable, '--target', 'ps']), { target: 'ps', pwsh: executable });
 });
+
+test('selecting Node runs only Node and reports the limited coverage', () => fixture('process.exit(0);', ({ run }) => {
+  const r = run(['--target', 'node', '--json']);
+  assert.equal(r.status, 0);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.requested_target, 'node');
+  assert.deepEqual(report.selected_targets, ['node']);
+  assert.deepEqual(report.results.map(r => r.target), ['node']);
+  assert.equal(report.results[0].status, 'passed');
+  const text = run(['--target', 'node']);
+  assert.match(text.stdout, /selected targets: node/);
+  assert.match(text.stdout, /selected targets passed/);
+}));
+test('runtime selection composes with pull-all suite selection', () => fixture('process.exit(9);', ({ root, run }) => {
+  writeFileSync(join(root, 'test-pull-all.mjs'), 'process.exit(0);');
+  const r = run(['--suite', 'pull-all', '--target', 'node', '--json']);
+  assert.equal(r.status, 0);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.scope, 'pull-all-tests-on-this-machine');
+  assert.equal(report.results.length, 1);
+}));
+test('invalid runtime selections stop before executing any suite', () => fixture("import { writeFileSync } from 'node:fs'; writeFileSync(new URL('./ran', import.meta.url), 'ran');", ({ root, run }) => {
+  for (const args of [['--target'], ['--target', 'ps'], ['--target', ''], ['--target', 'node', '--target', 'all']]) {
+    const r = run(args);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /Usage:/);
+    assert.equal(existsSync(join(root, 'ran')), false);
+  }
+}));
+test('explicit all retains every runtime in the report', () => fixture('process.exit(0);', ({ run }) => {
+  const r = run(['--target', 'all', '--json']);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.requested_target, 'all');
+  assert.equal(report.selected_targets.length, 3);
+  assert.equal(report.results.length, 3);
+}));

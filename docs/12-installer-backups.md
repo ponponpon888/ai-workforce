@@ -103,3 +103,18 @@ PRのCIが開始前に失敗している場合も、これらの検証が成功�
 node kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
 node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
 ```
+
+## 実行環境を選んで検証
+
+検証ランナーの `--target` で `all`（既定）、`node`、`powershell-7`、`windows-powershell-5.1` を選べます。
+Windows PowerShell 5.1 の自動更新だけを検証する場合は次を実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite pull-all --target windows-powershell-5.1 --json
+```
+
+インストーラは `--suite installers` に変更します。Node.js は検証ランナーの実行に必要です。
+終了コード0は選択した対象の成功を示します。未選択の環境を検証済みにはしません。
+選択した環境が利用できない場合は `unverified` と終了コード2を返します。
+JSON の `requested_target` と `selected_targets`、通常表示の先頭行で検証範囲を確認できます。
+直接実行するテストスクリプトの `--target node|ps` とは指定名が異なります。

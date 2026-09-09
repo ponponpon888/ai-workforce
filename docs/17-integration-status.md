@@ -151,3 +151,10 @@ Linux / Node は67件成功。PowerShell 対象は55項目の構成ですが、�
 Node / PowerShell 両版で現在のブランチ取得結果を検査し、失敗時は `fail/branch` としてその対象の更新を止めます。
 実際のコミットのないリポジトリで、取得やブランチ作成に進まない共通検査3項目を追加しました。
 修正前は2項目失敗、変更後の Linux / Node は72件成功。PowerShell 対象は60項目の構成で、実行は未検証です。
+
+## 追加: 検証ランナーで実行環境を選択
+
+`verify-installers.mjs --target` を追加し、Node・PowerShell 7・Windows PowerShell 5.1 のいずれか、または全対象を選べます。
+結果には選択範囲を明記し、終了コード0は選択した対象についてのみ成功を意味します。
+検証ランナー13件成功。実スイートも `--suite pull-all --target node` で成功を確認しました。
+Linux で Windows PowerShell 5.1 を指定した場合は未検証・終了コード2でした。PowerShell 本体は未実行です。

@@ -390,7 +390,7 @@ if (targetArg !== 'ps') {
     readFileSync(join(previewRepo, 'a.txt'), 'utf8') === 'one\n' && /would pull/.test(preview.stdout));
 }
 
-if (targetArg !== 'ps') {
+{
   const selectionRoot = join(rootDir, 'repos-selection');
   mkdirSync(selectionRoot);
   git(selectionRoot, 'clone', '--quiet', originDir, 'valid');
@@ -398,15 +398,24 @@ if (targetArg !== 'ps') {
   git(validRepo, 'reset', '--hard', FIRST); // fixture setup only
   mkdirSync(join(selectionRoot, 'ordinary'));
   mkdirSync(join(selectionRoot, 'broken', '.git'), { recursive: true });
+  function runSelection(names) {
+    if (targetArg !== 'ps') return spawnSync(process.execPath,
+      [resolve(here, 'pull-all.mjs'), '--root', selectionRoot, '--repos', names.join(',')],
+      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    // -File does not reliably bind multiple string[] values across PS versions.
+    // A literal wrapper exercises the native array parameter without shell parsing.
+    const quote = value => "'" + value.replaceAll("'", "''") + "'";
+    const wrapper = join(rootDir, 'select-repos.ps1');
+    writeFileSync(wrapper, '\uFEFF' + `& ${quote(resolve(here, 'pull-all.ps1'))} -Root ${quote(selectionRoot)} -Repos @(${names.map(quote).join(',')})\nexit $LASTEXITCODE\n`, 'utf8');
+    return spawnSync(pwshExe, ['-NoProfile', '-File', wrapper], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  }
   for (const name of ['missing', 'ordinary', 'broken']) {
-    const r = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', selectionRoot,
-      '--repos', `valid,${name}`], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    const r = runSelection(['valid', name]);
     check(`explicit ${name} target stops the batch before updates`, r.status === 1 &&
-      /Invalid requested repository/.test(r.stderr) && head(validRepo) === FIRST &&
+      /Invalid requested repository/.test((r.stdout || '') + (r.stderr || '')) && head(validRepo) === FIRST &&
       !existsSync(join(selectionRoot, '_logs')));
   }
-  const selected = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', selectionRoot,
-    '--repos', 'valid'], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const selected = runSelection(['valid']);
   check('valid explicit target still updates', selected.status === 0 && head(validRepo) === SECOND);
 }
 

@@ -58,6 +58,51 @@ if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
     exit 1
 }
 
+function Invoke-Git([string] $RepoPath, [string[]] $GitArgs) {
+    $output = & git -C $RepoPath @GitArgs 2>&1
+    return [pscustomobject]@{
+        ExitCode = $LASTEXITCODE
+        Output   = ($output | Out-String).Trim()
+    }
+}
+
+# Explicit selections are checked together before any log or update is written.
+$hasSelection = $PSBoundParameters.ContainsKey('Repos')
+$requestedTargets = @()
+if ($hasSelection) {
+    if (-not $Repos -or $Repos.Count -eq 0) {
+        Write-Error 'Repos must contain direct child directory names.'
+        exit 2
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Error 'git not found on PATH. Nothing to do.'
+        exit 1
+    }
+    foreach ($entry in $Repos) {
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            Write-Error 'Repos must contain direct child directory names.'
+            exit 2
+        }
+        $repoName = $entry.Trim()
+        if ($repoName -eq '.' -or $repoName -eq '..' -or $repoName -match '[/\\:]') {
+            Write-Error 'Repos must contain direct child directory names.'
+            exit 2
+        }
+        $target = Join-Path $Root $repoName
+        $valid = (Test-Path -LiteralPath $target -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $target '.git'))
+        if ($valid) {
+            $probe = Invoke-Git $target @('rev-parse', '--absolute-git-dir')
+            $valid = $probe.ExitCode -eq 0
+        }
+        if (-not $valid) {
+            Write-Error "Invalid requested repository: $repoName. Nothing was updated."
+            exit 1
+        }
+        if ($requestedTargets -cnotcontains $target) { $requestedTargets += $target }
+    }
+}
+
 # --- logging ---------------------------------------------------------------
 
 if (-not (Test-Path -LiteralPath $LogDir)) {
@@ -72,14 +117,6 @@ function Write-Log([string] $Message, [string] $Color = 'Gray') {
     [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
 }
 
-function Invoke-Git([string] $RepoPath, [string[]] $GitArgs) {
-    $output = & git -C $RepoPath @GitArgs 2>&1
-    return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Output   = ($output | Out-String).Trim()
-    }
-}
-
 # --- discovery -------------------------------------------------------------
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -88,8 +125,8 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 
-if ($Repos) {
-    $targets = $Repos | ForEach-Object { Join-Path $Root $_ } | Where-Object { Test-Path -LiteralPath $_ }
+if ($hasSelection) {
+    $targets = $requestedTargets
 } else {
     $targets = Get-ChildItem -LiteralPath $Root -Directory |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |

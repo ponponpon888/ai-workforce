@@ -77,6 +77,12 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       経緯は [02](docs/02-guardrails.md)、記録は
       [`data/pitfalls/ci-001.json`](data/pitfalls/ci-001.json)。
       **設定そのものは、Actions が再び動くまで回せていません**
+- [x] **散文がまだ無い観測をどう受けるか決めた。** `origin` に 3 つの形を許します
+      — `<path>#<anchor>`（散文がある）/ `issue:<番号>`（報告が出所）/ `record`
+      （このレコードが初出）。**「散文が先」は 3 行のスタブで満たせてしまう規則**で、
+      スタブと本物は機械から区別できません。形式に落ちるくらいなら、散文が無いことを
+      レコードに言わせます。無料にはせず、インデックスが `has_prose` を派生させて
+      `counts.without_prose` に数えます（[08](docs/08-pitfall-records.md)）
 - [ ] **`test-pull-all.mjs` がソース文字列を grep しています。** `GIT_TERMINAL_PROMPT` と
       `GCM_INTERACTIVE` の検査が、ソースにその文字列があることしか見ていません。
       [MUSUBU の事例](docs/case-studies/musubu.md)に「文字列の grep はテストでは
@@ -123,21 +129,13 @@ Actions の無料枠は 10/01 にリセットされます。枠が戻ったら�
 - `docs/` の残りの英訳（00 と 02 は済み）
 - **落とし穴のレコードを増やす。** docs を読み直して列挙した候補は 140 件
       （うちアプリ実装側が 38 件）でしたが、`data/pitfalls/` に入っているのは
-      **6 件だけ**です。残り 134 件は 1 件も入っていません。形は
+      **8 件だけ**です。残り 132 件は 1 件も入っていません。形は
       [08](docs/08-pitfall-records.md) で決まっているので、あとは埋める作業です
 - **他の人が報告した落とし穴を `data/pitfalls/` に受け入れる。** Issue の
       [pitfall テンプレート](.github/ISSUE_TEMPLATE/pitfall.yml)からレコードに
       落とすまでの動線がまだ書かれていません（旧「`docs/pitfalls/` を作る」項目は
-      `data/pitfalls/` に統合しました）
-- **レコード発の観測を、どう受けるか決める。** `origin` はファイルと見出しアンカーの
-      実在を要求します（[08](docs/08-pitfall-records.md) の R13 / R14）。散文がまだ
-      無い観測をレコードにするには、**先に docs 側を書き足す必要がある**わけです。
-      `ci-001` がその形でした。観測をそのままレコードにできず、[02](docs/02-guardrails.md)
-      に節を書いてから `origin` の宛先にしています。
-      他の人が Issue から 1 件足すときにも同じ負担が出ます。候補は 2 つで、
-      `origin` を任意にして「このレコード自身が一次記録」を表せるようにするか、
-      レコード発の観測を受ける docs を 1 本用意するか。**どちらにするかはまだ
-      決めていません**
+      `data/pitfalls/` に統合しました）。`origin: "issue:<番号>"` が使えるように
+      なったので、**docs を先に書かずにレコードだけ足せます**
 - **`data/pitfalls.index.json` の `checks` を実際に回す linter。** いま `checks` には
       2 件入っていますが、**それを検査するものがありません**。データの形だけが先に
       あります。`expect: present` / `absent` を見て対象ファイルを検査するだけの

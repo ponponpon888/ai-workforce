@@ -224,6 +224,12 @@ accepts('_ files are not records', {
 });
 // The control for the claim gate below. Without it the gate could be a blanket ban on the
 // word and every rejection would still pass.
+// The two shapes that say "no prose exists for this yet". "issue:42" is the one that has to
+// keep working: it ends in a colon and digits, which is also what a line number looks like.
+accepts('origin is an issue reference', f(measuredOpen(), { origin: 'issue:42' }));
+accepts('origin is "record" -- this file is where it was first written down',
+  f(measuredOpen(), { origin: 'record' }));
+
 accepts('claim gate allows 実測 on a measured record',
   f(measuredOpen(), { summary: '実測した。前方一致は単語の途中では切れない。' }));
 
@@ -270,6 +276,14 @@ rejects('origin uses a colon line number', 'R13',
   f(measuredOpen(), { origin: 'docs/02-guardrails.md:78' }));
 rejects('origin anchor is not a heading in that file', 'R14',
   f(measuredOpen(), { origin: 'docs/02-guardrails.md#no-such-heading-here' }));
+// A near miss on a prefixed shape has to name that shape. Falling through to the prose branch
+// would report "issue:0" as a line number, which sends the reader looking in the wrong place.
+rejects('origin issue reference has no number', 'R13',
+  f(measuredOpen(), { origin: 'issue:abc' }));
+rejects('origin issue reference is issue:0', 'R13',
+  f(measuredOpen(), { origin: 'issue:0' }));
+rejects('origin is a bare word that is not one of the shapes', 'R13',
+  f(measuredOpen(), { origin: 'unwritten' }));
 rejects('checkable detection without a pattern', 'R15',
   f(measuredClosed(), { detection: { checkable: true, kind: 'file-content', target: 'kit/claude/hooks/guard-sql.mjs', expect: 'present' } }));
 rejects('checkable detection without an expect polarity', 'R15',

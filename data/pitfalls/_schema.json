@@ -95,10 +95,55 @@
 
   "origin": {
     "$comment": [
-      "<repo-relative path>#<heading anchor>. Never a line number: line numbers rot silently.",
-      "The anchor is the GitHub-style slug of a heading that must exist in that file."
+      "Where this pitfall is written down. Three shapes, matched in the order listed.",
+      "",
+      "The prose shape is <repo-relative path>#<heading anchor>, and both the file and the",
+      "anchor must exist. Never a line number: line numbers rot silently.",
+      "",
+      "The other two shapes exist because \"prose first\" is a rule that can be satisfied by a",
+      "three-line stub heading, and a stub is indistinguishable from real prose to a machine.",
+      "Rather than let the rule decay into a formality -- and push the documentation to grow",
+      "stubs -- a record may say outright that no prose exists yet. Neither shape is a free",
+      "pass: has_prose is derived from the shape and counted in the index, so the number of",
+      "pitfalls that live only as data is visible instead of hidden.",
+      "",
+      "Order matters. \"issue:42\" ends in digits after a colon and line_number_patterns would",
+      "otherwise read it as a line number, so the shapes are matched first and the line-number",
+      "check applies to the prose shape only.",
+      "",
+      "A shape with no \"pattern\" is the fallback and must come last. \"prefix\" is optional and",
+      "only makes a near-miss report itself instead of falling through to the prose shape."
+    ],
+    "shapes": [
+      {
+        "name": "issue",
+        "prefix": "issue:",
+        "pattern": "^issue:[1-9][0-9]*$",
+        "has_prose": false,
+        "$comment": "A report is the source. The number is an issue number in this repository."
+      },
+      {
+        "name": "record",
+        "pattern": "^record$",
+        "has_prose": false,
+        "$comment": "This record is the first place it was written down. No prose exists yet."
+      },
+      {
+        "name": "prose",
+        "has_prose": true,
+        "$comment": "<repo-relative path>#<heading anchor>. The fallback shape."
+      }
     ],
     "line_number_patterns": ["#L[0-9]+$", ":[0-9]+$"]
+  },
+
+  "has_prose": {
+    "$comment": [
+      "Derived at index build time from the shape of origin. Never stored in a record.",
+      "false means the pitfall exists as data and nowhere in the documentation yet. That is",
+      "not an error, and it is not a backlog item on its own. It is the number to watch: if",
+      "it only ever grows, the documentation has stopped following the data."
+    ]
   },
 
   "stale_risk": {
@@ -130,8 +175,8 @@
     { "id": "R10", "what": "status==closed requires fix; status==open_recorded requires why_not_closed" },
     { "id": "R11", "what": "claim gate: measurement words only on a measured record" },
     { "id": "R12", "what": "every id in related exists" },
-    { "id": "R13", "what": "the origin file exists and the origin is not a line number" },
-    { "id": "R14", "what": "the origin anchor matches a heading that exists in that file" },
+    { "id": "R13", "what": "origin matches a known shape; the prose shape needs a real file and no line number" },
+    { "id": "R14", "what": "the origin anchor matches a heading that exists in that file (prose shape only)" },
     { "id": "R15", "what": "detection.checkable==true requires target and pattern" },
     { "id": "R16", "what": "measured_on is a real date (YYYY-MM-DD). \"unrecorded\" is not accepted" },
     { "id": "R17", "what": "the file parses as JSON and holds a JSON object" },

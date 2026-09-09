@@ -206,9 +206,35 @@ function checkClaimGate(record, file) {
   }
 }
 
+/**
+ * Which shape an origin is, by the schema's ordered list. A shape with no pattern is the
+ * fallback and comes last, so this never returns undefined for a well-formed schema.
+ */
+const originShapes = schema.origin.shapes;
+const shapeOf = (origin) => originShapes.find((s) => !s.pattern || new RegExp(s.pattern).test(origin));
+const shapeList = originShapes
+  .map((s) => (s.name === 'prose' ? '<path>#<heading anchor>' : `"${s.pattern.replace(/[$^]/g, '')}"`))
+  .join(', ');
+
 function checkOrigin(record, file) {
   const origin = record.origin;
   if (typeof origin !== 'string') return;
+
+  const shape = shapeOf(origin);
+
+  // issue:<n> and record say outright that no prose exists for this pitfall yet. There is no
+  // file to open, so there is nothing further to check here -- the index counts them instead.
+  if (shape && !shape.has_prose) return;
+
+  // A near miss on a prefixed shape ("issue:0", "issue:abc") would otherwise fall through to
+  // the prose branch and be reported as a bad path, or worse, as a line number: ":0" matches
+  // line_number_patterns. Report what the writer was actually reaching for.
+  for (const candidate of originShapes) {
+    if (candidate.prefix && origin.startsWith(candidate.prefix)) {
+      err(file, 'R13', `origin "${origin}" looks like the "${candidate.name}" shape but does not match ${candidate.pattern}`);
+      return;
+    }
+  }
 
   for (const pattern of schema.origin.line_number_patterns) {
     if (new RegExp(pattern).test(origin)) {
@@ -219,7 +245,7 @@ function checkOrigin(record, file) {
 
   const hash = origin.indexOf('#');
   if (hash <= 0 || hash === origin.length - 1) {
-    err(file, 'R13', `origin "${origin}" must be <path>#<heading anchor>`);
+    err(file, 'R13', `origin "${origin}" must be one of: ${shapeList}`);
     return;
   }
 

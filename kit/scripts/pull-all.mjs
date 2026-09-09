@@ -40,21 +40,38 @@ process.env.GCM_INTERACTIVE = 'never';
 // --- arguments --------------------------------------------------------------
 
 const argv = process.argv.slice(2);
-const flag = (f) => argv.includes(f);
-const opt = (f, d) => {
-  const i = argv.indexOf(f);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : d;
-};
-
-const root = resolve(opt('--root', join(homedir(), 'Dev')).replace(/^~(?=$|[/\\])/, homedir()));
-const only = opt('--repos', '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const logDir = resolve(opt('--log-dir', join(root, '_logs')));
-const retentionDays = Number(opt('--retention-days', '30'));
-const dryRun = flag('--dry-run');
-const quiet = flag('--quiet');
+const switches = new Set(['--dry-run', '--quiet']);
+const values = new Set(['--root', '--repos', '--log-dir', '--retention-days']);
+const options = new Map();
+function usageError(message) {
+  process.stderr.write(`pull-all: ${message}\n`);
+  process.exit(2);
+}
+for (let i = 0; i < argv.length; i++) {
+  const key = argv[i];
+  if (!switches.has(key) && !values.has(key)) usageError('unknown option or positional argument');
+  if (options.has(key)) usageError(`duplicate option: ${key}`);
+  if (switches.has(key)) {
+    options.set(key, true);
+  } else {
+    const value = argv[++i];
+    if (!value || !value.trim() || value.startsWith('--')) usageError(`missing value: ${key}`);
+    options.set(key, value);
+  }
+}
+const root = resolve((options.get('--root') ?? join(homedir(), 'Dev')).replace(/^~(?=$|[/\\])/, homedir()));
+const only = options.has('--repos') ? options.get('--repos').split(',').map(s => s.trim()) : [];
+if (only.some(name => !name || name === '.' || name === '..' || /[/\\:]/.test(name))) {
+  usageError('--repos must contain direct child directory names separated by commas');
+}
+const retentionText = options.get('--retention-days') ?? '30';
+if (!/^\d+$/.test(retentionText) || !Number.isSafeInteger(Number(retentionText)) || Number(retentionText) < 1) {
+  usageError('--retention-days must be a positive safe integer');
+}
+const logDir = resolve(options.get('--log-dir') ?? join(root, '_logs'));
+const retentionDays = Number(retentionText);
+const dryRun = options.has('--dry-run');
+const quiet = options.has('--quiet');
 
 // --- logging ----------------------------------------------------------------
 

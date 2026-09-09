@@ -336,6 +336,30 @@ check('local branch lock is fail/update, not skip/diverged', /locked\s+fail\/upd
 check('local branch lock preserves checkout and main', head(lockedRepo) === lockedBefore &&
   shaOf(lockedRepo, 'main') === FIRST && branchOf(lockedRepo) === 'feat/locked');
 
+// Node's CLI used to ignore misspellings and consume a following flag as a value.
+// PowerShell has a separate parameter binder; these cases target the Node CLI.
+if (targetArg !== 'ps') {
+  const invalidRoot = join(rootDir, 'invalid-cli-root');
+  for (const [name, extra] of [
+    ['unknown option', ['--quite']],
+    ['missing value', ['--log-dir']],
+    ['following flag as value', ['--log-dir', '--quiet']],
+    ['empty value', ['--log-dir', '']],
+    ['duplicate root', ['--root', invalidRoot]],
+    ['positional argument', ['unexpected']],
+    ['invalid retention', ['--retention-days', 'NaN']],
+    ['negative retention', ['--retention-days', '-1']],
+    ['zero retention', ['--retention-days', '0']],
+    ['fractional retention', ['--retention-days', '1.5']],
+    ['empty repository entry', ['--repos', 'api,']],
+    ['repository traversal', ['--repos', '../outside']],
+  ]) {
+    const bad = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', invalidRoot, ...extra],
+      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    check(`invalid CLI ${name} stops before writes`, bad.status === 2 && !existsSync(invalidRoot));
+  }
+}
+
 rmSync(rootDir, { recursive: true, force: true });
 
 console.log(`\npass: ${pass}   fail: ${fail}\n`);

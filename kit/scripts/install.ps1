@@ -194,7 +194,26 @@ if ($SkipSettings) {
     }
 }
 
-# All selected sources have been read before the first write.
+# Reject layout conflicts before updating even the first file.
+foreach ($entry in $pending) {
+    if ((Test-Path -LiteralPath $entry.Destination) -and
+        -not (Test-Path -LiteralPath $entry.Destination -PathType Leaf)) {
+        throw "install: destination is not a file: $($entry.Destination)"
+    }
+    $parent = Split-Path -Parent $entry.Destination
+    while ($parent) {
+        if (Test-Path -LiteralPath $parent) {
+            if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+                throw "install: parent is not a directory: $parent"
+            }
+            break
+        }
+        $next = Split-Path -Parent $parent
+        if ($next -eq $parent) { break }
+        $parent = $next
+    }
+}
+# All selected sources and destination shapes are checked before the first write.
 foreach ($entry in $pending) {
     Write-InstalledFile -Content $entry.Content -Destination $entry.Destination
 }

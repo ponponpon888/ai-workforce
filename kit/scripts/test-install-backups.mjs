@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync, utimesSync, cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, statSync, utimesSync, cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,3 +139,20 @@ test('only changed file gets backed up', () => fixture(({ root, run }) => {
   assert.equal(readFileSync(join(home, backups[0]), 'utf8'), 'custom instructions');
   for (const dir of ['hooks', 'scripts']) assert.equal(readdirSync(join(home, dir)).some(n => n.includes('.bak.')), false);
 }));
+
+for (const conflict of ['parent-file', 'destination-directory']) {
+  test(`preflight rejects ${conflict} before changing earlier files`, () => fixture(({ root }) => {
+    const home = join(root, 'home'); mkdirSync(home);
+    writeFileSync(join(home, 'CLAUDE.md'), 'keep original');
+    if (conflict === 'parent-file') writeFileSync(join(home, 'hooks'), 'keep obstruction');
+    else mkdirSync(join(home, 'settings.json'));
+    const r = ps
+      ? spawnSync(shell, ['-NoProfile', '-File', installer, '-ClaudeHome', home], { encoding: 'utf8' })
+      : spawnSync(process.execPath, [installer, '--claude-home', home], { encoding: 'utf8' });
+    assert.equal(r.error, undefined);
+    assert.notEqual(r.status, 0);
+    assert.equal(readFileSync(join(home, 'CLAUDE.md'), 'utf8'), 'keep original');
+    assert.equal(readdirSync(home).some(n => n.includes('.bak.')), false);
+    assert.equal(existsSync(join(home, 'scripts')), false);
+  }));
+}

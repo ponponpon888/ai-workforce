@@ -13,7 +13,7 @@
  *   node kit/scripts/install.mjs --lang en --skip-settings
  */
 
-import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { statSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -163,7 +163,23 @@ if (skipSettings) {
   }
 }
 
-// All selected sources are read and settings are parsed before the first write.
+// Check every selected destination before updating even the first file.
+for (const { destination } of pending) {
+  if (existsSync(destination) && !statSync(destination).isFile()) {
+    throw Error(`install: destination is not a file: ${destination}`);
+  }
+  let parent = dirname(destination);
+  while (true) {
+    if (existsSync(parent)) {
+      if (!statSync(parent).isDirectory()) throw Error(`install: parent is not a directory: ${parent}`);
+      break;
+    }
+    const next = dirname(parent);
+    if (next === parent) break;
+    parent = next;
+  }
+}
+// All selected sources and destination shapes are checked before the first write.
 for (const entry of pending) writeInstalledFile(entry.content, entry.destination);
 
 // --- 4. what is left to do by hand -----------------------------------------

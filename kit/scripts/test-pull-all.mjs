@@ -352,6 +352,42 @@ check('status failure leaves index, commit and work intact', head(corruptRepo) =
   readFileSync(join(corruptRepo, 'a.txt'), 'utf8') === 'one\ntwo\n' &&
   !existsSync(join(corruptRepo, '.git', 'FETCH_HEAD')));
 
+// A resolved-to-HEAD revert can look clean while the operation is unfinished.
+// The sequencer fixture separately represents a paused multi-commit operation.
+for (const operation of ['revert', 'sequencer']) {
+  const busyRoot = join(rootDir, `repos-${operation}`);
+  mkdirSync(busyRoot);
+  git(busyRoot, 'clone', '--quiet', originDir, 'busy');
+  const busyRepo = join(busyRoot, 'busy');
+  const marker = join(busyRepo, '.git', operation === 'revert' ? 'REVERT_HEAD' : 'sequencer');
+  if (operation === 'revert') {
+    writeFileSync(join(busyRepo, 'a.txt'), 'changed after second\n');
+    git(busyRepo, 'commit', '-am', 'conflicting later change');
+    const reverted = git(busyRepo, 'revert', '--no-edit', SECOND);
+    if (reverted.code === 0 || !existsSync(marker)) throw new Error('Revert fixture did not conflict');
+    git(busyRepo, 'restore', '--source=HEAD', '--staged', '--worktree', 'a.txt');
+  } else {
+    git(busyRepo, 'reset', '--hard', FIRST); // fixture setup only
+    mkdirSync(marker);
+    writeFileSync(join(marker, 'todo'), `pick ${SECOND} second\n`);
+  }
+  const status = git(busyRepo, 'status', '--porcelain');
+  if (status.code !== 0 || status.out) throw new Error('Busy fixture must have a clean working tree');
+  const before = head(busyRepo);
+  const contents = readFileSync(join(busyRepo, 'a.txt'));
+  const markerFile = operation === 'revert' ? marker : join(marker, 'todo');
+  const markerContents = readFileSync(markerFile);
+  const [exe, args] = invocation(busyRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(busyRoot, '_logs')).map(name =>
+    readFileSync(join(busyRoot, '_logs', name), 'utf8')).join('\n');
+  check(`${operation} with clean work tree is reported as in progress`, result.status === 0 && /busy\s+skip\/in-progress/.test(logs));
+  check(`${operation} leaves commits and work untouched`, head(busyRepo) === before &&
+    readFileSync(join(busyRepo, 'a.txt')).equals(contents));
+  check(`${operation} preserves operation state without fetching`, existsSync(markerFile) &&
+    readFileSync(markerFile).equals(markerContents) && !existsSync(join(busyRepo, '.git', 'FETCH_HEAD')));
+}
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

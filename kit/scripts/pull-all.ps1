@@ -156,7 +156,7 @@ foreach ($repo in $targets) {
     $gitDir = $gitDirResult.Output
 
     # --- refuse to act on anything mid-operation ---------------------------
-    $inProgress = @('rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'BISECT_LOG') |
+    $inProgress = @('rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'BISECT_LOG') |
         Where-Object { Test-Path -LiteralPath (Join-Path $gitDir $_) }
 
     if ($inProgress) {

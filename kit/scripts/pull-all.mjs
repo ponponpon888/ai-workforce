@@ -145,7 +145,7 @@ log(`pull-all start  root=${root}  repos=${targets.length}${dryRun ? '  (dry run
 
 // --- the work ---------------------------------------------------------------
 
-const IN_PROGRESS = ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'BISECT_LOG'];
+const IN_PROGRESS = ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'BISECT_LOG'];
 const summary = [];
 
 for (const repo of targets) {

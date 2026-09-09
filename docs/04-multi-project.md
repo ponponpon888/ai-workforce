@@ -32,7 +32,7 @@
 | 状態 | 動作 |
 |---|---|
 | 作業ツリーが汚れている | **スキップ**。何もしない |
-| rebase / merge / cherry-pick / bisect の途中 | **スキップ** |
+| rebase / merge / cherry-pick / revert / sequencer / bisect の途中 | **スキップ** |
 | detached HEAD | **スキップ** |
 | デフォルトブランチにいて clean | `git pull --ff-only` |
 | 作業ブランチにいる | `git fetch origin main:main` |
@@ -222,3 +222,10 @@ Git が管理ディレクトリを解決できることを、ログ作成・更�
 これは更新の事前確認で、通信失敗時の一括ロールバックやパス変更の競合を防ぐ仕組みではありません。
 PowerShell 版の `-Repos` にも同じ事前確認を追加しました。PowerShell では `-Repos api,web` のように配列として指定します。空の名前やパス区切りを含む指定は拒否します。PowerShell 本体での実行は未検証です。
 Linux / Node の変更後テストは51件成功しました。
+
+## 作業ツリーがきれいでも操作途中なら停止
+
+`REVERT_HEAD` または `sequencer` が残っているリポジトリも `skip/in-progress` としてスキップします。
+競合を解消した後など、差分がなくても Git の操作が完了していない場合があります。
+自動更新はその状態を削除せず、取得やブランチ更新も行いません。
+実際に競合させた revert を HEAD と同じ内容に戻したケースと、sequencer 状態を配置したケースを共通テストへ追加しました。

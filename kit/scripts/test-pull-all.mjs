@@ -423,6 +423,27 @@ for (const hidden of ['untracked', 'submodule']) {
     !existsSync(join(repo, '.git', 'FETCH_HEAD')));
 }
 
+// Invalid log destinations must stop before updating otherwise eligible repos.
+for (const kind of ['file', 'parent-file']) {
+  const logRoot = join(rootDir, `repos-log-${kind}`);
+  mkdirSync(logRoot);
+  git(logRoot, 'clone', '--quiet', originDir, 'ready');
+  const repo = join(logRoot, 'ready');
+  git(repo, 'reset', '--hard', FIRST); // fixture setup only
+  const blocker = join(rootDir, `log-blocker-${kind}`);
+  writeFileSync(blocker, 'keep existing file');
+  const destination = kind === 'file' ? blocker : join(blocker, 'logs');
+  const [exe, args] = invocation(logRoot);
+  const result = spawnSync(exe, [...args, targetArg === 'ps' ? '-LogDir' : '--log-dir', destination],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check(`log ${kind} failure is reported with exit 1`, result.status === 1 &&
+    /Cannot (create log directory|write log)/.test((result.stdout || '') + (result.stderr || '')));
+  check(`log ${kind} failure stops before updating`, head(repo) === FIRST &&
+    readFileSync(join(repo, 'a.txt'), 'utf8') === 'one\n' &&
+    readFileSync(blocker, 'utf8') === 'keep existing file' &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')));
+}
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

@@ -100,7 +100,13 @@ for (const target of requestedTargets) {
 
 // --- logging ----------------------------------------------------------------
 
-if (!dryRun) mkdirSync(logDir, { recursive: true });
+if (!dryRun) {
+  try { mkdirSync(logDir, { recursive: true }); }
+  catch {
+    process.stderr.write('pull-all: Cannot create log directory. Stopping.\n');
+    process.exit(1);
+  }
+}
 const logFile = join(
   logDir,
   `pull-all_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.log`
@@ -113,7 +119,8 @@ function log(message) {
   try {
     appendFileSync(logFile, line + '\n', 'utf8');
   } catch {
-    /* logging must never be the thing that fails the run */
+    process.stderr.write('pull-all: Cannot write log. Stopping.\n');
+    process.exit(1);
   }
 }
 

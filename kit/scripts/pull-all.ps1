@@ -110,7 +110,12 @@ if ($hasSelection) {
 # --- logging ---------------------------------------------------------------
 
 if (-not $DryRun -and -not (Test-Path -LiteralPath $LogDir)) {
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    try {
+        New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Error 'Cannot create log directory. Stopping.'
+        exit 1
+    }
 }
 $logFile = Join-Path $LogDir ('pull-all_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -119,7 +124,12 @@ function Write-Log([string] $Message, [string] $Color = 'Gray') {
     $line = '{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
     Write-Host $line -ForegroundColor $Color
     if (-not $DryRun) {
-        [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+        try {
+            [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+        } catch {
+            Write-Error 'Cannot write log. Stopping.'
+            exit 1
+        }
     }
 }
 

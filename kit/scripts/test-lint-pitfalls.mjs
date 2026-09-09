@@ -69,3 +69,37 @@ test('CLI rejects missing root argument', () => assert.equal(spawnSync(process.e
 test('repository checks pass with visible uncovered records', () => {
   const r = lint(); assert.equal(r.exit_code, 0); assert.equal(r.counts.pass, 5); assert.equal(r.uncheckable_records, 7);
 });
+
+for (const [name, bytes] of [
+  ['malformed UTF-8', Buffer.from([0xff, 0x6e])],
+  ['truncated UTF-8', Buffer.from([0xe3, 0x81])],
+  ['UTF-16LE without BOM', Buffer.from('needle', 'utf16le')],
+  ['UTF-16LE with BOM', Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('needle', 'utf16le')])],
+]) test(`${name} must not pass an absent check`, () => fixture(x => {
+  x.c.expect = 'absent';
+  writeFileSync(join(x.root, 'target.txt'), bytes);
+  const r = x.run();
+  assert.equal(r.exit_code, 2);
+  assert.equal(r.results[0].reason, 'unsupported-text-encoding');
+}));
+test('UTF-8 BOM settings are parsed', () => fixture(x => {
+  x.c.kind = 'settings-json';
+  writeFileSync(join(x.root, 'target.txt'), '\ufeff{"permissions":{"deny":["needle"]}}');
+  assert.equal(x.run().exit_code, 0);
+}));
+test('UTF-8 BOM index is parsed', () => fixture(x => {
+  x.run();
+  writeFileSync(join(x.root, 'data/pitfalls.index.json'), '\ufeff' + JSON.stringify(x.index));
+  assert.equal(lint(x.root).exit_code, 0);
+}));
+test('invalid UTF-8 in otherwise valid JSON index is rejected', () => fixture(x => {
+  x.c.pattern = '\ufffd'; x.c.expect = 'absent'; x.run();
+  const bytes = Buffer.from(JSON.stringify(x.index).replace('\ufffd', 'PLACEHOLDER'));
+  const offset = bytes.indexOf('PLACEHOLDER');
+  writeFileSync(join(x.root, 'data/pitfalls.index.json'), Buffer.concat([bytes.subarray(0, offset), Buffer.from([0xff]), bytes.subarray(offset + 11)]));
+  assert.equal(lint(x.root).exit_code, 2);
+}));
+test('valid non-ASCII literal remains checkable', () => fixture(x => {
+  x.c.pattern = '落とし穴'; writeFileSync(join(x.root, 'target.txt'), '記録した落とし穴');
+  assert.equal(x.run().exit_code, 0);
+}));

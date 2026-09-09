@@ -13,7 +13,18 @@ function readWithin(root, target) {
   if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw Error('outside-root');
   const stat = statSync(path);
   if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw Error('not-small-regular-file');
-  return readFileSync(path, 'utf8');
+  const bytes = readFileSync(path);
+  let text;
+  try {
+    // Fatal decoding prevents replacement characters from turning unreadable
+    // input into a successful `absent` check. TextDecoder strips a UTF-8 BOM.
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw Error('unsupported-text-encoding');
+  }
+  // BOM-free UTF-16 ASCII can otherwise decode as valid UTF-8 with NULs.
+  if (text.includes('\u0000')) throw Error('unsupported-text-encoding');
+  return text;
 }
 function report(results, records = []) {
   const counts = { pass: 0, violation: 0, unknown: 0 };
@@ -66,7 +77,7 @@ export function lint(root = defaultRoot) {
       const pass = found === (c.expect === 'present');
       return { ...result, status: pass ? 'pass' : 'violation', reason: pass ? 'expectation-met' : 'expectation-not-met', message: c.message };
     } catch (e) {
-      const reasons = ['invalid-check', 'unsupported-kind', 'invalid-target', 'outside-root', 'not-small-regular-file', 'invalid-settings-json', 'invalid-permissions', 'invalid-permission-rules'];
+      const reasons = ['invalid-check', 'unsupported-kind', 'invalid-target', 'outside-root', 'not-small-regular-file', 'unsupported-text-encoding', 'invalid-settings-json', 'invalid-permissions', 'invalid-permission-rules'];
       return { ...result, status: 'unknown', reason: reasons.includes(e.message) ? e.message : 'target-unreadable' };
     }
   }), index.records);

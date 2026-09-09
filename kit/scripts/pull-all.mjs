@@ -153,7 +153,13 @@ for (const repo of targets) {
     continue;
   }
 
-  if (git(repo, ['status', '--porcelain']).out) {
+  const status = git(repo, ['status', '--porcelain']);
+  if (status.code !== 0) {
+    log(`${name} : FAILED reading working tree status -- ${status.out}`);
+    record('fail/status');
+    continue;
+  }
+  if (status.out) {
     log(`${name} : SKIP (dirty working tree)`);
     record('skip/dirty');
     continue;

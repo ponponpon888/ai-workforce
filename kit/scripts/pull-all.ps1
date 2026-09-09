@@ -123,6 +123,11 @@ foreach ($repo in $targets) {
     }
 
     $status = Invoke-Git $repo @('status', '--porcelain')
+    if ($status.ExitCode -ne 0) {
+        Write-Log "$name : FAILED reading working tree status -- $($status.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/status' }
+        continue
+    }
     if ($status.Output) {
         Write-Log "$name : SKIP (dirty working tree)" 'Yellow'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/dirty' }

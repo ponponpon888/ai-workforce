@@ -337,6 +337,25 @@ check('local branch lock is fail/update, not skip/diverged', /locked\s+fail\/upd
 check('local branch lock preserves checkout and main', head(lockedRepo) === lockedBefore &&
   shaOf(lockedRepo, 'main') === FIRST && branchOf(lockedRepo) === 'feat/locked');
 
+// Real Git reports a corrupt index as an error, not a dirty working tree.
+const corruptRoot = join(rootDir, 'repos-corrupt');
+mkdirSync(corruptRoot);
+git(corruptRoot, 'clone', '--quiet', originDir, 'corrupt');
+const corruptRepo = join(corruptRoot, 'corrupt');
+const corruptHead = head(corruptRepo);
+const corruptIndex = join(corruptRepo, '.git', 'index');
+writeFileSync(corruptIndex, 'intentionally invalid index');
+const [corruptExe, corruptArgs] = invocation(corruptRoot);
+const corruptRun = spawnSync(corruptExe, corruptArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+check('corrupt Git index reports failure', corruptRun.status === 1);
+const corruptLogs = readdirSync(join(corruptRoot, '_logs')).map(name =>
+  readFileSync(join(corruptRoot, '_logs', name), 'utf8')).join('\n');
+check('corrupt index is fail/status, not skip/dirty', /corrupt\s+fail\/status/.test(corruptLogs) && !/skip\/dirty/.test(corruptLogs));
+check('status failure leaves index, commit and work intact', head(corruptRepo) === corruptHead &&
+  readFileSync(corruptIndex, 'utf8') === 'intentionally invalid index' &&
+  readFileSync(join(corruptRepo, 'a.txt'), 'utf8') === 'one\ntwo\n' &&
+  !existsSync(join(corruptRepo, '.git', 'FETCH_HEAD')));
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

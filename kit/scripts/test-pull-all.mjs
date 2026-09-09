@@ -14,6 +14,7 @@
  *   node kit/scripts/test-pull-all.mjs
  */
 
+import { readTestTargetOptions } from './parse-test-target-options.mjs';
 import { spawnSync } from 'node:child_process';
 import { checkPullAuthentication } from './check-pull-auth-fixture.mjs';
 import {
@@ -35,12 +36,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The same fixture is used to test both implementations, so they cannot drift.
 //   node test-pull-all.mjs                 -> tests pull-all.mjs
 //   node test-pull-all.mjs --target ps     -> tests pull-all.ps1 via pwsh
-const targetArg = process.argv.includes('--target')
-  ? process.argv[process.argv.indexOf('--target') + 1]
-  : 'node';
-const pwshExe = process.argv.includes('--pwsh')
-  ? process.argv[process.argv.indexOf('--pwsh') + 1]
-  : 'pwsh';
+const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions();
 
 function invocation(reposDir) {
   if (targetArg === 'ps') {

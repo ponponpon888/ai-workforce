@@ -1,3 +1,4 @@
+import { readTestTargetOptions } from './parse-test-target-options.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, statSync, utimesSync, cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
@@ -5,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-const ps = process.argv.includes('--target') && process.argv[process.argv.indexOf('--target') + 1] === 'ps';
-const shell = process.argv.includes('--pwsh') ? process.argv[process.argv.indexOf('--pwsh') + 1] : 'pwsh';
+const { target, pwsh: shell } = readTestTargetOptions();
+const ps = target === 'ps';
 const installer = fileURLToPath(new URL(ps ? './install.ps1' : './install.mjs', import.meta.url));
 function fixture(fn) {
   const root = mkdtempSync(join(tmpdir(), 'install-backups-'));

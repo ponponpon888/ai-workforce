@@ -91,3 +91,15 @@ PowerShellインストーラの接続テストも、既定のNodeフックを対
 
 Linux / Node v24.19.0で27テスト成功を確認しています。Windows・PowerShellでの実行結果は未確認です。
 PRのCIが開始前に失敗している場合も、これらの検証が成功した扱いにはしません。
+
+## 検証対象の指定ミスを防ぐ
+
+`test-install-backups.mjs` と `test-pull-all.mjs` の直接実行では、`--target` は `node` または `ps` のみ指定できます。
+未知の値・オプション、値不足、重複指定はテスト開始前に終了コード2で停止します。
+`--pwsh` は `--target ps` と組み合わせ、実行ファイル名またはパスを指定します。
+以前は対象名の誤入力でも Node 版を検証してしまいました。現在はその結果を PowerShell の検証と取り違えないよう拒否します。
+
+```powershell
+node kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
+node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
+```

@@ -1,3 +1,4 @@
+import { parseTestTargetOptions } from './parse-test-target-options.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, copyFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -62,3 +63,28 @@ test('invalid suite selections stop before tests', () => fixture("import { write
     assert.equal(existsSync(join(root, 'ran')), false);
   }
 }));
+
+// Exercise the actual entrypoints: bad target names must never fall back to Node.
+for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs']) {
+  test(`${name} rejects invalid target arguments before starting its suite`, () => {
+    const suite = fileURLToPath(new URL(`./${name}`, import.meta.url));
+    for (const args of [
+      ['--target', 'powershell'], ['--target'], ['--target', ''],
+      ['--target', 'ps', '--target', 'node'], ['--unknown'], ['node'],
+      ['--target', 'ps', '--pwsh'], ['--target', 'ps', '--pwsh', '--target'],
+      ['--pwsh', 'pwsh'], ['--target', 'ps', '--pwsh', 'pwsh', '--pwsh', 'pwsh'],
+    ]) {
+      const r = spawnSync(process.execPath, [suite, ...args], { encoding: 'utf8', timeout: 10000 });
+      assert.equal(r.error, undefined);
+      assert.equal(r.status, 2, JSON.stringify(args));
+      assert.match(r.stderr, /Usage:/);
+      assert.equal(r.stdout, '', 'suite must not start');
+    }
+  });
+}
+test('test target parser preserves explicit PowerShell executable paths', () => {
+  assert.deepEqual(parseTestTargetOptions([]), { target: 'node', pwsh: 'pwsh' });
+  assert.deepEqual(parseTestTargetOptions(['--target', 'node']), { target: 'node', pwsh: 'pwsh' });
+  const executable = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+  assert.deepEqual(parseTestTargetOptions(['--pwsh', executable, '--target', 'ps']), { target: 'ps', pwsh: executable });
+});

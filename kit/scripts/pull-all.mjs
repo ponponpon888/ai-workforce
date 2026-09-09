@@ -187,7 +187,13 @@ for (const repo of targets) {
     continue;
   }
 
-  const branch = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']).out;
+  const branchResult = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (branchResult.code !== 0 || !branchResult.out) {
+    log(`${name} : FAILED reading current branch -- ${branchResult.out}`);
+    record('fail/branch');
+    continue;
+  }
+  const branch = branchResult.out;
   if (branch === 'HEAD') {
     log(`${name} : SKIP (detached HEAD)`);
     record('skip/detached');

@@ -192,7 +192,13 @@ foreach ($repo in $targets) {
         continue
     }
 
-    $branch = (Invoke-Git $repo @('rev-parse', '--abbrev-ref', 'HEAD')).Output
+    $branchResult = Invoke-Git $repo @('rev-parse', '--abbrev-ref', 'HEAD')
+    if ($branchResult.ExitCode -ne 0 -or -not $branchResult.Output) {
+        Write-Log "$name : FAILED reading current branch -- $($branchResult.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/branch' }
+        continue
+    }
+    $branch = $branchResult.Output
     if ($branch -eq 'HEAD') {
         Write-Log "$name : SKIP (detached HEAD)" 'Yellow'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/detached' }

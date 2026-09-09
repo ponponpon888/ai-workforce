@@ -465,6 +465,26 @@ for (const retention of ['0', '-1']) {
     existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep history');
 }
 
+// An unborn HEAD must not turn a branch lookup error into a fetch operation.
+{
+  const unbornRoot = join(rootDir, 'repos-unborn');
+  mkdirSync(unbornRoot);
+  const repo = join(unbornRoot, 'unborn');
+  git(unbornRoot, 'init', '--initial-branch=main', repo);
+  git(repo, 'remote', 'add', 'origin', originDir);
+  const headFile = join(repo, '.git', 'HEAD');
+  const before = readFileSync(headFile);
+  const [exe, args] = invocation(unbornRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(unbornRoot, '_logs')).map(name =>
+    readFileSync(join(unbornRoot, '_logs', name), 'utf8')).join('\n');
+  check('unborn HEAD reports branch lookup failure', result.status === 1 && /unborn\s+fail\/branch/.test(logs));
+  check('unborn HEAD does not fetch or create a branch', !existsSync(join(repo, '.git', 'FETCH_HEAD')) &&
+    git(repo, 'show-ref', '--verify', 'refs/heads/main').code !== 0);
+  check('unborn HEAD leaves initial work tree intact', readFileSync(headFile).equals(before) &&
+    readdirSync(repo).length === 1 && readdirSync(repo)[0] === '.git');
+}
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

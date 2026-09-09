@@ -115,6 +115,7 @@ jobs:
         with:
           node-version: 20
       - run: node kit/scripts/test-guard-sql.mjs
+      - run: node kit/scripts/test-sql-boundaries.mjs
 
   guard-sql-powershell:
     name: guard-sql (powershell)
@@ -128,6 +129,8 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: ./kit/scripts/test-guard-sql.ps1
+      - name: Check SQL boundaries with PowerShell
+        run: node kit/scripts/test-sql-boundaries.mjs --target ps
 
   guard-sql-windows-powershell-51:
     name: guard-sql (Windows PowerShell 5.1)
@@ -145,6 +148,9 @@ jobs:
       - name: Run tests
         shell: powershell
         run: ./kit/scripts/test-guard-sql.ps1
+      - name: Check SQL boundaries with Windows PowerShell 5.1
+        shell: powershell
+        run: node kit/scripts/test-sql-boundaries.mjs --target ps --pwsh powershell.exe
       - name: Run pull-all tests against the PowerShell implementation
         shell: powershell
         run: node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe

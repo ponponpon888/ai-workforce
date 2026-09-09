@@ -22,14 +22,16 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 
 ## 現在の統合版の検証結果
 
-検証対象コード: `3f1660d17a8477b68667145ddc4df952a8734bcd`。
+検証対象コード: `980393f9ba2f894aff8ec091777d9167a0d27801`。
 このコミットと同一のローカルコードを Linux / Node v24.19.0 で検証しました。
-全11スイート、375件成功・失敗0件。今回の記録更新は文書のみです。
+全11スイートを実行し、見つかった文書参照切れを修正後、影響するレコード検証51件を再実行しました。最終結果は合計377件成功・失敗0件です。今回の記録更新は文書のみです。
+
+前回の375件はロードマップの最終整理前の結果でした。整理で見出しを変更した後のレコード検証が漏れ、`perm-003` / `perm-004` の参照が切れていました。今回は元の見出しを復元し、12レコードの検証とインデックスの一致を確認しています。
 
 | スクリプト（`kit/scripts/`） | 成功数 |
 |---|---:|
 | `test-check-doc-todos.mjs` | 13 |
-| `test-doctor.mjs` | 27 |
+| `test-doctor.mjs` | 28 |
 | `test-guard-secrets.mjs` | 65 |
 | `test-guard-sql.mjs` | 44 |
 | `test-install-backups.mjs` | 27 |
@@ -38,11 +40,18 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 | `test-pull-all.mjs` | 72 |
 | `test-sql-boundaries.mjs` | 18 |
 | `test-validate-pitfalls.mjs` | 51 |
-| `test-verify-installers.mjs` | 19 |
+| `test-verify-installers.mjs` | 20 |
 
 テンプレートの doctor は `static-pass`。落とし穴の静的検査は5件成功・違反0・不明0、7レコードは検査対象外です。
 12レコードの形式検証、生成インデックスのバイト一致、文書の未完了マーカー0件も確認しました。
 静的検査は実行環境全体の安全性を証明するものではありません。
+
+## 今回解消した接続・CIの不整合
+
+- PowerShell版インストーラは実行環境に応じて `pwsh` / `powershell.exe` を登録。doctor は両形式を認識します。
+- 配置済みの SQL・秘密ファイルフックを、生成された設定のコマンドで実行する検査を PowerShell にも対応。CI の7系・5.1へ接続しました。
+- CI の正常終了検査で不正なリポジトリ指定を使っていたため、実リポジトリの dry-run に修正しました。
+- ワークフローの YAML 構文と PowerShell ファイルの ASCII 制約は確認済み。PowerShell 本体と GitHub Actions の実行成功は未確認です。
 
 ## 統合後の基本機能
 
@@ -51,14 +60,14 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 - 自動更新の指定先事前検査、操作途中・未追跡ファイル・サブモジュール変更の保護。
 - 取得・状態・ブランチ・更新・ログの失敗を報告。非対話設定とログも変更しない dry-run。
 - インストーラのバックアップ保持、doctor、落とし穴と文書の静的検査、導入・手動マージ・復元手順。
-- 基本5スイートの一括ランナー。対象名の誤入力を拒否し、選択範囲・各スイート結果・未検証理由を JSON に記録。
+- 基本6スイートの一括ランナー。対象名の誤入力を拒否し、選択範囲・各スイート結果・未検証理由を JSON に記録。
 - SQL の PowerShell テストは固有の一時フォルダを使用し、既存の承認フォルダは削除せず拒否。
 
 詳細は [自動更新](04-multi-project.md)、[認証検査](18-pull-auth-check.md)、[検証手順](12-installer-backups.md) を参照してください。
 テストは一時ファイル・検査用リポジトリを使用し、本番 DB やユーザーの作業リポジトリには接続しません。
 PowerShell コードは今回実行していません。一時フォルダ修正を含め、実機確認は残っています。
 
-## 基本5スイートの一括確認
+## 基本6スイートの一括確認
 
 リポジトリのルートで実行します。Windows PowerShell 5.1 を検証する場合:
 
@@ -67,18 +76,18 @@ node kit/scripts/verify-installers.mjs --suite core --target windows-powershell-
 ```
 
 全ランタイムは `--target all`、Node のみは `--target node` です。
-対象スイートは installers / pull-all / guard-secrets / guard-sql / sql-boundaries の5つで、開発用の全11スイートとは範囲が異なります。
+対象スイートは installed-approval / installers / pull-all / guard-secrets / guard-sql / sql-boundaries の6つで、開発用の全11スイートとは範囲が異なります。
 終了コード0は選択範囲の全成功、1はテスト失敗、2は未検証の対象ありです。
-Linux で実行した `--suite core --target all --json` は Node の5スイート成功、PowerShell 7 はランタイム不在、Windows PowerShell 5.1 は Windows 必須として終了コード2でした。
+Linux で実行した `--suite core --target all --json` は Node の6スイート成功、PowerShell 7 はランタイム不在、Windows PowerShell 5.1 は Windows 必須として終了コード2でした。
 
 ## リリース前に残る確認
 
 | 対象 | 状況 |
 |---|---|
-| Linux / Node | 全11スイート375件成功 |
+| Linux / Node | 全11スイート377件成功 |
 | PowerShell 7 / Windows PowerShell 5.1 | 統合版は未実行 |
 | macOS / Windows の Node | 統合版は未実行 |
-| GitHub Actions | 基点 `2181349` の run `34417353259` は18ジョブ・実行ステップ0件で失敗 |
+| GitHub Actions | 基点 `79fb401` の run `34418072254` は18ジョブ・実行ステップ0件で失敗 |
 | Claude Code 本体 | 設定受理・優先順位・モード・フック接続・パス記法は未検証 |
 | 素の環境 | 新規導入からの確認が未完了 |
 | 実プロジェクトの DB ロール | 未検証。対象 DB に変更は加えていない |

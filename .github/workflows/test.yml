@@ -80,11 +80,16 @@ jobs:
         shell: pwsh
         run: |
           $probe = Join-Path $env:RUNNER_TEMP 'exitcode-probe'
-          New-Item -ItemType Directory -Path "$probe/notarepo" -Force | Out-Null
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          # Use a real repository: explicitly selecting notarepo is now an error.
+          & git init --initial-branch=main "$probe/repo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & git -C "$probe/repo" -c user.name=fixture -c user.email=fixture@example.invalid commit --allow-empty -m fixture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $wrapper = Join-Path $probe 'wrapper.ps1'
           $cases = @(
             './kit/scripts/test-guard-sql.ps1',
-            "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos notarepo",
+            "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos repo -DryRun",
             "./kit/scripts/install.ps1 -ClaudeHome '$probe/fake-claude' -Hook powershell",
             "./kit/scripts/approve-ddl.ps1 -Sql 'create table probe_t (id int)' -ApprovalDir '$probe/approvals' -Force"
           )
@@ -145,6 +150,9 @@ jobs:
       - name: Installer backups on Windows PowerShell 5.1
         shell: powershell
         run: node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
+      - name: Installed approval on Windows PowerShell 5.1
+        shell: powershell
+        run: node kit/scripts/test-installed-approval.mjs --target ps --pwsh powershell.exe
       - name: Report the version actually in use
         shell: powershell
         run: $PSVersionTable.PSVersion
@@ -233,6 +241,8 @@ jobs:
         run: node kit/scripts/test-doctor.mjs
       - name: Installed approval integration
         run: node kit/scripts/test-installed-approval.mjs
+      - name: Installed PowerShell approval integration
+        run: node kit/scripts/test-installed-approval.mjs --target ps
       - name: Installer verification runner tests
         run: node kit/scripts/test-verify-installers.mjs
       - name: Installer backup regression tests (node)

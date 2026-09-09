@@ -65,7 +65,7 @@ test('invalid suite selections stop before tests', () => fixture("import { write
 }));
 
 // Exercise the actual entrypoints: bad target names must never fall back to Node.
-for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs', 'test-guard-secrets.mjs', 'test-sql-boundaries.mjs']) {
+for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs', 'test-guard-secrets.mjs', 'test-sql-boundaries.mjs', 'test-installed-approval.mjs']) {
   test(`${name} rejects invalid target arguments before starting its suite`, () => {
     const suite = fileURLToPath(new URL(`./${name}`, import.meta.url));
     for (const args of [
@@ -140,7 +140,7 @@ test('guard-secrets selection reports its scope and preserves failures', () => f
   assert.equal(JSON.parse(failure.stdout).results[0].exit_code, 7);
 }));
 
-const coreNames = ['installers', 'pull-all', 'guard-secrets', 'guard-sql', 'sql-boundaries'];
+const coreNames = ['installed-approval', 'installers', 'pull-all', 'guard-secrets', 'guard-sql', 'sql-boundaries'];
 function writeCoreFixtures(root, failing = null) {
   for (const name of coreNames) {
     const file = name === 'installers' ? 'test-install-backups.mjs' : `test-${name}.mjs`;
@@ -163,8 +163,8 @@ test('core preserves a failed suite and still reports later suites', () => fixtu
   assert.equal(r.status, 1);
   const target = JSON.parse(r.stdout).results[0];
   assert.equal(target.status, 'failed');
-  assert.equal(target.checks[2].exit_code, 7);
-  assert.match(target.checks[2].output, /core fixture failure/);
+  assert.equal(target.checks.find(c => c.suite === 'guard-secrets').exit_code, 7);
+  assert.match(target.checks.find(c => c.suite === 'guard-secrets').output, /core fixture failure/);
   assert.equal(target.checks.at(-1).status, 'passed');
   const text = run(['--suite', 'core', '--target', 'node']);
   assert.match(text.stdout, /guard-secrets: failed/);

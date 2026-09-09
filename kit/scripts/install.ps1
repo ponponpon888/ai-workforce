@@ -139,8 +139,9 @@ if ($Hook -eq 'node') {
 } else {
     $sqlFile        = 'guard-sql.ps1'
     $secretsFile    = 'guard-secrets.ps1'
-    $hookCommand    = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
-    $secretsCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
+    $hookExecutable = if ($PSVersionTable.PSVersion.Major -ge 7) { 'pwsh' } else { 'powershell.exe' }
+    $hookCommand    = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
+    $secretsCommand = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
 }
 
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would

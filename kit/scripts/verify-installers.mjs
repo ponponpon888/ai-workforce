@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const suites = {
+  'installed-approval': { file: './test-installed-approval.mjs', scope: 'installed-approval-tests-on-this-machine' },
   installers: { file: './test-install-backups.mjs', scope: 'installer-tests-on-this-machine' },
   'pull-all': { file: './test-pull-all.mjs', scope: 'pull-all-tests-on-this-machine' },
   'guard-secrets': { file: './test-guard-secrets.mjs', scope: 'guard-secrets-tests-on-this-machine' },
@@ -28,7 +29,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 function usage() {
-  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite core|installers|pull-all|guard-secrets|guard-sql|sql-boundaries] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
+  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite core|installed-approval|installers|pull-all|guard-secrets|guard-sql|sql-boundaries] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
   process.exit(2);
 }
 const selectedSuites = suiteName === 'core' ? Object.keys(suites) : [suiteName];

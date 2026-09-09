@@ -133,7 +133,7 @@ PowerShell 本体が使えない環境では未検証となり、Node 版の成�
 
 ## 基本機能をまとめて検証
 
-`--suite core` はインストーラ、自動更新、秘密ファイルガード、SQLガード、SQL境界・承認の5スイートを実行します。
+`--suite core` はインストーラ、自動更新、秘密ファイルガード、SQLガード、SQL境界・承認、配置済みフック接続の6スイートを実行します。
 
 ```powershell
 node kit/scripts/verify-installers.mjs --suite core --target windows-powershell-5.1 --json
@@ -144,7 +144,24 @@ SQLは検査用ペイロードとしてフックに渡すだけで、データ�
 JSONの `selected_suites` と各対象の `checks` で、実行した範囲と個別結果を確認できます。
 一部が失敗しても残りの検査結果を集め、終了コード1で返します。
 利用できない対象は終了コード2の未検証です。
-core は上記5スイートの検証で、doctor・レコード検査などを含む全開発テストとは別です。
+core は上記6スイートの検証で、doctor・レコード検査などを含む全開発テストとは別です。
 
 PowerShell版SQLテストは実行ごとに固有の一時フォルダを使います。
 `test-guard-sql.ps1 -ApprovalDir` を直接指定する場合も、既存のパスは拒否して保持します。
+
+
+### 配置したフックまでつなぐ検証
+
+`--suite installed-approval`（core にも含まれる）は、一時的なホームへインストールし、
+その settings.json に登録されたコマンドをそのまま実行します。
+SQL の未承認拒否・完全一致承認・改変拒否・再利用拒否と、秘密ファイルの拒否・公開ファイルの許可を確認します。
+対象ペイロードのシェルコマンドや SQL 自体は実行しません。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite installed-approval --target windows-powershell-5.1 --json
+```
+
+`install.ps1 -Hook powershell` は、実行中の PowerShell が7以上なら `pwsh`、5.1なら `powershell.exe` を登録します。
+登録した実行ファイルは Claude Code の PATH からも見つかる必要があります。
+doctor は両形式を静的検査しますが、実行ファイルの存在や Claude Code のフック接続を保証しません。
+この一貫検証も Claude Code 本体を起動する検査や、素の Windows VM での導入確認とは別です。

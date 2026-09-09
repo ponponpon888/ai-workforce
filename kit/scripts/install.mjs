@@ -13,28 +13,37 @@
  *   node kit/scripts/install.mjs --lang en --skip-settings
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { statSync, constants, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const argv = process.argv.slice(2);
-const has = (f) => argv.includes(f);
-const val = (f, d) => {
-  const i = argv.indexOf(f);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : d;
-};
-
-const dryRun = has('--dry-run');
-const lang = val('--lang', 'ja');
-const skipSettings = has('--skip-settings');
-const skipClaudeMd = has('--skip-claude-md');
-const claudeHome = resolve(val('--claude-home', join(homedir(), '.claude')));
-
-if (!['ja', 'en'].includes(lang)) {
-  process.stderr.write(`install: --lang must be ja or en\n`);
+const options = new Map();
+const flags = new Set(['--dry-run', '--skip-settings', '--skip-claude-md']);
+const valued = new Set(['--lang', '--claude-home']);
+try {
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i];
+    if (options.has(key)) throw Error('duplicate option');
+    if (flags.has(key)) options.set(key, true);
+    else if (valued.has(key)) {
+      const value = argv[++i];
+      if (typeof value !== 'string' || !value.trim() || value.startsWith('--')) throw Error('missing option value');
+      options.set(key, value);
+    } else throw Error('unknown argument');
+  }
+  if (!['ja', 'en'].includes(options.get('--lang') ?? 'ja')) throw Error('invalid language');
+} catch (error) {
+  process.stderr.write(`install: ${error.message}\nUsage: node install.mjs [--claude-home <path>] [--lang ja|en] [--dry-run] [--skip-settings] [--skip-claude-md]\n`);
   process.exit(1);
 }
+const dryRun = options.has('--dry-run');
+const lang = options.get('--lang') ?? 'ja';
+const skipSettings = options.has('--skip-settings');
+const skipClaudeMd = options.has('--skip-claude-md');
+const claudeHome = resolve(options.get('--claude-home') ?? join(homedir(), '.claude'));
 
 const kitRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcClaude = join(kitRoot, 'claude');
@@ -48,7 +57,14 @@ console.log(`  language    : ${lang}`);
 if (dryRun) console.log('  mode        : dry run, nothing will be written');
 console.log('');
 
-function install(content, destination) {
+const pending = [];
+function install(content, destination) { pending.push({ content, destination }); }
+
+function writeInstalledFile(content, destination) {
+  if (existsSync(destination) && readFileSync(destination).equals(Buffer.from(content, 'utf8'))) {
+    console.log(`  unchanged    -> ${destination}`);
+    return;
+  }
   const dir = dirname(destination);
   if (!existsSync(dir)) {
     if (dryRun) console.log(`  would create -> ${dir}`);
@@ -56,10 +72,11 @@ function install(content, destination) {
   }
 
   if (existsSync(destination)) {
-    const backup = `${destination}.bak.${stamp}`;
+    const backup = `${destination}.bak.${stamp}.${randomUUID()}`;
     if (dryRun) console.log(`  would back up-> ${backup}`);
     else {
-      copyFileSync(destination, backup);
+      // Never overwrite an earlier backup, even if the name collides.
+      copyFileSync(destination, backup, constants.COPYFILE_EXCL);
       console.log(`  backed up    -> ${backup}`);
     }
   }
@@ -95,8 +112,13 @@ install(readFileSync(join(srcClaude, 'hooks', 'guard-sql.mjs'), 'utf8'), sqlDest
 const secretsDest = join(claudeHome, 'hooks', 'guard-secrets.mjs');
 install(readFileSync(join(srcClaude, 'hooks', 'guard-secrets.mjs'), 'utf8'), secretsDest);
 
-const hookCommand = `node "${sqlDest}"`;
-const secretsCommand = `node "${secretsDest}"`;
+// JSON escaping and shell quoting are separate layers. Inside POSIX double
+// quotes these four characters still have shell meaning.
+const quoteHookPath = (path) => '"' + (process.platform === 'win32'
+  ? path
+  : path.replace(/[\\"$`]/g, character => '\\' + character)) + '"';
+const hookCommand = `node ${quoteHookPath(sqlDest)}`;
+const secretsCommand = `node ${quoteHookPath(secretsDest)}`;
 
 // --- 2b. approval script ----------------------------------------------------
 //
@@ -114,21 +136,28 @@ install(
 
 console.log('3. settings.json');
 // JSON string value: escape backslashes and quotes.
-const forJson = (s) => s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+const forJson = (s) => JSON.stringify(s).slice(1, -1);
 
 if (skipSettings) {
   console.log('  skipped (--skip-settings). Add these PreToolUse hooks to your own settings.json:');
   console.log(`    ${hookCommand}`);
   console.log(`    ${secretsCommand}`);
 } else {
+  const replacements = {
+    CLAUDE_HOME: claudeHome.replaceAll('\\', '/'),
+    GUARD_SQL_COMMAND: hookCommand,
+    GUARD_SECRETS_COMMAND: secretsCommand,
+  };
+  // One pass; replacement values are literal data, never replacement syntax.
   const settings = readFileSync(join(srcClaude, 'settings.json'), 'utf8')
-    .replaceAll('{{CLAUDE_HOME}}', claudeHome.replaceAll('\\', '/'))
-    .replaceAll('{{GUARD_SQL_COMMAND}}', forJson(hookCommand))
-    .replaceAll('{{GUARD_SECRETS_COMMAND}}', forJson(secretsCommand));
+    .replace(/\{\{(CLAUDE_HOME|GUARD_SQL_COMMAND|GUARD_SECRETS_COMMAND)\}\}/g,
+      (_, key) => forJson(replacements[key]));
 
   // One deny rule is Windows-only. On Windows it is live, and wider than the
   // name suggests; anywhere else it is dead weight. Say which, rather than let
   // someone wonder why Remove-Item is in their config.
+  const parsed = JSON.parse(settings);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error('install: settings must be a JSON object');
   install(settings, join(claudeHome, 'settings.json'));
   console.log('  note: one deny rule is Windows-specific: PowerShell(Remove-Item:*).');
   if (process.platform === 'win32') {
@@ -138,6 +167,25 @@ if (skipSettings) {
     console.log('        It is inert here. Trim it if you like.');
   }
 }
+
+// Check every selected destination before updating even the first file.
+for (const { destination } of pending) {
+  if (existsSync(destination) && !statSync(destination).isFile()) {
+    throw Error(`install: destination is not a file: ${destination}`);
+  }
+  let parent = dirname(destination);
+  while (true) {
+    if (existsSync(parent)) {
+      if (!statSync(parent).isDirectory()) throw Error(`install: parent is not a directory: ${parent}`);
+      break;
+    }
+    const next = dirname(parent);
+    if (next === parent) break;
+    parent = next;
+  }
+}
+// All selected sources and destination shapes are checked before the first write.
+for (const entry of pending) writeInstalledFile(entry.content, entry.destination);
 
 // --- 4. what is left to do by hand -----------------------------------------
 

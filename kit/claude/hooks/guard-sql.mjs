@@ -19,9 +19,8 @@
  * that only reads the command line sees none of it -- so writing the file first and
  * running it second walked straight through. The hook runs before the tool does, but
  * the file was written by an earlier call and is already on disk, so it can be read
- * and scanned as SQL. When a file route is detected and nothing can be read, the call
- * needs the same human approval a DDL statement needs: an unreadable path is not a
- * reason to assume the file is harmless.
+ * and scanned as SQL. Every candidate must be readable. Nested includes and file DDL
+ * are unsupported and blocked: command-only approvals cannot bind file contents.
  *
  * SCOPE
  * This stops accidents, not an adversary. Any agent holding a shell could write
@@ -29,11 +28,11 @@
  * mistake — the common case — hits a wall it cannot walk through by accident.
  *
  * Exit 0 -> allow.  Exit 2 -> block, reason on stderr.
- * Any internal failure exits 0: a broken guard must not brick the toolchain.
+ * Internal failures block with exit 2; inspect the error before retrying.
  */
 
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync, rmSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, statSync, rmSync, renameSync, lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +83,7 @@ FILE_ROUTE_RES[2] = /\\ir?\s+(\S+)/g;
 /** Command separators. A pipeline stays whole: `cat x.sql | psql` is one segment. */
 const SEGMENT_RE = /&&|\|\||;|\r?\n/;
 
-/** Files larger than this are not scanned; an unread file takes the approval path. */
+/** Files larger than this are not scanned; unread files are blocked. */
 const MAX_SQL_FILE_BYTES = 1024 * 1024;
 
 // ---------------------------------------------------------------------------
@@ -141,22 +140,21 @@ function neutralize(sql, grammar) {
 }
 
 function fingerprint(sql) {
-  const normalized = sql.replace(/\s+/g, ' ').trim();
-  return createHash('sha256').update(normalized, 'utf8').digest('hex');
+  return createHash('sha256').update('aiwf-exact-v2\0' + sql, 'utf8').digest('hex');
 }
 
-/** A valid, unexpired approval token is consumed on use — one statement, one run. */
+// Atomic rename gives only one caller the token. Never restore a claimed token.
 function isApproved(sql) {
   const file = join(APPROVAL_DIR, `${fingerprint(sql)}.approval`);
-  if (!existsSync(file)) return false;
-
-  const ageMinutes = (Date.now() - statSync(file).mtimeMs) / 60000;
+  const claimed = `${file}.used-${randomUUID()}`;
+  try { renameSync(file, claimed); } catch { return false; }
   try {
-    rmSync(file, { force: true });
-  } catch {
-    /* consuming is best effort */
-  }
-  return ageMinutes <= APPROVAL_TTL_MINUTES;
+    const stat = lstatSync(claimed);
+    const age = Date.now() - stat.mtimeMs;
+    return stat.isFile() && age >= 0 && age <= APPROVAL_TTL_MINUTES * 60000 &&
+      readFileSync(claimed, 'utf8') === sql;
+  } catch { return false; }
+  finally { try { rmSync(claimed, { force: true }); } catch { /* already consumed */ } }
 }
 
 /**
@@ -212,22 +210,46 @@ function readSqlFile(path, cwd) {
  * the first DDL statement is handed back so the approval is checked once for the
  * whole call. `where` names the source in the block message.
  */
+// Each modifying verb must have a WHERE at its own parenthesis depth.
+// This is a scoped lexical check, not a complete SQL parser.
+function hasUnfilteredMutation(stmt) {
+  const tokens = stmt.toUpperCase().match(/[A-Z_][A-Z_0-9]*|[()]/g) || [];
+  let depth = 0;
+  const scoped = tokens.map(word => {
+    if (word === ')') depth--;
+    const token = { word, depth };
+    if (word === '(') depth++;
+    return token;
+  });
+  for (let i = 0; i < scoped.length; i++) {
+    const start = scoped[i];
+    if (!['UPDATE', 'DELETE'].includes(start.word)) continue;
+    let modifies = false, where = false;
+    for (let j = i + 1; j < scoped.length; j++) {
+      const t = scoped[j];
+      if (t.depth < start.depth) break;
+      if (t.depth !== start.depth) continue;
+      if (t.word === (start.word === 'UPDATE' ? 'SET' : 'FROM')) modifies = true;
+      if (modifies && t.word === 'WHERE') where = true;
+    }
+    if (modifies && !where) return true;
+  }
+  return false;
+}
+
 function scanStatements(text, grammar, where) {
   let firstDdl = null;
-  for (const stmt of neutralize(text, grammar).split(';')) {
+  const cleaned = neutralize(text, grammar);
+  if (grammar === 'sql' && /(?:^|[\r\n])\s*\\(?:i|ir)\b/.test(cleaned)) {
+    deny('Nested SQL includes are unsupported; submit the reviewed SQL directly.' + where, 'SQL include');
+  }
+  for (const stmt of cleaned.split(';')) {
     if (!stmt.trim()) continue;
-
     if (/\bDROP\b/is.test(stmt)) deny(`DROP is never allowed from an agent.${where}`, stmt);
     if (/\bTRUNCATE\b/is.test(stmt)) deny(`TRUNCATE is never allowed from an agent.${where}`, stmt);
-    if (/\bDELETE\s+FROM\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
-      deny(`DELETE without a WHERE clause.${where}`, stmt);
-    }
-    if (/\bUPDATE\b[\s\S]*\bSET\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
-      deny(`UPDATE without a WHERE clause.${where}`, stmt);
-    }
-    if (firstDdl === null && /\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b/is.test(stmt)) {
-      firstDdl = stmt;
-    }
+    if ((grammar === 'sql' && /^\s*DO\b/i.test(stmt)) || (grammar === 'shell' && /\bDO\s+(?:LANGUAGE\b|['"$])/i.test(stmt))) deny('Procedural DO blocks are unsupported.' + where, stmt);
+    if (hasUnfilteredMutation(stmt)) deny('UPDATE/DELETE needs a WHERE in the same SQL scope.' + where, stmt);
+    if (firstDdl === null && /\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b/is.test(stmt)) firstDdl = stmt;
   }
   return firstDdl;
 }
@@ -267,24 +289,15 @@ try {
 
   // The statement need not be on the command line. Read what the client is being
   // pointed at and scan that too; a file route with nothing readable behind it
-  // takes the approval path rather than being waved through.
+  // is blocked rather than being waved through.
   if (grammar === 'shell') {
     const candidates = fileRouteCandidates(sql);
     if (candidates.length > 0) {
-      let readAny = false;
       for (const path of candidates) {
         const content = readSqlFile(path, payload.cwd);
-        if (content === null) continue;
-        readAny = true;
+        if (content === null) deny('SQL file is unreadable; cannot verify its contents.', 'Unreadable SQL file');
         const ddl = scanStatements(content, 'sql', ` (from ${path})`);
-        if (firstDdl === null) firstDdl = ddl;
-      }
-      if (!readAny && !isApproved(sql)) {
-        deny(
-          'this call feeds a SQL file to a database client, and none of the files ' +
-            `could be read (${candidates.join(', ')}), so what runs is unknown.`,
-          sql
-        );
+        if (ddl !== null) deny('File-based DDL approval is unsupported; submit and approve the SQL text directly.', 'DDL in SQL file');
       }
     }
   }
@@ -299,8 +312,7 @@ try {
 
   process.exit(0);
 } catch (err) {
-  // Fail open, loudly. A guard that crashes must not become a guard that blocks
-  // everything — that trains people to disable it.
-  process.stderr.write(`[guard-sql] hook error (allowing call): ${err.message}\n`);
-  process.exit(0);
+  // A failed inspection is not a successful safety check.
+  process.stderr.write(`[guard-sql] hook error (blocked): unable to inspect input\n`);
+  process.exit(2);
 }

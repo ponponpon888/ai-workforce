@@ -4,7 +4,7 @@
  * through once.
  *
  * Run this yourself, after reading the SQL. It writes a token named after the
- * SHA-256 of the whitespace-normalized statement. The hook consumes the token on
+ * SHA-256 of the exact UTF-8 statement (v2 domain). The hook consumes the token on
  * first use and refuses it after the TTL, so an approval cannot be reused later
  * for a statement you never saw.
  *
@@ -38,8 +38,7 @@ if (fileIdx !== -1) {
 
 if (!sql || !sql.trim()) fail('Empty SQL.');
 
-const normalized = sql.replace(/\s+/g, ' ').trim();
-const digest = createHash('sha256').update(normalized, 'utf8').digest('hex');
+const digest = createHash('sha256').update('aiwf-exact-v2\0' + sql, 'utf8').digest('hex');
 
 console.log('');
 console.log('--- SQL to approve -------------------------------------------');
@@ -61,7 +60,7 @@ if (!force) {
 
 mkdirSync(APPROVAL_DIR, { recursive: true });
 const file = join(APPROVAL_DIR, `${digest}.approval`);
-writeFileSync(file, normalized, 'utf8');
+writeFileSync(file, sql, 'utf8');
 
 console.log('Approved. Retry the tool call unchanged.');
 console.log(`token: ${file}`);

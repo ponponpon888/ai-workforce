@@ -115,6 +115,7 @@ jobs:
         with:
           node-version: 20
       - run: node kit/scripts/test-guard-sql.mjs
+      - run: node kit/scripts/test-sql-boundaries.mjs
 
   guard-sql-powershell:
     name: guard-sql (powershell)
@@ -128,6 +129,8 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: ./kit/scripts/test-guard-sql.ps1
+      - name: Check SQL boundaries with PowerShell
+        run: node kit/scripts/test-sql-boundaries.mjs --target ps
 
   guard-sql-windows-powershell-51:
     name: guard-sql (Windows PowerShell 5.1)
@@ -139,12 +142,18 @@ jobs:
       # 5.1 leaves $PSCommandPath empty inside a param() default value when
       # [CmdletBinding()] is present, which crashed this suite before a single
       # test ran. 7.x populates it, so CI on pwsh alone never saw it.
+      - name: Installer backups on Windows PowerShell 5.1
+        shell: powershell
+        run: node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
       - name: Report the version actually in use
         shell: powershell
         run: $PSVersionTable.PSVersion
       - name: Run tests
         shell: powershell
         run: ./kit/scripts/test-guard-sql.ps1
+      - name: Check SQL boundaries with Windows PowerShell 5.1
+        shell: powershell
+        run: node kit/scripts/test-sql-boundaries.mjs --target ps --pwsh powershell.exe
       - name: Run pull-all tests against the PowerShell implementation
         shell: powershell
         run: node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
@@ -218,10 +227,23 @@ jobs:
       # Exiting 0 is not the same as having installed anything. Every file the
       # kit promises is checked by name, because a step that only asserts the
       # exit code passes just as happily when the installer writes nothing.
+      - name: Diagnose the kit template
+        run: node kit/scripts/doctor.mjs --template
+      - name: Test read-only diagnostics
+        run: node kit/scripts/test-doctor.mjs
+      - name: Installed approval integration
+        run: node kit/scripts/test-installed-approval.mjs
+      - name: Installer verification runner tests
+        run: node kit/scripts/test-verify-installers.mjs
+      - name: Installer backup regression tests (node)
+        run: node kit/scripts/test-install-backups.mjs
+      - name: Installer backup regression tests (PowerShell)
+        run: node kit/scripts/test-install-backups.mjs --target ps
       - name: install.mjs into a throwaway home
         shell: bash
         run: |
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8')); console.log('settings.json is valid JSON')"
           for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs scripts/approve-ddl.mjs; do
             test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
@@ -242,6 +264,8 @@ jobs:
           ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           Write-Host 'settings.json is valid JSON'
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) {
               Write-Host "::error::installer did not write $f"
@@ -260,6 +284,8 @@ jobs:
           node-version: 20
       - run: node kit/scripts/validate-pitfalls.mjs
       - run: node kit/scripts/test-validate-pitfalls.mjs
+      - run: node kit/scripts/test-lint-pitfalls.mjs
+      - run: node kit/scripts/test-check-doc-todos.mjs
       # The index is a build product that is committed, so it can go stale without anyone
       # noticing -- a record added without regenerating it would leave a linter reading
       # yesterday's data while the records look right. Rebuild and require no diff.
@@ -275,6 +301,8 @@ jobs:
             exit 1
           fi
 
+      - run: node kit/scripts/lint-pitfalls.mjs
+
   todos:
     name: no TODO left in docs
     runs-on: ubuntu-latest
@@ -282,8 +310,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          if grep -rn 'TODO' docs README.md README.en.md; then
-            echo "::warning::TODO markers still present"
-            exit 1
-          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node kit/scripts/check-doc-todos.mjs

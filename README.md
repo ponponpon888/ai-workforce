@@ -6,12 +6,17 @@
 このリポジトリは、その「歯止め」と「段取り」を、動く形で公開しています。
 
 > **正直な断り書き。** 中身は、本番を守っている構成を**公開用に書き起こしたもの**です。
-> 手元で動いている実物そのものではありません。テストは通っていて CI で 3 OS で回していますが、
-> 実物との突き合わせは [ROADMAP](ROADMAP.md) の Week 1 に残っています。
+> 手元で動いている実物そのものではありません。このブランチは修正の統合検証中です。
+> Linux / Node の検証結果と、Windows・CI・実機で残る確認は [統合状況](docs/17-integration-status.md) を参照してください。
 
 日本語が正本です / [English summary](README.en.md)
 
 ---
+
+まず1つだけ試す場合は、[SQLガード単体の最小手順](docs/14-try-guard-sql.md)へ。
+既存設定を変更せず、データベースへの接続も不要です。
+既存設定がある場合は、[フックだけ取り込む手順](docs/16-merge-existing-settings.md)へ。
+導入後に戻す場合は、[復元手順](docs/15-restore-after-install.md)を参照してください。
 
 ## これは何か
 
@@ -163,6 +168,19 @@ node kit/scripts/install.mjs
 
 ---
 
+## 設定と導入状態を診断する
+
+```powershell
+node kit/scripts/doctor.mjs --template  # 配布設定の静的チェック
+node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを確認
+```
+
+設定や登録されたコマンドは変更・実行しません。結果は `static-pass` / `error` /
+`incomplete` に分かれます。**静的チェックの成功は、Claude Code本体での動作確認を意味しません。**
+判定範囲と終了コードは [診断の説明](docs/09-settings-doctor.md) に記載しています。
+
+---
+
 ## ドキュメント
 
 | | |
@@ -219,3 +237,4 @@ node kit/scripts/install.mjs
 
 MIT. 商用利用・改変・再配布すべて自由です。クレジットも不要です。
 役に立ったら Star か、どう使ったかを教えてもらえると嬉しいです。
+

@@ -168,7 +168,7 @@ for (const repo of targets) {
     continue;
   }
 
-  const status = git(repo, ['status', '--porcelain']);
+  const status = git(repo, ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none']);
   if (status.code !== 0) {
     log(`${name} : FAILED reading working tree status -- ${status.out}`);
     record('fail/status');

@@ -388,6 +388,41 @@ for (const operation of ['revert', 'sequencer']) {
     readFileSync(markerFile).equals(markerContents) && !existsSync(join(busyRepo, '.git', 'FETCH_HEAD')));
 }
 
+// User display preferences must not hide work from the safety check.
+for (const hidden of ['untracked', 'submodule']) {
+  const hiddenRoot = join(rootDir, `repos-hidden-${hidden}`);
+  mkdirSync(hiddenRoot);
+  git(hiddenRoot, 'clone', '--quiet', originDir, 'hidden');
+  const repo = join(hiddenRoot, 'hidden');
+  let workFile;
+  if (hidden === 'untracked') {
+    git(repo, 'reset', '--hard', FIRST); // fixture setup only
+    git(repo, 'config', 'status.showUntrackedFiles', 'no');
+    workFile = join(repo, 'local-notes.txt');
+  } else {
+    git(repo, 'checkout', '-b', 'feat/module');
+    const added = git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', originDir, 'module');
+    if (added.code !== 0) throw new Error(added.out);
+    git(repo, 'commit', '-am', 'add module');
+    git(repo, 'branch', '-f', 'main', FIRST); // fixture setup only
+    git(repo, 'config', 'submodule.module.ignore', 'all');
+    workFile = join(repo, 'module', 'a.txt');
+  }
+  writeFileSync(workFile, 'local work must survive\n');
+  const hiddenStatus = git(repo, 'status', '--porcelain');
+  if (hiddenStatus.code !== 0 || hiddenStatus.out) throw new Error('Fixture must hide changes with plain status');
+  const beforeHead = head(repo);
+  const beforeMain = shaOf(repo, 'main');
+  const [exe, args] = invocation(hiddenRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(hiddenRoot, '_logs')).map(name =>
+    readFileSync(join(hiddenRoot, '_logs', name), 'utf8')).join('\n');
+  check(`hidden ${hidden} work is reported as dirty`, result.status === 0 && /hidden\s+skip\/dirty/.test(logs));
+  check(`hidden ${hidden} work prevents branch updates`, head(repo) === beforeHead && shaOf(repo, 'main') === beforeMain);
+  check(`hidden ${hidden} work is preserved without fetching`, readFileSync(workFile, 'utf8') === 'local work must survive\n' &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')));
+}
+
 // Validate the root before creating the default log directory beneath it.
 for (const kind of ['missing', 'file']) {
   const invalidPath = join(rootDir, `root-${kind}`);

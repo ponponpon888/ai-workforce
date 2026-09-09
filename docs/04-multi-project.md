@@ -229,3 +229,11 @@ Linux / Node の変更後テストは51件成功しました。
 競合を解消した後など、差分がなくても Git の操作が完了していない場合があります。
 自動更新はその状態を削除せず、取得やブランチ更新も行いません。
 実際に競合させた revert を HEAD と同じ内容に戻したケースと、sequencer 状態を配置したケースを共通テストへ追加しました。
+
+## Git の表示設定に依存しない変更検査
+
+変更検査には `--untracked-files=all --ignore-submodules=none` を明示します。
+`status.showUntrackedFiles=no` や `submodule.<name>.ignore=all` を設定していても、
+未追跡ファイルやサブモジュール内の変更を検出し、取得前に `skip/dirty` として停止します。
+この検査は `.gitignore` などで無視されたファイルまで列挙するものではありません。
+Git の保存済み設定は変更しません。

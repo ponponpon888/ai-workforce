@@ -127,7 +127,7 @@ CI では Node 版を Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubu
 確認しているのは主に「触ってはいけないものに触らなかった」side です。
 
 ```bash
-node kit/scripts/test-pull-all.mjs     # pass: 57   fail: 0
+node kit/scripts/test-pull-all.mjs     # pass: 63   fail: 0
 ```
 
 **Windows PowerShell 5.1 でも確認済みです。** 5.1 は 7.x とは別物で、実際にそこでしか

@@ -165,7 +165,7 @@ foreach ($repo in $targets) {
         continue
     }
 
-    $status = Invoke-Git $repo @('status', '--porcelain')
+    $status = Invoke-Git $repo @('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none')
     if ($status.ExitCode -ne 0) {
         Write-Log "$name : FAILED reading working tree status -- $($status.Output)" 'Red'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/status' }

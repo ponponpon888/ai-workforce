@@ -65,7 +65,7 @@ test('invalid suite selections stop before tests', () => fixture("import { write
 }));
 
 // Exercise the actual entrypoints: bad target names must never fall back to Node.
-for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs', 'test-guard-secrets.mjs']) {
+for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs', 'test-guard-secrets.mjs', 'test-sql-boundaries.mjs']) {
   test(`${name} rejects invalid target arguments before starting its suite`, () => {
     const suite = fileURLToPath(new URL(`./${name}`, import.meta.url));
     for (const args of [
@@ -138,4 +138,44 @@ test('guard-secrets selection reports its scope and preserves failures', () => f
   const failure = run(args);
   assert.equal(failure.status, 1);
   assert.equal(JSON.parse(failure.stdout).results[0].exit_code, 7);
+}));
+
+const coreNames = ['installers', 'pull-all', 'guard-secrets', 'guard-sql', 'sql-boundaries'];
+function writeCoreFixtures(root, failing = null) {
+  for (const name of coreNames) {
+    const file = name === 'installers' ? 'test-install-backups.mjs' : `test-${name}.mjs`;
+    writeFileSync(join(root, file), name === failing ? "console.error('core fixture failure'); process.exit(7);" : 'process.exit(0);');
+  }
+}
+test('core runs every basic suite and reports each result', () => fixture('process.exit(0);', ({ root, run }) => {
+  writeCoreFixtures(root);
+  const r = run(['--suite', 'core', '--target', 'node', '--json']);
+  assert.equal(r.status, 0);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.scope, 'core-tests-on-this-machine');
+  assert.deepEqual(report.selected_suites, coreNames);
+  assert.deepEqual(report.results[0].checks.map(c => c.suite), coreNames);
+  assert.ok(report.results[0].checks.every(c => c.status === 'passed'));
+}));
+test('core preserves a failed suite and still reports later suites', () => fixture('process.exit(0);', ({ root, run }) => {
+  writeCoreFixtures(root, 'guard-secrets');
+  const r = run(['--suite', 'core', '--target', 'node', '--json']);
+  assert.equal(r.status, 1);
+  const target = JSON.parse(r.stdout).results[0];
+  assert.equal(target.status, 'failed');
+  assert.equal(target.checks[2].exit_code, 7);
+  assert.match(target.checks[2].output, /core fixture failure/);
+  assert.equal(target.checks.at(-1).status, 'passed');
+  const text = run(['--suite', 'core', '--target', 'node']);
+  assert.match(text.stdout, /guard-secrets: failed/);
+}));
+test('SQL suites can be selected independently', () => fixture('process.exit(9);', ({ root, run }) => {
+  for (const name of ['guard-sql', 'sql-boundaries']) {
+    writeFileSync(join(root, `test-${name}.mjs`), 'process.exit(0);');
+    const r = run(['--suite', name, '--target', 'node', '--json']);
+    assert.equal(r.status, 0);
+    const report = JSON.parse(r.stdout);
+    assert.equal(report.scope, `${name}-tests-on-this-machine`);
+    assert.equal(report.results[0].suite, name);
+  }
 }));

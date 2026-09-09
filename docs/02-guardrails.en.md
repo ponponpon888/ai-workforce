@@ -61,9 +61,10 @@ line, not an excuse to be sloppy here.
 ]
 ```
 
-Alongside it, `defaultMode` is `ask`, `permissions.disableBypassPermissionsMode` is `true`, and
-top-level `disableAutoMode` is `true` — so **the "approve everything" mode cannot be entered at
-all**.
+The current `kit/claude/settings.json` sets `permissions.defaultMode` to `default`, and
+`permissions.disableBypassPermissionsMode` and `permissions.disableAutoMode` to `"disable"`.
+These are the template values. Acceptance, precedence, and behavior in Claude Code itself
+remain pending integration checks; see [integration status](17-integration-status.md).
 
 > That is the setting for **local Claude Code**. On the chat side I do skip approvals, and none
 > of this applies there. It looks contradictory; they are different paths. What actually closes

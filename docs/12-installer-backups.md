@@ -130,3 +130,21 @@ node kit/scripts/verify-installers.mjs --suite guard-secrets --target windows-po
 
 結果の `scope` は `guard-secrets-tests-on-this-machine` です。
 PowerShell 本体が使えない環境では未検証となり、Node 版の成功に置き換えません。
+
+## 基本機能をまとめて検証
+
+`--suite core` はインストーラ、自動更新、秘密ファイルガード、SQLガード、SQL境界・承認の5スイートを実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite core --target windows-powershell-5.1 --json
+```
+
+全ランタイムは `--target all`、Nodeのみは `--target node` です。
+SQLは検査用ペイロードとしてフックに渡すだけで、データベースには接続しません。
+JSONの `selected_suites` と各対象の `checks` で、実行した範囲と個別結果を確認できます。
+一部が失敗しても残りの検査結果を集め、終了コード1で返します。
+利用できない対象は終了コード2の未検証です。
+core は上記5スイートの検証で、doctor・レコード検査などを含む全開発テストとは別です。
+
+PowerShell版SQLテストは実行ごとに固有の一時フォルダを使います。
+`test-guard-sql.ps1 -ApprovalDir` を直接指定する場合も、既存のパスは拒否して保持します。

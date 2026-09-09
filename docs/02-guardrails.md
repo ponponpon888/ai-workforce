@@ -62,9 +62,10 @@ English: [02-guardrails.en.md](02-guardrails.en.md)
 ]
 ```
 
-同時に、`defaultMode` を `ask`、`disableBypassPermissionsMode` を `true`、
-トップレベルの `disableAutoMode` を `true` にして、
-**「全部承認なしで通すモード」に入れなくしています**。
+現在の `kit/claude/settings.json` は、`permissions.defaultMode` を `default`、
+`permissions.disableBypassPermissionsMode` と `permissions.disableAutoMode` を `"disable"` にしています。
+これはテンプレートの設定値です。Claude Code 本体での設定受理・優先順位・動作確認は、
+[統合状況](17-integration-status.md) の実機検証として残っています。
 
 > これは**手元の Claude Code** の設定です。私はチャット（Cowork）側では承認をスキップに
 > していて、そこにはこの設定が効きません。矛盾しているように見えますが、経路が別です。

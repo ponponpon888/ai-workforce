@@ -61,6 +61,10 @@ const pending = [];
 function install(content, destination) { pending.push({ content, destination }); }
 
 function writeInstalledFile(content, destination) {
+  if (existsSync(destination) && readFileSync(destination).equals(Buffer.from(content, 'utf8'))) {
+    console.log(`  unchanged    -> ${destination}`);
+    return;
+  }
   const dir = dirname(destination);
   if (!existsSync(dir)) {
     if (dryRun) console.log(`  would create -> ${dir}`);

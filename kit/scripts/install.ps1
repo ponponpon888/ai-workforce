@@ -63,6 +63,14 @@ function Write-InstalledFile {
         [Parameter(Mandatory)][string] $Destination
     )
 
+    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        $existingBytes = [System.IO.File]::ReadAllBytes($Destination)
+        $desiredBytes = $utf8NoBom.GetBytes($Content)
+        if ([Convert]::ToBase64String($existingBytes) -ceq [Convert]::ToBase64String($desiredBytes)) {
+            Write-Step "unchanged -> $Destination"
+            return
+        }
+    }
     $dir = Split-Path -Parent $Destination
     if (-not (Test-Path -LiteralPath $dir)) {
         if ($PSCmdlet.ShouldProcess($dir, 'create directory')) {

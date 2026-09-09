@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { statSync, utimesSync, cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +73,7 @@ if (!ps) {
 {
   for (const failure of ['missing-approval', 'invalid-settings']) test(`preflight ${failure} leaves existing home untouched`, () => fixture(({ root, run }) => {
     const home = join(root, 'home'); run(home);
+    writeFileSync(join(home, 'CLAUDE.md'), 'existing customized instructions');
     const before = readFileSync(join(home, 'CLAUDE.md'));
     const kit = join(root, 'kit');
     cpSync(fileURLToPath(new URL('../', import.meta.url)), kit, { recursive: true });
@@ -91,6 +92,7 @@ if (ps) test('declining backup prevents a later yes from overwriting that file',
   const home = join(root, 'home'); run(home);
   const target = join(home, 'CLAUDE.md');
   writeFileSync(target, 'preserve my instructions');
+  writeFileSync(join(home, 'settings.json'), 'custom settings');
   // No to the first backup; Yes to all later prompts. Before the fix, the
   // second prompt allowed CLAUDE.md to be overwritten without a backup.
   const r = spawnSync(shell, ['-NoProfile', '-File', installer, '-ClaudeHome', home, '-Confirm'], {
@@ -113,3 +115,27 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
     assert.ok(commands.includes(`node "${join(home, 'hooks', 'guard-secrets.mjs')}"`));
   }));
 }
+
+test('identical reinstall preserves timestamps and creates no backups', () => fixture(({ root, run }) => {
+  const home = join(root, 'home'); run(home);
+  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'scripts/approve-ddl.mjs'];
+  const before = new Map();
+  for (const file of files) {
+    const path = join(home, file); utimesSync(path, 1000000000, 1000000000);
+    before.set(file, { bytes: readFileSync(path), mtime: statSync(path).mtimeMs });
+  }
+  run(home);
+  for (const file of files) {
+    assert.deepEqual(readFileSync(join(home, file)), before.get(file).bytes);
+    assert.equal(statSync(join(home, file)).mtimeMs, before.get(file).mtime);
+  }
+  for (const dir of ['', 'hooks', 'scripts']) assert.equal(readdirSync(join(home, dir)).some(n => n.includes('.bak.')), false);
+}));
+test('only changed file gets backed up', () => fixture(({ root, run }) => {
+  const home = join(root, 'home'); run(home);
+  writeFileSync(join(home, 'CLAUDE.md'), 'custom instructions'); run(home);
+  const backups = readdirSync(home).filter(n => n.includes('.bak.'));
+  assert.equal(backups.length, 1); assert.ok(backups[0].startsWith('CLAUDE.md.bak.'));
+  assert.equal(readFileSync(join(home, backups[0]), 'utf8'), 'custom instructions');
+  for (const dir of ['hooks', 'scripts']) assert.equal(readdirSync(join(home, dir)).some(n => n.includes('.bak.')), false);
+}));

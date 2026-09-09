@@ -1,0 +1,38 @@
+{
+  "id": "perm-001",
+  "title": "Bash(rm -rf:*) は rm -rfv を止めない",
+  "summary": "deny のパターンはコマンド名の前方一致で、単語の途中では切れない。この照合規則を echo で測り、echo xhello はどのパターンでも通った。同じ規則を rm に当てると、フラグが 1 文字伸びた rm -rfv /foo は Bash(rm -rf:*) を抜けることになる。rm -fr も同じ。止めているのは「rm -rf という文字列」であって、「rm の危険な使い方」ではない。",
+  "layer": "permissions",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#ただし両方に同じ穴があります",
+
+  "measured_on": "2026-09-08",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "使い捨ての設定の deny に 3 行置いた: Bash(echo exact) / Bash(echo pfx:*) / Bash(echo sfx *)",
+    "叩いたのは echo だけ。2 回に分けて計 10 観測",
+    "1 回目はワイルドカード付きの 2 行だけで測り、両方通った。deny が効かないのではなく、設定が読まれていなかった。ワイルドカード無しの Bash(echo exact) を足し、それが落ちることを先に見てから測り直した",
+    "2 回目の結果: echo x は 3 行とも落ちる。echo x hello はワイルドカード付きの 2 行で落ちる。echo xhello は 3 行とも通る",
+    "rm は一度も叩いていない。rm -rfv /foo が Bash(rm -rf:*) を抜けるのは、この照合規則に rm を当てた帰結であって、観測ではない"
+  ],
+
+  "status": "open_recorded",
+  "why_not_closed": "塞ぐには rm そのものを deny するしかなく、そうすると rm -rf ./dist のような日常の操作まで止まる。誤検知の多いルールは外されるので、抜け方が分かったうえで残している。",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "判定しているのは Claude Code 本体で、こちらのコードではない。設定を置いて実際にコマンドを叩く以外に確かめる方法がない。"
+  },
+
+  "related": ["perm-002", "perm-003"],
+  "tags": ["deny", "prefix-match", "rm"]
+}

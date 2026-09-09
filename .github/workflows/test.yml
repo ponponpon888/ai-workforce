@@ -211,6 +211,31 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           Write-Host 'settings.json is valid JSON'
 
+  pitfalls:
+    name: pitfall records validate, index is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node kit/scripts/validate-pitfalls.mjs
+      - run: node kit/scripts/test-validate-pitfalls.mjs
+      # The index is a build product that is committed, so it can go stale without anyone
+      # noticing -- a record added without regenerating it would leave a linter reading
+      # yesterday's data while the records look right. Rebuild and require no diff.
+      # `git status --porcelain`, not `git diff`: diff says nothing about a file that is not
+      # tracked, so an index that was generated but never committed would pass silently.
+      - name: The committed index matches the records
+        run: |
+          node kit/scripts/build-pitfall-index.mjs
+          changed=$(git status --porcelain -- data/pitfalls.index.json)
+          if [ -n "$changed" ]; then
+            git diff -- data/pitfalls.index.json
+            echo "::error::data/pitfalls.index.json is stale or untracked. Run: node kit/scripts/build-pitfall-index.mjs"
+            exit 1
+          fi
+
   todos:
     name: no TODO left in docs
     runs-on: ubuntu-latest

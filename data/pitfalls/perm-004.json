@@ -1,0 +1,29 @@
+{
+  "id": "perm-004",
+  "title": "Set-Content を deny するなら、別名の sc は書かない",
+  "summary": "deny はコマンド名の前方一致なので、PowerShell(sc:*) と書くと Windows の sc.exe（サービス制御）まで巻き込む。書くなら Set-Content 側だけにする。",
+  "layer": "permissions",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "ROADMAP.md#v01-までに終わらせること",
+
+  "inferred_from": [
+    "perm-001",
+    "docs/02-guardrails.md#powershell-のエイリアスは心配しなくてよかった"
+  ],
+
+  "status": "untouched",
+
+  "detection": {
+    "checkable": true,
+    "kind": "settings-json",
+    "target": "kit/claude/settings.json",
+    "pattern": "PowerShell(sc:",
+    "expect": "absent",
+    "message": "sc は Set-Content の別名だが、前方一致で sc.exe を巻き込む。Set-Content と書くこと。"
+  },
+
+  "related": ["perm-001", "perm-002"],
+  "tags": ["deny", "prefix-match", "alias", "windows"]
+}

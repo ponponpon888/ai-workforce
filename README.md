@@ -175,6 +175,7 @@ node kit/scripts/install.mjs
 | [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き |
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話 |
+| [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 

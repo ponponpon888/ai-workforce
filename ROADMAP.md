@@ -71,6 +71,12 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       `true` にしています
 - [ ] 前身リポジトリ `ai-workforce-os` のログ 14 ファイル（ログ 10・
       `.backup` / `.broken` 4）を削除する
+- [ ] **`test-pull-all.mjs` がソース文字列を grep しています。** `GIT_TERMINAL_PROMPT` と
+      `GCM_INTERACTIVE` の検査が、ソースにその文字列があることしか見ていません。
+      [MUSUBU の事例](docs/case-studies/musubu.md)に「文字列の grep はテストでは
+      ありません」と書いておきながら、同じことをこのリポジトリでやっています。
+      実挙動（認証を聞かれる状況で、固まらずに失敗すること）は測っていません。
+      項目として立てただけで、着手していません
 - [ ] **docs が `settings.json` を引用している箇所と実物がズレます。** 今回 1 件
       （[02](docs/02-guardrails.md) の 560 行付近）見つけて直しましたが、機械的な
       チェックがありません。docs は意図的に抜粋もするので、単純な一致チェックは
@@ -90,7 +96,18 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
 - Vercel の穴を塞ぐ（[07](docs/07-github-vercel.md) で空欄のままの部分）。
   MCP のツール単位の絞り込みと、トークンのプロジェクト限定が調べ切れていません
 - `docs/` の残りの英訳（00 と 02 は済み）
-- 「既知の落とし穴」を集めた `docs/pitfalls/` — 他の人の報告も入れる
+- **落とし穴のレコードを増やす。** docs を読み直して列挙した候補は 140 件
+      （うちアプリ実装側が 38 件）でしたが、`data/pitfalls/` に入っているのは
+      **6 件だけ**です。残り 134 件は 1 件も入っていません。形は
+      [08](docs/08-pitfall-records.md) で決まっているので、あとは埋める作業です
+- **他の人が報告した落とし穴を `data/pitfalls/` に受け入れる。** Issue の
+      [pitfall テンプレート](.github/ISSUE_TEMPLATE/pitfall.yml)からレコードに
+      落とすまでの動線がまだ書かれていません（旧「`docs/pitfalls/` を作る」項目は
+      `data/pitfalls/` に統合しました）
+- **`data/pitfalls.index.json` の `checks` を実際に回す linter。** いま `checks` には
+      2 件入っていますが、**それを検査するものがありません**。データの形だけが先に
+      あります。`expect: present` / `absent` を見て対象ファイルを検査するだけの
+      小さなスクリプトで足りるはずです
 - 開発速度の実測（コミット数、PR リードタイム、1 機能あたりの所要時間）を継続公開
 
 ---

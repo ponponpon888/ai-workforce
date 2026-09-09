@@ -1,0 +1,21 @@
+{
+  "id": "perm-003",
+  "title": "deny のパス側グロブ記法は、どれが効くのか分かっていない",
+  "summary": "settings.json のパス側 deny には素 / **/ / ./**/ / //**/ の 4 種類が混ざっている。どれがどう効くのか分かっていない。コマンド側の前方一致とは別の話で、そちらとは結果を共有できない。",
+  "layer": "permissions",
+  "kind": "limitation",
+  "severity": "medium",
+  "confidence": "unverified",
+  "origin": "ROADMAP.md#v01-までに終わらせること",
+
+  "status": "untouched",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "どれが効くのか決まるまで、機械的に検査する基準が無い。決まった時点で settings-json の検査に変えられる。"
+  },
+
+  "related": ["perm-001"],
+  "tags": ["deny", "glob", "path"]
+}

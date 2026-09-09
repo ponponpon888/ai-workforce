@@ -1,0 +1,33 @@
+{
+  "id": "perm-002",
+  "title": "deny は allow に勝つ",
+  "summary": "allow に書いてあるコマンドでも、deny のパターンに一致すれば落ちる。両方に書いた場合は deny 側が通る。",
+  "layer": "permissions",
+  "kind": "behaviour",
+  "severity": "low",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#powershell-のエイリアスは心配しなくてよかった",
+
+  "measured_on": "2026-09-08",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "deny に PowerShell(Remove-Item:*)、allow に PowerShell(rm:*) を置いた",
+    "rm <ファイル> と Remove-Item <ファイル> を叩いた。どちらも落ちた",
+    "rm は allow に入れてあるのに落ちた。見たのはこの 1 組の優先順位だけで、他の組み合わせは試していない"
+  ],
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "穴ではなく挙動の記録。allow と deny が重なる設定を書いてよいかの判断材料として置いてある。"
+  },
+
+  "related": ["perm-001"],
+  "tags": ["deny", "allow", "precedence"]
+}

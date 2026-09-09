@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export async function checkPullAuthentication(target = 'node', pwshExe = 'pwsh') {
+export async function checkPullAuthentication(target = 'node', pwshExe = 'pwsh', feature = false) {
   const root = mkdtempSync(join(tmpdir(), 'aiwf-auth-'));
   const repos = join(root, 'repos');
   const repo = join(repos, 'expired-auth');
@@ -59,7 +59,9 @@ process.stdin.resume();
     // Git runs ! helpers through its shell, including Git for Windows' sh.
     const quote = value => "'" + value.replaceAll('\\', '/').replaceAll("'", "'\\''") + "'";
     git('config', '--add', 'credential.helper', `!${quote(process.execPath)} ${quote(helper)}`);
+    if (feature) git('checkout', '-b', 'feat/auth');
     const before = git('rev-parse', 'HEAD');
+    const mainBefore = git('rev-parse', 'main');
     const here = dirname(fileURLToPath(import.meta.url));
     const executable = target === 'ps' ? pwshExe : process.execPath;
     const args = target === 'ps'
@@ -88,7 +90,9 @@ process.stdin.resume();
       'the running Git helper must inherit both noninteractive settings');
     const logs = readdirSync(join(repos, '_logs')).map(name => readFileSync(join(repos, '_logs', name), 'utf8')).join('\n');
     assert.match(logs, /terminal prompts disabled/i);
-    assert.match(logs, /expired-auth\s+fail\/pull/);
+    assert.match(logs, feature ? /expired-auth\s+fail\/fetch/ : /expired-auth\s+fail\/pull/);
+    assert.equal(git('rev-parse', 'main'), mainBefore);
+    assert.equal(git('branch', '--show-current'), feature ? 'feat/auth' : 'main');
     assert.equal(git('rev-parse', 'HEAD'), before);
     assert.equal(git('status', '--porcelain'), '');
     assert.equal(readFileSync(join(repo, 'work.txt'), 'utf8'), 'keep this commit\n');

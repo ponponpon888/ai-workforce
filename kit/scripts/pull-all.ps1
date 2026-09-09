@@ -12,7 +12,7 @@
       - A dirty working tree is skipped entirely.
       - A repository mid-rebase, mid-merge, mid-bisect or on a detached HEAD is skipped.
       - On the default branch with a clean tree: fast-forward only pull.
-      - On a feature branch: 'git fetch origin main:main' advances the local default
+      - On a feature branch: remote fetch followed by local fast-forward advances the default
         branch without leaving the branch you are on. If that would not fast-forward,
         git refuses and the repository is reported, not forced.
 
@@ -150,15 +150,33 @@ foreach ($repo in $targets) {
         continue
     }
 
-    # On a feature branch: advance the local default branch in place. This
-    # cannot touch the checkout, and git refuses if it is not a fast-forward.
-    $r = Invoke-Git $repo @('fetch', 'origin', "${default}:${default}")
+    # Separate transport failure from a refused local fast-forward.
+    $fetched = Invoke-Git $repo @('fetch', '--no-tags', 'origin', $default)
+    if ($fetched.ExitCode -ne 0) {
+        Write-Log "$name : FAILED fetch -- $($fetched.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/fetch' }
+        continue
+    }
+    $fetchedHead = Invoke-Git $repo @('rev-parse', '--verify', 'FETCH_HEAD^{commit}')
+    if ($fetchedHead.ExitCode -ne 0) {
+        Write-Log "$name : FAILED resolving fetched commit -- $($fetchedHead.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/fetch' }
+        continue
+    }
+    $commit = $fetchedHead.Output
+    $r = Invoke-Git $repo @('fetch', '--no-tags', '.', "${commit}:refs/heads/${default}")
     if ($r.ExitCode -eq 0) {
         Write-Log "$name : ok (on '$branch', $default advanced)" 'Green'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'ok/branch' }
     } else {
-        Write-Log "$name : $default not fast-forwardable, left alone -- $($r.Output)" 'Yellow'
-        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/diverged' }
+        $ancestry = Invoke-Git $repo @('merge-base', '--is-ancestor', "refs/heads/${default}", $commit)
+        if ($ancestry.ExitCode -eq 1) {
+            Write-Log "$name : $default not fast-forwardable, left alone -- $($r.Output)" 'Yellow'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/diverged' }
+        } else {
+            Write-Log "$name : FAILED local branch update -- $($r.Output)" 'Red'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/update' }
+        }
     }
 }
 

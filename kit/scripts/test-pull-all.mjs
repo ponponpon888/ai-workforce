@@ -237,6 +237,13 @@ try {
   check('HTTP authentication fails promptly with noninteractive Git settings', false, error.message);
 }
 
+try {
+  await checkPullAuthentication(targetArg, pwshExe, true);
+  check('feature branch authentication failure is reported, not skipped', true);
+} catch (error) {
+  check('feature branch authentication failure is reported, not skipped', false, error.message);
+}
+
 console.log('\ndestroys nothing:');
 check(
   'dirty repo: uncommitted work intact',
@@ -310,6 +317,24 @@ for (const [repo, result] of [
   const re = new RegExp(`^\\s*\\S+\\s+${repo}\\s+${result.replace('/', '\\/')}\\s*$`, 'm');
   check(`${repo} is reported as ${result}`, re.test(summaryText), summaryText.trim().slice(0, 400));
 }
+
+// A local ref lock is an update failure, not divergent history.
+const lockedRoot = join(rootDir, 'repos-locked');
+mkdirSync(lockedRoot);
+git(lockedRoot, 'clone', '--quiet', originDir, 'locked');
+const lockedRepo = join(lockedRoot, 'locked');
+git(lockedRepo, 'checkout', '-q', '-b', 'feat/locked');
+git(lockedRepo, 'branch', '-f', 'main', FIRST);
+const lockedBefore = head(lockedRepo);
+writeFileSync(join(lockedRepo, '.git', 'refs', 'heads', 'main.lock'), 'fixture lock');
+const [lockedExe, lockedArgs] = invocation(lockedRoot);
+const lockedRun = spawnSync(lockedExe, lockedArgs, { encoding: 'utf8', env: GIT_ENV, timeout: 15000 });
+check('local branch lock reports failure', lockedRun.status === 1);
+const lockedLogs = readdirSync(join(lockedRoot, '_logs')).map(name =>
+  readFileSync(join(lockedRoot, '_logs', name), 'utf8')).join('\n');
+check('local branch lock is fail/update, not skip/diverged', /locked\s+fail\/update/.test(lockedLogs));
+check('local branch lock preserves checkout and main', head(lockedRepo) === lockedBefore &&
+  shaOf(lockedRepo, 'main') === FIRST && branchOf(lockedRepo) === 'feat/locked');
 
 rmSync(rootDir, { recursive: true, force: true });
 

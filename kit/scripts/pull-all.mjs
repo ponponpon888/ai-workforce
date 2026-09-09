@@ -12,7 +12,7 @@
  *   - A repo mid-rebase, mid-merge, mid-cherry-pick, mid-bisect, or on a
  *     detached HEAD is skipped.
  *   - On the default branch with a clean tree: fast-forward-only pull.
- *   - On a feature branch: `git fetch origin main:main` advances the local
+ *   - On a feature branch: a remote fetch followed by a local fast-forward advances the local
  *     default branch without leaving the branch you are on. If that would not
  *     fast-forward, git refuses and the repo is reported, not forced.
  *
@@ -166,15 +166,34 @@ for (const repo of targets) {
     continue;
   }
 
-  // On a feature branch: advance the local default branch in place. This cannot
-  // touch the checkout, and git refuses if it is not a fast-forward.
-  const r = git(repo, ['fetch', 'origin', `${def}:${def}`]);
+  // Separate transport failure from a refused local fast-forward. Never
+  // classify authentication/network errors as normal divergent-history skips.
+  const fetched = git(repo, ['fetch', '--no-tags', 'origin', def]);
+  if (fetched.code !== 0) {
+    log(`${name} : FAILED fetch -- ${fetched.out}`);
+    record('fail/fetch');
+    continue;
+  }
+  const fetchedHead = git(repo, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}']);
+  if (fetchedHead.code !== 0) {
+    log(`${name} : FAILED resolving fetched commit -- ${fetchedHead.out}`);
+    record('fail/fetch');
+    continue;
+  }
+  // A local fetch still enforces fast-forward and checked-out-branch safety.
+  const r = git(repo, ['fetch', '--no-tags', '.', `${fetchedHead.out}:refs/heads/${def}`]);
   if (r.code === 0) {
     log(`${name} : ok (on '${branch}', ${def} advanced)`);
     record('ok/branch');
   } else {
-    log(`${name} : ${def} not fast-forwardable, left alone -- ${r.out}`);
-    record('skip/diverged');
+    const ancestry = git(repo, ['merge-base', '--is-ancestor', `refs/heads/${def}`, fetchedHead.out]);
+    if (ancestry.code === 1) {
+      log(`${name} : ${def} not fast-forwardable, left alone -- ${r.out}`);
+      record('skip/diverged');
+    } else {
+      log(`${name} : FAILED local branch update -- ${r.out}`);
+      record('fail/update');
+    }
   }
 }
 

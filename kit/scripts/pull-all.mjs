@@ -83,6 +83,21 @@ try {
   process.exit(1);
 }
 
+// Explicit selections must all be usable before updating any member of the batch.
+// Keep auto-discovery permissive; users may store non-repository folders there.
+const requestedTargets = [...new Set(only)].map(name => join(root, name));
+for (const target of requestedTargets) {
+  let valid = false;
+  try {
+    valid = statSync(target).isDirectory() && existsSync(join(target, '.git')) &&
+      git(target, ['rev-parse', '--absolute-git-dir']).code === 0;
+  } catch { /* report the selected target below */ }
+  if (!valid) {
+    process.stderr.write(`pull-all: Invalid requested repository: ${basename(target)}. Nothing was updated.\n`);
+    process.exit(1);
+  }
+}
+
 // --- logging ----------------------------------------------------------------
 
 if (!dryRun) mkdirSync(logDir, { recursive: true });
@@ -119,7 +134,7 @@ if (spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) {
 
 let targets;
 if (only.length) {
-  targets = only.map((n) => join(root, n)).filter((p) => existsSync(join(p, '.git')));
+  targets = requestedTargets;
 } else {
   targets = readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(root, e.name, '.git')))

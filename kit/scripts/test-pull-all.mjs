@@ -390,6 +390,26 @@ if (targetArg !== 'ps') {
     readFileSync(join(previewRepo, 'a.txt'), 'utf8') === 'one\n' && /would pull/.test(preview.stdout));
 }
 
+if (targetArg !== 'ps') {
+  const selectionRoot = join(rootDir, 'repos-selection');
+  mkdirSync(selectionRoot);
+  git(selectionRoot, 'clone', '--quiet', originDir, 'valid');
+  const validRepo = join(selectionRoot, 'valid');
+  git(validRepo, 'reset', '--hard', FIRST); // fixture setup only
+  mkdirSync(join(selectionRoot, 'ordinary'));
+  mkdirSync(join(selectionRoot, 'broken', '.git'), { recursive: true });
+  for (const name of ['missing', 'ordinary', 'broken']) {
+    const r = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', selectionRoot,
+      '--repos', `valid,${name}`], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    check(`explicit ${name} target stops the batch before updates`, r.status === 1 &&
+      /Invalid requested repository/.test(r.stderr) && head(validRepo) === FIRST &&
+      !existsSync(join(selectionRoot, '_logs')));
+  }
+  const selected = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', selectionRoot,
+    '--repos', 'valid'], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('valid explicit target still updates', selected.status === 0 && head(validRepo) === SECOND);
+}
+
 // Node's CLI used to ignore misspellings and consume a following flag as a value.
 // PowerShell has a separate parameter binder; these cases target the Node CLI.
 if (targetArg !== 'ps') {

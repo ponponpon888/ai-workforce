@@ -167,7 +167,8 @@ function Find-SecretPath([string] $Text) {
     foreach ($p in $SecretPatterns) {
         foreach ($m in [regex]::Matches($Text, $p.Pattern)) {
             if ($p.Dotenv) {
-                $tail = $m.Value.Substring($m.Value.IndexOf('.env') + 4)
+                $fileName = ($m.Value -split '/')[-1]
+                $tail = $fileName.Substring(4)
                 $isPublic = $false
                 foreach ($part in ($tail -split '\.')) {
                     if ($part -and ($PublicEnvSuffixes -contains $part.ToLowerInvariant())) {

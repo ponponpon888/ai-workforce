@@ -170,3 +170,9 @@ Windows形式の secrets 配下の設定・.ssh 配下の読み取りを検出�
 Node / PowerShell 両版で、読取コマンド判定時に `.exe` 接尾辞を正規化します。
 Git のサブコマンド検査にも適用し、show/diff と add の区別を維持しました。
 修正前に4ケースの検出漏れを再現し、修正後の Linux / Node は61件成功。PowerShell 本体は未実行です。
+
+## 追加: 公開テンプレート例外の判定範囲
+
+親フォルダ名に含まれた example / sample を理由に、本物の `.env` が許可される問題を修正しました。
+Node / PowerShell 両版で公開テンプレート例外をファイル名だけに適用します。
+Windows形式を含む検出漏れ2件を修正前に再現し、修正後の Linux / Node は65件成功。PowerShell 本体は未実行です。

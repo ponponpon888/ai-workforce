@@ -781,3 +781,6 @@ supabase で `select 1; drop table nothing;` を実行して
 秘密ファイルガードは、コマンド名末尾の `.exe`（大小文字を区別しない）を除いて読み取り操作を判定します。
 `git.exe show HEAD:.env` や `python.exe -c` による秘密ファイル読み取りも検出し、
 `git.exe add .env` と公開テンプレートの読み取りは引き続き許可します。
+
+公開テンプレートの例外（example / sample / template / dist）はファイル名だけで判定します。
+親フォルダが `.env.example.cache` などの名前でも、その中の `.env` は秘密ファイルとして検出します。

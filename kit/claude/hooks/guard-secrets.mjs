@@ -67,7 +67,8 @@ const SECRET_PATTERNS = [
     re: /(?<![\w.\-])(?:[\w.\-/~]*\/)?\.env(?![\w])(?:\.[\w-]+)*/g,
     exempt: (hit) =>
       hit
-        .slice(hit.indexOf('.env') + '.env'.length)
+        .split('/').pop()
+        .slice('.env'.length)
         .split('.')
         .filter(Boolean)
         .some((part) => PUBLIC_ENV_SUFFIXES.includes(part.toLowerCase())),

@@ -106,6 +106,16 @@ assert('PowerShell type', BLOCK, callHook('PowerShell', { command: 'type .env' }
 assert('PowerShell .NET read', BLOCK,
   callHook('PowerShell', { command: "[System.IO.File]::ReadAllText('.env')" }));
 
+// Public-template words in a parent directory do not exempt the actual file.
+assert('template-like parent still protects dotenv', BLOCK,
+  callHook('Bash', { command: 'cat .env.example.cache/.env' }));
+assert('Windows template-like parent still protects dotenv', BLOCK,
+  callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\.env.sample.assets\.env.local` }));
+assert('template inside dotenv-named parent remains public', ALLOW,
+  callHook('Bash', { command: 'cat .env.private/.env.example' }));
+assert('nested template suffix remains public', ALLOW,
+  callHook('Bash', { command: 'cat config/.env.production.sample' }));
+
 // Native Windows executable names must retain reader detection.
 assert('git.exe show secret', BLOCK, callHook('PowerShell', { command: 'git.exe show HEAD:.env' }));
 assert('absolute git.exe path', BLOCK, callHook('PowerShell', { command: String.raw`C:\Tools\git.exe diff .env` }));

@@ -65,7 +65,7 @@ test('invalid suite selections stop before tests', () => fixture("import { write
 }));
 
 // Exercise the actual entrypoints: bad target names must never fall back to Node.
-for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs']) {
+for (const name of ['test-install-backups.mjs', 'test-pull-all.mjs', 'test-guard-secrets.mjs']) {
   test(`${name} rejects invalid target arguments before starting its suite`, () => {
     const suite = fileURLToPath(new URL(`./${name}`, import.meta.url));
     for (const args of [
@@ -123,4 +123,19 @@ test('explicit all retains every runtime in the report', () => fixture('process.
   assert.equal(report.requested_target, 'all');
   assert.equal(report.selected_targets.length, 3);
   assert.equal(report.results.length, 3);
+}));
+
+test('guard-secrets selection reports its scope and preserves failures', () => fixture('process.exit(9);', ({ root, run }) => {
+  const suite = join(root, 'test-guard-secrets.mjs');
+  writeFileSync(suite, 'process.exit(0);');
+  const args = ['--suite', 'guard-secrets', '--target', 'node', '--json'];
+  const success = run(args);
+  assert.equal(success.status, 0);
+  const report = JSON.parse(success.stdout);
+  assert.equal(report.scope, 'guard-secrets-tests-on-this-machine');
+  assert.deepEqual(report.selected_targets, ['node']);
+  writeFileSync(suite, 'process.exit(7);');
+  const failure = run(args);
+  assert.equal(failure.status, 1);
+  assert.equal(JSON.parse(failure.stdout).results[0].exit_code, 7);
 }));

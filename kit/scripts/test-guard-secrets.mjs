@@ -15,18 +15,14 @@
  * switched off within a day, and then nothing is guarded at all.
  */
 
+import { readTestTargetOptions } from './parse-test-target-options.mjs';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-const targetArg = process.argv.includes('--target')
-  ? process.argv[process.argv.indexOf('--target') + 1]
-  : 'node';
-const pwshExe = process.argv.includes('--pwsh')
-  ? process.argv[process.argv.indexOf('--pwsh') + 1]
-  : 'pwsh';
+const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions();
 
 const HOOK_MJS = resolve(here, '..', 'claude', 'hooks', 'guard-secrets.mjs');
 const HOOK_PS1 = resolve(here, '..', 'claude', 'hooks', 'guard-secrets.ps1');

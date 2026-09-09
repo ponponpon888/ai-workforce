@@ -118,3 +118,15 @@ node kit/scripts/verify-installers.mjs --suite pull-all --target windows-powersh
 選択した環境が利用できない場合は `unverified` と終了コード2を返します。
 JSON の `requested_target` と `selected_targets`、通常表示の先頭行で検証範囲を確認できます。
 直接実行するテストスクリプトの `--target node|ps` とは指定名が異なります。
+
+## 秘密ファイルガードの検証
+
+同じランナーで `--suite guard-secrets` も選択できます。
+入力するのは検査用のコマンド文字列で、秘密ファイルを実際に読み出すコマンドは実行しません。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite guard-secrets --target windows-powershell-5.1 --json
+```
+
+結果の `scope` は `guard-secrets-tests-on-this-machine` です。
+PowerShell 本体が使えない環境では未検証となり、Node 版の成功に置き換えません。

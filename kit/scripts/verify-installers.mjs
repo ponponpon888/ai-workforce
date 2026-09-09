@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Runs installer or pull-all tests in temporary fixtures, never user repositories.
+// Runs fixture-based verification suites, never commands against user repositories.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+const suites = {
+  installers: { file: './test-install-backups.mjs', scope: 'installer-tests-on-this-machine' },
+  'pull-all': { file: './test-pull-all.mjs', scope: 'pull-all-tests-on-this-machine' },
+  'guard-secrets': { file: './test-guard-secrets.mjs', scope: 'guard-secrets-tests-on-this-machine' },
+};
 const args = process.argv.slice(2);
 let suiteName = 'installers';
 let selectedTarget = 'all';
@@ -13,7 +18,7 @@ for (let i = 0; i < args.length; i++) {
   seen.add(arg);
   if (arg === '--suite') {
     suiteName = args[++i];
-    if (!['installers', 'pull-all'].includes(suiteName)) usage();
+    if (!Object.hasOwn(suites, suiteName)) usage();
   }
   if (arg === '--target') {
     selectedTarget = args[++i];
@@ -21,10 +26,10 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 function usage() {
-  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite installers|pull-all] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
+  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite installers|pull-all|guard-secrets] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
   process.exit(2);
 }
-const suite = fileURLToPath(new URL(suiteName === 'installers' ? './test-install-backups.mjs' : './test-pull-all.mjs', import.meta.url));
+const suite = fileURLToPath(new URL(suites[suiteName].file, import.meta.url));
 const targets = [
   { name: 'node', executable: process.execPath, probe: ['--version'], args: [] },
   { name: 'powershell-7', executable: 'pwsh', probe: ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], args: ['--target', 'ps', '--pwsh', 'pwsh'] },
@@ -52,7 +57,7 @@ const results = selected.map(target => {
     ...(run.error || run.status !== 0 ? { output: (run.stdout + run.stderr).slice(-16000) } : {}) };
 });
 const exitCode = results.some(r => r.status === 'failed') ? 1 : results.some(r => r.status === 'unverified') ? 2 : 0;
-const report = { schema_version: 1, platform: process.platform, requested_target: selectedTarget, selected_targets: selected.map(t => t.name), scope: suiteName === 'installers' ? 'installer-tests-on-this-machine' : 'pull-all-tests-on-this-machine', results, exit_code: exitCode };
+const report = { schema_version: 1, platform: process.platform, requested_target: selectedTarget, selected_targets: selected.map(t => t.name), scope: suites[suiteName].scope, results, exit_code: exitCode };
 if (args.includes('--json')) console.log(JSON.stringify(report, null, 2));
 else {
   console.log(`Suite: ${suiteName}; selected targets: ${selected.map(t => t.name).join(', ')}`);

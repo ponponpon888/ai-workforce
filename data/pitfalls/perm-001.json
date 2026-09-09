@@ -1,10 +1,10 @@
 {
   "id": "perm-001",
   "title": "deny の前方一致は単語の途中で切れない",
-  "summary": "deny のパターンはコマンド名の前方一致で、単語の途中では切れない。echo で測ったところ、ワイルドカード無しの Bash(echo x) だけが完全一致で、コロン記法 Bash(echo x:*) と空白記法 Bash(echo x *) は同じ挙動だった。どちらも echo x hello は落とすが、echo xhello は通す。この規則を個別のコマンドに当てた帰結は、そのつど別のレコードにしてある（perm-005 / perm-004）。",
+  "summary": "deny のパターンはコマンド名の前方一致で、単語の途中では切れない。echo で測ったところ、ワイルドカード無しの Bash(echo x) だけが完全一致で、コロン記法 Bash(echo x:*) と空白記法 Bash(echo x *) は同じ挙動だった。どちらも echo x hello は落とすが、echo xhello は通す。これは Claude Code 本体の照合規則の記録であって、塞ぐ対象ではない。この規則を個別のコマンドに当てて生まれる穴の方が、そのつど別レコードになっている（perm-005 / perm-004）。",
   "layer": "permissions",
-  "kind": "trap",
-  "severity": "high",
+  "kind": "behaviour",
+  "severity": "medium",
   "confidence": "measured",
   "origin": "docs/02-guardrails.md#測り方",
 
@@ -22,9 +22,6 @@
     "1 回目はワイルドカード付きの 2 行だけで測り、両方通った。deny が効かないのではなく、設定が読まれていなかった。ワイルドカード無しの Bash(echo exact) を足し、それが落ちることを先に見てから測り直した",
     "2 回目の結果: echo x は 3 行とも落ちる。echo x hello はワイルドカード付きの 2 行で落ちる。echo xhello は 3 行とも通る"
   ],
-
-  "status": "open_recorded",
-  "why_not_closed": "照合規則そのものは Claude Code 本体の仕様で、こちらから変えられない。この規則が個別のコマンドで生む穴は、そのつど別レコードにして残す。",
 
   "detection": {
     "checkable": false,

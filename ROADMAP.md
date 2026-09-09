@@ -110,6 +110,14 @@ pull-all 23 ケースが Ubuntu / macOS / Windows の CI で通っています�
       [pitfall テンプレート](.github/ISSUE_TEMPLATE/pitfall.yml)からレコードに
       落とすまでの動線がまだ書かれていません（旧「`docs/pitfalls/` を作る」項目は
       `data/pitfalls/` に統合しました）
+- **レコード発の観測を、どう受けるか決める。** `origin` はファイルと見出しアンカーの
+      実在を要求します（[08](docs/08-pitfall-records.md) の R13 / R14）。散文がまだ
+      無い観測をレコードにするには、**先に docs 側を書き足す必要がある**わけです。
+      `ci-001` がその形で、この ROADMAP に項目を足して `origin` の宛先にしました。
+      他の人が Issue から 1 件足すときにも同じ負担が出ます。候補は 2 つで、
+      `origin` を任意にして「このレコード自身が一次記録」を表せるようにするか、
+      レコード発の観測を受ける docs を 1 本用意するか。**どちらにするかはまだ
+      決めていません**
 - **`data/pitfalls.index.json` の `checks` を実際に回す linter。** いま `checks` には
       2 件入っていますが、**それを検査するものがありません**。データの形だけが先に
       あります。`expect: present` / `absent` を見て対象ファイルを検査するだけの

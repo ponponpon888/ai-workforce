@@ -221,6 +221,8 @@ jobs:
       # Exiting 0 is not the same as having installed anything. Every file the
       # kit promises is checked by name, because a step that only asserts the
       # exit code passes just as happily when the installer writes nothing.
+      - name: Installer verification runner tests
+        run: node kit/scripts/test-verify-installers.mjs
       - name: Installer backup regression tests (node)
         run: node kit/scripts/test-install-backups.mjs
       - name: Installer backup regression tests (PowerShell)

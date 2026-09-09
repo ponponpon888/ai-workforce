@@ -39,6 +39,8 @@ WindowsとPowerShellインストーラの引用処理には、このPOSIX向け�
 
 ```powershell
 node kit/scripts/verify-installers.mjs
+# 一括検証コマンド自体の回帰テスト
+node kit/scripts/test-verify-installers.mjs
 # 結果をJSONで保存する場合
 node kit/scripts/verify-installers.mjs --json > installer-verification.json
 ```

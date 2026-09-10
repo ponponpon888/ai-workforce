@@ -32,7 +32,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, statSync, rmSync, renameSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, renameSync, lstatSync, openSync, closeSync, writeFileSync, fsyncSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,18 +143,70 @@ function fingerprint(sql) {
   return createHash('sha256').update('aiwf-exact-v2\0' + sql, 'utf8').digest('hex');
 }
 
-// Atomic rename gives only one caller the token. Never restore a claimed token.
+// The common, exclusive entry serializes ALL consumers, including Node and
+// PowerShell. Rename alone is not an exclusive claim on Windows. Never steal a
+// lock based on its age/PID and never restore a claimed token after a failure.
+function blockApprovalState(digest) {
+  process.stderr.write(
+    `[guard-sql] BLOCKED: approval-state-unavailable\n` +
+    `Fingerprint: ${digest}\n` +
+    `A consumer may be active, or approval IO needs recovery. No retry was authorized.\n` +
+    `Do not delete the lock or reissue this approval while callers may be running.\n` +
+    `Stop all callers, reconcile the external result, then follow docs/18-approval-lock-recovery.md.\n`
+  );
+  process.exit(2);
+}
+
 function isApproved(sql) {
-  const file = join(APPROVAL_DIR, `${fingerprint(sql)}.approval`);
+  const digest = fingerprint(sql);
+  const file = join(APPROVAL_DIR, `${digest}.approval`);
+  const lock = `${file}.lock`;
   const claimed = `${file}.used-${randomUUID()}`;
-  try { renameSync(file, claimed); } catch { return false; }
+  let lockFd;
   try {
-    const stat = lstatSync(claimed);
-    const age = Date.now() - stat.mtimeMs;
-    return stat.isFile() && age >= 0 && age <= APPROVAL_TTL_MINUTES * 60000 &&
-      readFileSync(claimed, 'utf8') === sql;
-  } catch { return false; }
-  finally { try { rmSync(claimed, { force: true }); } catch { /* already consumed */ } }
+    lockFd = openSync(lock, 'wx', 0o600);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false; // approval directory not installed
+    blockApprovalState(digest);
+  }
+
+  let approved = false, cleanupComplete = false, released = false;
+  try {
+    // Metadata is diagnostic, NOT authority to expire/unlock. Even an empty or
+    // malformed lock left by process death must block. Do not include SQL here.
+    writeFileSync(lockFd, JSON.stringify({
+      schema: 'aiwf-approval-lock-v1', pid: process.pid,
+      createdAt: new Date().toISOString(), claim: claimed.slice(file.length),
+    }) + '\n', 'utf8');
+    fsyncSync(lockFd);
+    let moved = false;
+    try {
+      renameSync(file, claimed);
+      moved = true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      cleanupComplete = true; // another completed consumer already used it
+    }
+    if (moved) {
+      const stat = lstatSync(claimed);
+      const age = Date.now() - stat.mtimeMs;
+      approved = stat.isFile() && age >= 0 && age <= APPROVAL_TTL_MINUTES * 60000 &&
+        readFileSync(claimed, 'utf8') === sql;
+      // No ALLOW until consumption is complete. IO/cleanup failures retain the
+      // lock and any claim evidence, rather than reopening the approval.
+      unlinkSync(claimed);
+      cleanupComplete = true;
+    }
+  } catch {
+    approved = false;
+  } finally {
+    try { closeSync(lockFd); } catch { cleanupComplete = false; }
+    if (cleanupComplete) {
+      try { unlinkSync(lock); released = true; } catch { /* retain recovery state */ }
+    }
+  }
+  if (!released) blockApprovalState(digest);
+  return approved;
 }
 
 /**

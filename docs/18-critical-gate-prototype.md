@@ -3,7 +3,8 @@
 ## 現在地
 
 2026-09-10、PR #16 の `bba40e423d1e1013bfa9821afa12dc01c46e3916` を土台に追加。
-`kit/critical-gate/` は新方式の検証用で、既存の SQL ガード・承認ツール・インストーラ・設定・CI には接続していません。
+`kit/critical-gate/` は新方式の検証用で、既存の SQL ガード・承認ツール・インストーラ・設定には接続していません。
+追加の検証専用CIを用意しましたが、既存CIや稼働ガードは変更しません。
 **PR #16 の Windows 承認競合は、この追加だけでは直りません。**
 Node と PowerShell の既存ガードを片方だけ変更して、新旧の承認が混在することを避けています。
 既存の `approve-ddl` の `y/N` と `--force` / `-Force` も本PRでは未変更です。
@@ -20,9 +21,13 @@ Node と PowerShell の既存ガードを片方だけ変更して、新旧の承
 | `kit/critical-gate/local-store.mjs` | 申請・承認・単回取得・結果の別記録 |
 | `kit/critical-gate/cli.mjs` | オフライン申請、確認、承認、状態表示 |
 | `kit/critical-gate/example.sandbox.json` | 架空プロジェクトの入力例。実行されない |
-| `kit/critical-gate/test.mjs` | 単体・CLI・並列・異常終了テスト |
+| `kit/critical-gate/test.mjs` | 単体・CLI・並列・異常終了・外部強制終了テスト |
+| `kit/critical-gate/verify.mjs` / `verify.ps1` | 環境照合、テスト起動、証跡保存 |
+| `kit/critical-gate/evidence.mjs` / `test-evidence.mjs` | 不完全なTAP出力を成功にしない検査とそのテスト |
+| `.github/workflows/critical-gate.yml` | LinuxとWindowsの検証専用CI |
 
-外部依存は追加していません。PowerShell向けの別実装はまだありません。
+外部依存は追加していません。PowerShell向けのガード別実装はまだありません。
+`verify.ps1` は同じNodeテストを起動するだけで、承認やSQL実行は行いません。
 
 ## 操作を固定する範囲
 
@@ -134,7 +139,73 @@ approveは表示された確認文言を要求します。承認してもSQLは�
 いずれも終了コード1。壊したコピーは配布物に含めません。
 Windows / Node v24.13.0、Windows PowerShell 5.1経由の起動、PowerShell 7、macOS、
 Claude Code本体、ChatGPT/Claudeコネクター、CI実行は未検証です。
-既存11スイートを実行した結果ではありません。追加テストは既存CIにも未配線です。
+既存11スイートを実行した結果ではありません。既存CIは未変更です。新たに独立した `critical-gate` ワークフローへ配線しました。
+ワークフローの追加と、実行成功の確認は別です。
+
+## 追加検証とWindowsの実行入口（2026-09-10）
+
+ローカル試験の取得方式そのものは変更せず、検証を強化しました。
+
+- 6並列×40回のテストでは、単なる終了コード2ではなく、`GateError / RECORD_EXISTS` を拒否理由として要求します。
+  読み込み失敗・未承認・その他の内部エラーは別の失敗です。取得者の受領証と保存記録の一致も確認します。
+- 親プロセスから実際に子プロセスを強制終了するテストを、取得記録作成前・作成直後・fsync直後に追加しました。
+  作成後は、空ファイルでも承認を復活させません。終了・パイプ閉鎖を待ってから試験データを片付けます。
+- 一時パスに空白と日本語を含め、WindowsのESMパス対策を毎回通します。
+- TAPの集計欠落、空の出力、予期しないskip、キャンセル、非ゼロ終了を成功にしません。
+
+Linux x64 / Node v22.16.0で **91テスト成功、失敗0、skip 0** を確認しました。
+内訳はガード試験73件と、証跡評価の試験18件です。Windows上の結果ではありません。
+
+### Windowsで実行するコマンド
+
+最新の専用ブランチを、未コミット作業とは分離した作業ツリーで用意し、そのルートで実行します。
+Node v24.13.0の実在を確認するだけで、NodeやPowerShellを自動インストールしません。
+本番の承認ディレクトリ、`.claude`、実行ポリシー、DB、課金設定は変更しません。
+
+```powershell
+powershell.exe -NoProfile -File .\kit\critical-gate\verify.ps1
+```
+
+PowerShell 7が導入済みの場合は、別の結果として実行します。
+
+```powershell
+pwsh -NoProfile -File .\kit\critical-gate\verify.ps1
+```
+
+指定したNode版と異なる場合やWindows以外で起動した場合は、未検証として終了コード2になります。
+意図的に他のNode版を調べる場合のみ `-ExpectedNodeVersion` を指定します。
+未導入のPowerShellを実行したことにはしません。
+
+出力先は毎回新しい一時フォルダです。`-OutputDirectory` を指定する場合も、新規のパスだけを受け付けます。
+過去の結果を上書きしません。
+
+| 証跡 | 内容 |
+| --- | --- |
+| `report.json` | 実際のOS・Node版、シェルが申告した版、ソースのSHA-256、集計、未検証項目 |
+| `tests.tap` | Nodeテストランナーの実出力 |
+| `stderr.log` | テストプロセスの標準エラー |
+
+結果は `passed`、`passed-with-skips`、`failed`、`unverified` です。
+Windowsで明示的に除外するシンボリックリンク試験1件は `unverifiedTests` に残り、成功件数には含めません。
+それ以外のskipは失敗扱いです。終了コード0でも、skipや未対応経路が消えたことにはなりません。
+レポート自体がない、壊れている、作成途中の場合は未検証です。
+
+`gitCommit` は取得できる場合だけ記録し、Gitのないコピーではnullにします。
+作業ツリーの実バイト列は `sourceSha256` で識別し、試験中に変化した場合は失敗させます。
+レポートは同権限の改ざんに耐える署名済み証明ではなく、実測の共有用です。
+既存PR #16のWindows競合が解消したという証明にもなりません。
+
+### CIの範囲
+
+追加ワークフローはLinux / Node 22.16.0とWindows / Node 24.13.0の2ジョブです。
+Windowsの1ジョブ内でPowerShell 5.1と7を別々に実行・保存します。
+対象ファイル変更時のPRと手動起動のみで、定期実行・デプロイはありません。
+読み取り権限のみ、チェックアウト資格情報は保持せず、3つの公式ActionはコミットSHAに固定しています。
+同時実行は1ジョブ、各ジョブ8分上限、証跡保持7日です。npm installや外部SQL実行はありません。
+
+追加前のPR #17 CI run `34431716814` では、Windowsジョブのrunner_id=0、実行ステップ0件を確認しました。
+PR #16には支払い／利用上限を理由に開始できないという記録がありますが、課金設定は変更しません。
+Windows実測・PowerShell実測・GitHub Actions成功は未確認です。手動のWindows結果が必要です。
 
 ## 次の接続条件
 

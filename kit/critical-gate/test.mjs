@@ -14,7 +14,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const example = JSON.parse(readFileSync(join(here, 'example.sandbox.json'), 'utf8'));
 const action = () => structuredClone(example);
 const errorCode = code => err => err instanceof GateError && err.code === code;
-const base = mkdtempSync(join(tmpdir(), 'aiwf-critical-tests-'));
+// Exercise file URLs, spaces and non-ASCII paths on every platform.
+const base = mkdtempSync(join(tmpdir(), 'aiwf critical \u65e5\u672c-'));
 let count = 0;
 const roots = [];
 function fresh(options) {
@@ -40,28 +41,66 @@ const cli = (root, args, input = '') => spawnSync(process.execPath, [join(here, 
 const storeUrl = pathToFileURL(join(here, 'local-store.mjs')).href;
 const worker = join(base, 'worker.mjs');
 writeFileSync(worker, `import { LocalApprovalStore } from ${JSON.stringify(storeUrl)};
+import { GateError } from ${JSON.stringify(pathToFileURL(join(here, 'protocol.mjs')).href)};
 const store = new LocalApprovalStore(process.argv[2]);
 process.once('message', ({ request }) => {
-  try { store.claim(request.id, { expectedAction: request.action, currentRevision: request.action.precondition.revision }); process.exit(0); }
-  catch { process.exit(2); }
+  let report;
+  try {
+    const granted = store.claim(request.id, { expectedAction: request.action, currentRevision: request.action.precondition.revision });
+    report = { kind: 'granted', receipt: granted.receipt }; process.exitCode = 0;
+  } catch (err) {
+    const expected = err instanceof GateError && err.code === 'RECORD_EXISTS';
+    report = { kind: expected ? 'denied' : 'unexpected-error', errorCode: err.code || 'UNKNOWN' };
+    process.exitCode = expected ? 2 : 3;
+  }
+  // Do not process.exit() before pipe output is flushed.
+  process.stdout.write(JSON.stringify(report)); process.disconnect();
 });
 process.send({ ready: true });
 `);
-function racer(root) {
-  const child = fork(worker, [root], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+function racer(root, execArgv = []) {
+  const child = fork(worker, [root], { execArgv, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let stdout = '', stderr = '', resolveReady, rejectReady, atBarrier = false;
+  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const result = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { child.kill(); reject(new Error('worker timeout')); }, 15000);
-    child.once('error', err => { clearTimeout(timeout); reject(err); });
-    child.once('exit', (code, signal) => { clearTimeout(timeout); resolve({ code, signal }); });
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL'); const err = new Error('worker timeout'); rejectReady(err); reject(err);
+    }, 20000);
+    child.on('message', msg => {
+      if (msg?.ready === true && !atBarrier) { atBarrier = true; resolveReady(); }
+      else { const err = new Error('invalid barrier'); rejectReady(err); child.kill('SIGKILL'); }
+    });
+    child.once('error', err => { clearTimeout(timeout); rejectReady(err); reject(err); });
+    child.once('close', (code, signal) => {
+      clearTimeout(timeout);
+      if (!atBarrier) rejectReady(new Error('worker exited before barrier'));
+      let report = null;
+      try { report = JSON.parse(stdout); } catch { /* Missing report is never an expected denial. */ }
+      resolve({ code, signal, report, stderr });
+    });
   });
-  const ready = new Promise((resolve, reject) => {
-    child.once('message', msg => msg.ready ? resolve() : reject(new Error('invalid barrier')));
-    child.once('error', reject);
-    child.once('exit', () => reject(new Error('worker exited before barrier')));
-  });
-  // Attach a handler immediately; a startup error must not leak an unhandled rejection.
-  result.catch(() => {});
-  return { child, ready, result };
+  ready.catch(() => {}); result.catch(() => {});
+  return { child, ready, result, closed };
+}
+async function stopRacers(racers) {
+  for (const x of racers) {
+    if (x.child.exitCode === null && x.child.signalCode === null) x.child.kill('SIGKILL');
+  }
+  // Await pipe closure before deleting fixtures (particularly on Windows).
+  await Promise.all(racers.map(x => x.closed));
+}
+async function waitForMarker(path, racer) {
+  const start = Date.now();
+  while (!existsSync(path)) {
+    assert.equal(racer.child.exitCode, null, 'worker exited before the fault boundary');
+    assert.equal(racer.child.signalCode, null, 'worker was killed before the fault boundary');
+    assert.ok(Date.now() - start < 10000, 'fault boundary was not reached');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 }
 
 try {
@@ -301,9 +340,10 @@ fs.fsyncSync = fd => {
 }; syncBuiltinESMExports();`);
       const run = join(base, 'claim-once.mjs');
       writeFileSync(run, `import { LocalApprovalStore } from ${JSON.stringify(storeUrl)};
+import { GateError } from ${JSON.stringify(pathToFileURL(join(here, 'protocol.mjs')).href)};
 import {readFileSync} from 'node:fs'; const request=JSON.parse(readFileSync(0,'utf8'));
 try { new LocalApprovalStore(process.argv[2]).claim(request.id, {expectedAction:request.action,currentRevision:request.action.precondition.revision}); process.exitCode=0; }
-catch { process.exitCode=2; }`);
+catch (err) { process.exitCode=err instanceof GateError && err.code === 'WRITE_FAILED' ? 2 : 3; }`);
       const result = spawnSync(process.execPath, ['--import', pathToFileURL(injector).href, run, root],
         { input: JSON.stringify(r), encoding: 'utf8', timeout: 15000 });
       assert.equal(result.status, ['after-create', 'after-flush'].includes(stage) ? 73 : 2, result.stderr);
@@ -323,12 +363,71 @@ catch { process.exitCode=2; }`);
         await Promise.all(racers.map(x => x.ready));
         racers.forEach(x => x.child.send({ request: r }));
         const results = await Promise.all(racers.map(x => x.result));
-        assert.equal(results.filter(x => x.code === 0).length, 1, `round ${round}: ${JSON.stringify(results)}`);
-        assert.equal(results.filter(x => x.code === 2).length, 5, `round ${round}: ${JSON.stringify(results)}`);
+        const detail = `round ${round}: ${JSON.stringify(results)}`;
+        assert.ok(results.every(x => x.signal === null && x.stderr === ''), detail);
+        const winners = results.filter(x => x.code === 0 && x.report?.kind === 'granted');
+        const denied = results.filter(x => x.code === 2 && x.report?.kind === 'denied' && x.report.errorCode === 'RECORD_EXISTS');
+        assert.equal(winners.length, 1, detail); assert.equal(denied.length, 5, detail);
+        const persisted = JSON.parse(readFileSync(join(root, 'claims', r.id + '.json'), 'utf8'));
+        assert.deepEqual(winners[0].report.receipt, persisted, 'winning receipt must match the durable record');
+        assert.equal(readdirSync(join(root, 'claims')).length, 1);
         assert.equal(store.status(r.id).state, 'outcome-unknown');
-      } finally { racers.forEach(x => { if (x.child.exitCode === null) x.child.kill(); }); }
+      } finally { await stopRacers(racers); }
     }
   });
+  await test('unexpected worker failures cannot count as expected denials', async () => {
+    const { root, store } = fresh(); const r = store.request(action()); // No approval.
+    const x = racer(root);
+    try {
+      await x.ready; x.child.send({ request: r }); const result = await x.result;
+      assert.equal(result.code, 3); assert.equal(result.report?.kind, 'unexpected-error');
+      assert.equal(result.report.errorCode, 'RECORD_MISSING');
+      assert.equal(readdirSync(join(root, 'claims')).length, 0);
+    } finally { await stopRacers([x]); }
+  });
+  for (const stage of ['before-create', 'after-create', 'after-flush']) {
+    await test(`external kill at ${stage} preserves the correct claim state`, { timeout: 30000 }, async () => {
+      const { root, store } = fresh(); const r = approved(store);
+      const marker = join(root, 'fault-reached');
+      const injector = join(base, `kill-${stage}.mjs`);
+      writeFileSync(injector, `import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module';
+const open = fs.openSync, flush = fs.fsyncSync, tracked = new Set();
+const stage = ${JSON.stringify(stage)};
+function pause() {
+  fs.writeFileSync(${JSON.stringify(marker)}, 'ready');
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+}
+fs.openSync = (path, ...args) => {
+  const hit = String(path).replaceAll('\\\\', '/').includes('/claims/');
+  if (hit && stage === 'before-create') pause();
+  const fd = open(path, ...args);
+  if (hit) { tracked.add(fd); if (stage === 'after-create') pause(); }
+  return fd;
+};
+fs.fsyncSync = fd => {
+  const value = flush(fd);
+  if (tracked.has(fd) && stage === 'after-flush') pause();
+  return value;
+}; syncBuiltinESMExports();`);
+      const x = racer(root, ['--import', pathToFileURL(injector).href]);
+      try {
+        await x.ready; x.child.send({ request: r }); await waitForMarker(marker, x);
+        assert.equal(x.child.kill('SIGKILL'), true, 'parent must actually terminate the paused worker');
+        const result = await x.result;
+        assert.ok(result.signal !== null || result.code !== 0, 'termination must not look like success');
+        assert.equal(result.report, null, 'worker must not have returned a grant');
+        const reopened = new LocalApprovalStore(root);
+        if (stage === 'before-create') {
+          assert.equal(reopened.status(r.id).state, 'approved');
+          assert.doesNotThrow(() => claim(reopened, r));
+        } else {
+          assert.equal(reopened.status(r.id).state, 'outcome-unknown');
+          assert.throws(() => claim(reopened, r), errorCode('RECORD_EXISTS'));
+          if (stage === 'after-create') assert.equal(readFileSync(join(root, 'claims', r.id + '.json')).length, 0);
+        }
+      } finally { await stopRacers([x]); }
+    });
+  }
   await test('symlinked record cannot authorize a claim', { skip: process.platform === 'win32' ? 'requires Windows symlink privilege; not counted as verified' : false }, () => {
     const { root, store } = fresh(); const r = approved(store);
     const record = join(root, 'approvals', r.id + '.json'); const copy = join(root, 'copy.json');

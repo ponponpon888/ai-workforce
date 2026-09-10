@@ -129,23 +129,71 @@ function Get-SqlFingerprint([string] $Sql) {
     } finally { $sha.Dispose() }
 }
 
-# A valid, unexpired approval token is consumed on use -- one statement, one run.
-function Test-Approved([string] $Sql) {
-    $file = Join-Path $ApprovalDir ((Get-SqlFingerprint $Sql) + '.approval')
-    if (-not (Test-Path -LiteralPath $file)) { return $false }
+# Node and PowerShell use the SAME exclusive entry. Rename alone is not a
+# cross-platform claim. Age/PID are never grounds to steal or remove the lock.
+function Deny-ApprovalState([string] $Digest) {
+    [Console]::Error.WriteLine(@"
+[guard-sql] BLOCKED: approval-state-unavailable
+Fingerprint: $Digest
+A consumer may be active, or approval IO needs recovery. No retry was authorized.
+Do not delete the lock or reissue this approval while callers may be running.
+Stop all callers, reconcile the external result, then follow docs/18-approval-lock-recovery.md.
+"@)
+    exit 2
+}
 
+function Test-Approved([string] $Sql) {
+    $digest = Get-SqlFingerprint $Sql
+    $file = Join-Path $ApprovalDir ($digest + '.approval')
+    $lock = $file + '.lock'
     $claimed = $file + '.used-' + [guid]::NewGuid().ToString('N')
-    try { [System.IO.File]::Move($file, $claimed) } catch { return $false }
+    $lockStream = $null
     try {
-        $item = Get-Item -LiteralPath $claimed -ErrorAction Stop
-        if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return $false }
-        $age = [DateTime]::UtcNow - $item.LastWriteTimeUtc
-        return ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -le $ApprovalTtlMinutes -and
-            [string]::Equals([System.IO.File]::ReadAllText($claimed), $Sql, [System.StringComparison]::Ordinal))
-    } catch { return $false }
-    finally {
-        try { [System.IO.File]::Delete($claimed) } catch { } # already consumed
+        $lockStream = [System.IO.File]::Open($lock, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    } catch [System.IO.DirectoryNotFoundException] {
+        return $false
+    } catch {
+        Deny-ApprovalState $digest
     }
+
+    $approved = $false; $cleanupComplete = $false; $released = $false
+    try {
+        # Metadata is diagnostic only. Empty/malformed locks also block. No SQL.
+        $record = @{
+            schema = 'aiwf-approval-lock-v1'; pid = $PID
+            createdAt = [DateTime]::UtcNow.ToString('o'); claim = $claimed.Substring($file.Length)
+        } | ConvertTo-Json -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($record + "`n")
+        $lockStream.Write($bytes, 0, $bytes.Length)
+        $lockStream.Flush($true)
+        $moved = $false
+        try {
+            [System.IO.File]::Move($file, $claimed)
+            $moved = $true
+        } catch [System.IO.FileNotFoundException] {
+            $cleanupComplete = $true
+        }
+        if ($moved) {
+            $item = Get-Item -LiteralPath $claimed -Force -ErrorAction Stop
+            if (-not $item.PSIsContainer -and -not ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                $age = [DateTime]::UtcNow - $item.LastWriteTimeUtc
+                $approved = ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -le $ApprovalTtlMinutes -and
+                    [string]::Equals([System.IO.File]::ReadAllText($claimed), $Sql, [System.StringComparison]::Ordinal))
+            }
+            # Consumption and lock cleanup must finish before returning ALLOW.
+            [System.IO.File]::Delete($claimed)
+            $cleanupComplete = $true
+        }
+    } catch {
+        $approved = $false
+    } finally {
+        try { $lockStream.Dispose() } catch { $cleanupComplete = $false }
+        if ($cleanupComplete) {
+            try { [System.IO.File]::Delete($lock); $released = $true } catch { }
+        }
+    }
+    if (-not $released) { Deny-ApprovalState $digest }
+    return $approved
 }
 
 # Pull SQL out of whichever tool is being called, and report which field it came

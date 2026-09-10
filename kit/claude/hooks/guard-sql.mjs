@@ -32,7 +32,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, statSync, rmSync, renameSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, rmSync, renameSync, lstatSync, openSync, closeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,18 +143,53 @@ function fingerprint(sql) {
   return createHash('sha256').update('aiwf-exact-v2\0' + sql, 'utf8').digest('hex');
 }
 
-// Atomic rename gives only one caller the token. Never restore a claimed token.
+/**
+ * Take the one lock that lets a caller claim this approval, or report that someone
+ * else holds it.
+ *
+ * The rename below is not enough on its own. On POSIX rename() is atomic against a
+ * concurrent rename of the same source, so exactly one caller wins and the rest see
+ * ENOENT. Windows renames through an open handle instead: the second caller opens
+ * the file, the first renames it, and the second then renames *that same file* to
+ * its own claim name. Both succeed, both read back the approved SQL, and both
+ * return true -- six concurrent calls let two through in roughly 10% of rounds
+ * here. An exclusive create has the same meaning on both platforms.
+ *
+ * A holder that dies leaves the lock behind, and until it expires this fingerprint
+ * is refused. That is the safe direction, and it clears itself: a lock older than
+ * the approval's own TTL is already past the point where the approval it guards
+ * could be used, so the next caller takes it over.
+ */
+function acquireClaimLock(lock) {
+  try { return openSync(lock, 'wx'); } catch { /* held, or left behind */ }
+  try {
+    if (Date.now() - statSync(lock).mtimeMs <= APPROVAL_TTL_MINUTES * 60000) return null;
+    rmSync(lock, { force: true });
+  } catch { return null; }
+  // Lost the race to take over the expired lock: the winner is claiming it.
+  try { return openSync(lock, 'wx'); } catch { return null; }
+}
+
+// One caller claims the token. Never restore a claimed token.
 function isApproved(sql) {
   const file = join(APPROVAL_DIR, `${fingerprint(sql)}.approval`);
   const claimed = `${file}.used-${randomUUID()}`;
-  try { renameSync(file, claimed); } catch { return false; }
+  const lock = `${file}.lock`;
+  const fd = acquireClaimLock(lock);
+  if (fd === null) return false;
   try {
-    const stat = lstatSync(claimed);
-    const age = Date.now() - stat.mtimeMs;
-    return stat.isFile() && age >= 0 && age <= APPROVAL_TTL_MINUTES * 60000 &&
-      readFileSync(claimed, 'utf8') === sql;
-  } catch { return false; }
-  finally { try { rmSync(claimed, { force: true }); } catch { /* already consumed */ } }
+    try { renameSync(file, claimed); } catch { return false; }
+    try {
+      const stat = lstatSync(claimed);
+      const age = Date.now() - stat.mtimeMs;
+      return stat.isFile() && age >= 0 && age <= APPROVAL_TTL_MINUTES * 60000 &&
+        readFileSync(claimed, 'utf8') === sql;
+    } catch { return false; }
+    finally { try { rmSync(claimed, { force: true }); } catch { /* already consumed */ } }
+  } finally {
+    try { closeSync(fd); } catch { /* already closed */ }
+    try { rmSync(lock, { force: true }); } catch { /* already gone */ }
+  }
 }
 
 /**

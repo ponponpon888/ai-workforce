@@ -106,27 +106,42 @@ Linux で通っていたコードが Windows で 2 か所落ちました。ど�
 | `test-validate-pitfalls.mjs` | 51 |
 | `test-verify-installers.mjs` | 20 |
 
-Windows の `test-install-backups.mjs` が 23 件なのは、POSIX 専用の 4 件が動かないためです。
-Linux の 27 件と同じ範囲ではありません。静的検査は doctor が `static-pass`、レコード検証 12 件、
+Windows / Node は合計 373 件成功・失敗 0 件です。`test-install-backups.mjs` が 23 件なのは
+POSIX 専用の 4 件が動かないためで、Linux の 27 件（合計 377 件）と同じ範囲ではありません。
+
+PowerShell 5.1 を対象にできるスイートも個別に実行しました。
+`test-install-backups` 15 件、`test-installed-approval` 1 件、`test-guard-secrets` 65 件、
+`test-pull-all` 60 件、`test-sql-boundaries` 18 件。合計 159 件成功・失敗 0 件です。
+
+静的検査は doctor が `static-pass`、レコード検証 12 件、
 静的検査 5 件成功・違反 0・不明 0、文書の未完了マーカー 0 件。
 生成インデックスは再生成してもバイト一致でした（Windows では改行変換により
 `git status` だけが差分を示しますが、内容は最新です）。
 
-### 未解決: 承認の一度限りが Windows で破れる
+### 修正: 承認の一度限りが Windows で破れていた
 
 `test-sql-boundaries.mjs` の「only one concurrent call consumes approval」が Windows で
-断続的に失敗します。同一の承認に対して 6 並列で実行し、6 回中 1 回程度、**2 プロセスが承認を
-通過**します（いずれも終了コード 0・標準エラーは空。内部エラーによる誤許可ではありません）。
-専用の再現スクリプトでは 40 ラウンド中 4 回（10%）でした。
+断続的に失敗していました。同一の承認に対して 6 並列で実行すると、**2 プロセスが承認を通過**
+します（いずれも終了コード 0・標準エラーは空。内部エラーによる誤許可ではありません）。
+専用の再現スクリプトでは 40 ラウンド中 4 回、約 10% でした。
 
 原因は `kit/claude/hooks/guard-sql.mjs` の `isApproved()` です。`renameSync` の原子性で
-取得者を 1 つに絞る設計ですが、Windows の rename は開いたハンドル経由で行われるため、
-2 番目の呼び出しが「1 番目が既に改名した後のファイル」を自分の名前へ改名でき、
-両方が成功します。POSIX で成り立つ排他性が Windows では成り立ちません。
+取得者を 1 つに絞る設計でしたが、POSIX の `rename()` が同一ソースへの並行 rename に対して
+原子的であるのに対し、Windows は開いたハンドル経由で改名します。2 番目の呼び出しが
+ファイルを開き、1 番目が改名し、2 番目が**その同じファイル**を自分の取得名へ改名するため、
+両方が成功し、両方が承認済み SQL を読み戻して真を返します。
 
-**未修正です。** 中核の保証に関わる変更で、排他ロックを入れると異常終了時に
-そのフィンガープリントが恒久的に拒否側へ倒れる（安全側だが復旧に手作業が要る）という
-判断を伴うため、方針を決めてから直します。Linux / macOS への影響は未測定です。
+取得を**排他生成のロック**（`openSync(path, 'wx')`）で絞るよう変更しました。排他生成は
+両プラットフォームで同じ意味を持ちます。取得者が異常終了してロックが残った場合、その
+フィンガープリントは拒否側に倒れますが、承認自体の TTL を超えたロックは次の呼び出しが
+奪えるため自動で解消します。TTL を超えたロックは、それが守っている承認がもう使えない
+時点のものです。
+
+修正後は 120 ラウンド（720 回の並列呼び出し）で異常 0 件です。
+
+PowerShell 版の `guard-sql.ps1` は `[System.IO.File]::Move` を使っており、libuv の
+ハンドル経由 rename とは経路が異なります。90 ラウンドで異常は出ていないため変更していません。
+Node 版ほど強い証拠ではありません。Linux / macOS での並列挙動は未測定です。
 
 ## 基本6スイートの一括確認
 
@@ -150,7 +165,7 @@ Linux で実行した `--suite core --target all --json` は Node の6スイー�
 | PowerShell 7 | 未導入のため未検証。導入していない |
 | Windows の Node | 実行済み。上記2件を修正して成功 |
 | macOS の Node | 統合版は未実行 |
-| 承認の一度限り（Windows） | **失敗。`isApproved()` の rename が排他にならず、10%程度で2プロセスが通過。未修正** |
+| 承認の一度限り（Windows） | 修正済み。排他生成ロックで取得を絞り、120ラウンドで異常0件 |
 | GitHub Actions | 課金停止で実行不可。18ジョブすべて `steps: 0`、注釈は `recent account payments have failed or your spending limit needs to be increased` |
 | Claude Code 本体 | 設定受理・優先順位・モード・フック接続・パス記法は未検証 |
 | 素の環境 | 新規導入からの確認が未完了 |

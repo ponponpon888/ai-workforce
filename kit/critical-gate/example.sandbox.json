@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "kind": "sql.ddl",
+  "toolName": "mcp__Supabase__execute_sql",
+  "target": {
+    "provider": "supabase",
+    "projectId": "offline-example-only",
+    "environment": "sandbox"
+  },
+  "parameters": {
+    "query": "CREATE TABLE approval_demo (id integer);"
+  },
+  "precondition": {
+    "revision": "example-revision-not-a-real-db"
+  },
+  "policyVersion": "local-sandbox-v1"
+}

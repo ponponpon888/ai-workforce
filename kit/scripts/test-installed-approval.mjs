@@ -18,12 +18,20 @@ test('installed writer and registered hook share exact, single-use approval', ()
   const root = mkdtempSync(join(tmpdir(), 'aiwf-installed-approval-'));
   const home = join(root, 'claude home');
   const env = { ...process.env, AIWF_APPROVAL_DIR: join(root, 'approvals') };
+  // This installs for real, so it reaches install.ps1's ShouldProcess calls. Say
+  // non-interactive rather than lean on $ConfirmPreference still being 'High' --
+  // lower it and the same call blocks on a prompt with a console attached, or dies
+  // as a NullReferenceException without one. It has to go through a wrapper: with
+  // powershell.exe -File the argument -Confirm:$false arrives as the literal string
+  // "$false" and will not bind to a SwitchParameter. Inside a script it is evaluated.
+  const installWrapper = join(root, 'install-wrapper.ps1');
+  writeFileSync(installWrapper, "param([string]$Installer, [string]$Dest)\n& $Installer -ClaudeHome $Dest -Hook powershell -Confirm:$false\nexit $LASTEXITCODE\n");
   const run = (file, args = []) => spawnSync(process.execPath, [file, ...args], {
     cwd: root, env, encoding: 'utf8', timeout: 15000,
   });
   try {
     const installed = ps
-      ? spawnSync(pwsh, ['-NoProfile', '-File', resolve(scripts, 'install.ps1'), '-ClaudeHome', home, '-Hook', 'powershell'], { cwd: root, env, encoding: 'utf8', timeout: 15000 })
+      ? spawnSync(pwsh, ['-NoProfile', '-File', installWrapper, '-Installer', resolve(scripts, 'install.ps1'), '-Dest', home], { cwd: root, env, encoding: 'utf8', timeout: 15000 })
       : run(resolve(scripts, 'install.mjs'), ['--claude-home', home]);
     assert.equal(installed.status, 0, installed.stderr);
     const diagnosed = run(resolve(scripts, 'doctor.mjs'), ['--claude-home', home]);

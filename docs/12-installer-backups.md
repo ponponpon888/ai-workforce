@@ -89,8 +89,22 @@ PowerShellインストーラの接続テストも、既定のNodeフックを対
 - 設定スキーマ全体の検証や、Claude Code本体による設定受理・フック呼び出しは検査しない
 - PowerShellフック自体の接続確認とWindowsでの特殊パス対応は別途必要
 
-Linux / Node v24.19.0で27テスト成功を確認しています。Windows・PowerShellでの実行結果は未確認です。
+Linux / Node v24.19.0で27テスト成功を確認しています。
+2026-09-10にWindows 11 / Node v24.13.0で23件、Windows PowerShell 5.1で15件の成功を確認しました。
+Windowsの23件はPOSIX専用の4件が動かないためで、Linuxの27件と同じ範囲ではありません。
+PowerShell 7は未導入のため未検証です。
 PRのCIが開始前に失敗している場合も、これらの検証が成功した扱いにはしません。
+
+Node対象をWindowsで実行すると、以前は23件中14件が失敗していました。
+`node --import` にWindowsの絶対パスを渡していたためで、ESMローダが `c:` をスキームと読んで拒否します。
+`pathToFileURL()` を通すよう修正済みです。POSIXでは絶対パスがそのまま指定子として解決されるため表面化しませんでした。
+
+PowerShell対象のテストは、インストーラを `-Confirm:$false` で呼びます。
+`install.ps1` は `ConfirmImpact = 'Medium'` なので既定の `$ConfirmPreference = 'High'` では確認が出ませんが、
+テスト側がその既定に依存しないよう明示しています。`$ConfirmPreference` を `Low` にすると、
+明示のない呼び出しはコンソールがあれば入力待ちで止まり、なければ `NullReferenceException` で落ちます。
+インストーラ本体の確認と `-WhatIf` は変更していません。`-WhatIf` は `-Confirm:$false` より優先されるため、
+試行実行の検査はそのまま通ります。
 
 ## 検証対象の指定ミスを防ぐ
 

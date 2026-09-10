@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, statSync, utimesSync, cpSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const { target, pwsh: shell } = readTestTargetOptions();
 const ps = target === 'ps';
@@ -13,10 +13,23 @@ function fixture(fn) {
   const root = mkdtempSync(join(tmpdir(), 'install-backups-'));
   const preload = join(root, 'clock.mjs');
   writeFileSync(preload, "const OriginalDate = Date; globalThis.Date = class extends OriginalDate { toISOString() { return '2026-09-09T00:00:00.000Z'; } };\n");
+  // `node --import` takes a specifier, not a path. A POSIX absolute path happens to
+  // resolve as one; a Windows path does not -- the ESM loader reads `C:\...` as the
+  // scheme `c:` and refuses it with ERR_UNSUPPORTED_ESM_URL_SCHEME before the installer
+  // is reached, which is why this file passed on Linux and failed 14 of 23 here.
+  const preloadUrl = pathToFileURL(preload).href;
   const wrapper = join(root, 'run.ps1');
-  writeFileSync(wrapper, 'param([string]$Installer, [string]$Dest, [switch]$Dry, [switch]$Skip)\nfunction Get-Date { param($Format) return "20260909_000000" }\n& $Installer -ClaudeHome $Dest -WhatIf:$Dry -SkipSettings:$Skip -SkipClaudeMd:$Skip\nexit $LASTEXITCODE\n');
+  // -Confirm:$false, not the ambient default. install.ps1 declares ConfirmImpact
+  // 'Medium', so a shell whose $ConfirmPreference is still 'High' never prompts and
+  // these runs pass by coincidence. Lower that preference -- or raise ConfirmImpact --
+  // and every call here reaches the prompt instead: with a console attached it blocks
+  // on the operator, and with none it dies inside the prompt as a NullReferenceException
+  // from install.ps1's ShouldProcess line, which names nothing useful. Say non-interactive
+  // rather than depend on a preference this fixture does not own. -WhatIf still wins over
+  // it, so the dry-run cases below are unaffected.
+  writeFileSync(wrapper, 'param([string]$Installer, [string]$Dest, [switch]$Dry, [switch]$Skip)\nfunction Get-Date { param($Format) return "20260909_000000" }\n& $Installer -ClaudeHome $Dest -WhatIf:$Dry -SkipSettings:$Skip -SkipClaudeMd:$Skip -Confirm:$false\nexit $LASTEXITCODE\n');
   const run = (home, { dry = false, skip = false } = {}) => {
-    const args = ps ? ['-NoProfile', '-File', wrapper, '-Installer', installer, '-Dest', home, ...(dry ? ['-Dry'] : []), ...(skip ? ['-Skip'] : [])] : ['--import', preload, installer, '--claude-home', home, ...(dry ? ['--dry-run'] : []), ...(skip ? ['--skip-settings', '--skip-claude-md'] : [])];
+    const args = ps ? ['-NoProfile', '-File', wrapper, '-Installer', installer, '-Dest', home, ...(dry ? ['-Dry'] : []), ...(skip ? ['-Skip'] : [])] : ['--import', preloadUrl, installer, '--claude-home', home, ...(dry ? ['--dry-run'] : []), ...(skip ? ['--skip-settings', '--skip-claude-md'] : [])];
     const r = spawnSync(ps ? shell : process.execPath, args, { encoding: 'utf8' });
     assert.equal(r.error, undefined); assert.equal(r.status, 0, r.stderr); return r;
   };
@@ -81,6 +94,12 @@ if (!ps) {
     if (failure === 'missing-approval') rmSync(join(kit, 'scripts', 'approve-ddl.mjs'));
     else writeFileSync(join(kit, 'claude', 'settings.json'), '{broken');
     const r = ps
+      // No -Confirm:$false here, and none is needed: the preflight rejects this kit
+      // before Write-InstalledFile is reached, so no ShouldProcess call happens. It
+      // could not be passed anyway -- powershell.exe -File hands arguments to the
+      // script as literal strings, so -Confirm:$false arrives as the text "$false"
+      // and fails to bind to a SwitchParameter. Where a run does need it, go through
+      // a wrapper .ps1 as fixture() does, because there $false is script text.
       ? spawnSync(shell, ['-NoProfile', '-File', join(kit, 'scripts', 'install.ps1'), '-ClaudeHome', home], { encoding: 'utf8' })
       : spawnSync(process.execPath, [join(kit, 'scripts', 'install.mjs'), '--claude-home', home], { encoding: 'utf8' });
     assert.notEqual(r.status, 0);
@@ -96,10 +115,16 @@ if (ps) test('declining backup prevents a later yes from overwriting that file',
   writeFileSync(join(home, 'settings.json'), 'custom settings');
   // No to the first backup; Yes to all later prompts. Before the fix, the
   // second prompt allowed CLAUDE.md to be overwritten without a backup.
+  // The only test here that prompts on purpose. Every installer call that reaches
+  // Write-InstalledFile goes through the wrapper's -Confirm:$false, so this is the one
+  // place a hung prompt can come from -- name it, because the bare assertion reported
+  // the timeout without saying what was waiting.
   const r = spawnSync(shell, ['-NoProfile', '-File', installer, '-ClaudeHome', home, '-Confirm'], {
     input: 'n\na\n', encoding: 'utf8', timeout: 15000,
   });
-  assert.equal(r.error, undefined);
+  assert.equal(r.error?.code, undefined,
+    `install.ps1 -Confirm did not consume its answers from stdin (${r.error?.code}): ` +
+    'the ShouldProcess prompts went somewhere this fixture cannot drive.');
   assert.equal(r.status, 0, r.stderr);
   assert.equal(readFileSync(target, 'utf8'), 'preserve my instructions');
   assert.equal(readdirSync(home).some(n => n.startsWith('CLAUDE.md.bak.')), false);
@@ -152,6 +177,7 @@ for (const conflict of ['parent-file', 'destination-directory']) {
     if (conflict === 'parent-file') writeFileSync(join(home, 'hooks'), 'keep obstruction');
     else mkdirSync(join(home, 'settings.json'));
     const r = ps
+      // Rejected by the preflight as well, so no prompt is reachable. See the note above.
       ? spawnSync(shell, ['-NoProfile', '-File', installer, '-ClaudeHome', home], { encoding: 'utf8' })
       : spawnSync(process.execPath, [installer, '--claude-home', home], { encoding: 'utf8' });
     assert.equal(r.error, undefined);

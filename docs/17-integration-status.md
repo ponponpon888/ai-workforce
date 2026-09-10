@@ -22,6 +22,9 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 
 ## 現在の統合版の検証結果
 
+Linux / Node の記録は下記のまま残します。Windows での実行結果は
+[Windows での実行（2026-09-10）](#windows-での実行2026-09-10)にあります。両者を混ぜません。
+
 検証対象コード: `980393f9ba2f894aff8ec091777d9167a0d27801`。
 このコミットと同一のローカルコードを Linux / Node v24.19.0 で検証しました。
 全11スイートを実行し、見つかった文書参照切れを修正後、影響するレコード検証51件を再実行しました。最終結果は合計377件成功・失敗0件です。今回の記録更新は文書のみです。
@@ -65,7 +68,65 @@ CI の既存ジョブ名と OS 選択を保ち、それぞれの追加テスト�
 
 詳細は [自動更新](04-multi-project.md)、[認証検査](18-pull-auth-check.md)、[検証手順](12-installer-backups.md) を参照してください。
 テストは一時ファイル・検査用リポジトリを使用し、本番 DB やユーザーの作業リポジトリには接続しません。
-PowerShell コードは今回実行していません。一時フォルダ修正を含め、実機確認は残っています。
+
+## Windows での実行（2026-09-10）
+
+実行環境: Windows 11 Pro 10.0.26200 / Windows PowerShell 5.1.26100.9278 / Node v24.13.0 / git 2.52.0。
+PowerShell 7 は未導入のため、`--target powershell-7` は `unverified` のままです。導入はしていません。
+
+Linux で通っていたコードが Windows で 2 か所落ちました。どちらも Windows でしか出ません。
+
+- **`test-install-backups.mjs` の Node 対象が 23 件中 14 件失敗。** `node --import` に
+  Windows の絶対パスを渡していました。ESM ローダはこれを `c:` というスキームとして読み、
+  インストーラに届く前に `ERR_UNSUPPORTED_ESM_URL_SCHEME` で止まります。POSIX の絶対パスは
+  そのまま指定子として解決されるため、Linux では表面化しませんでした。
+  `pathToFileURL()` を通して修正し、23 件全て成功しています。
+- **インストーラのテストが `$ConfirmPreference` の既定値に依存していました。** `install.ps1` は
+  `ConfirmImpact = 'Medium'` なので、既定の `High` のままなら確認は出ません。裏を返すと、
+  この既定が崩れた瞬間に全ての呼び出しが確認経路に入ります。実測では、`$ConfirmPreference = 'Low'`
+  にすると `-Confirm:$false` なしの呼び出しは `NullReferenceException`（`install.ps1:219`）で落ち、
+  コンソールがあれば入力待ちで止まります。テスト側の非対話呼び出しに `-Confirm:$false` を明示しました。
+  インストーラ本体、通常利用時の確認、`-WhatIf` はいずれも変更していません。
+
+修正後の結果です。`--suite core --target windows-powershell-5.1 --json` は終了コード 0、
+6 スイート全て `passed`。JSON は対話メッセージで壊れていません（ランナーは子プロセスの
+標準出力・標準エラーをパイプで受け取り、失敗時のみ `JSON.stringify` 経由で埋め込むため）。
+
+| スクリプト（`kit/scripts/`） | Windows / Node |
+|---|---:|
+| `test-check-doc-todos.mjs` | 13 |
+| `test-doctor.mjs` | 28 |
+| `test-guard-secrets.mjs` | 65 |
+| `test-guard-sql.mjs` | 44 |
+| `test-install-backups.mjs` | 23 |
+| `test-installed-approval.mjs` | 1 |
+| `test-lint-pitfalls.mjs` | 38 |
+| `test-pull-all.mjs` | 72 |
+| `test-sql-boundaries.mjs` | 18 |
+| `test-validate-pitfalls.mjs` | 51 |
+| `test-verify-installers.mjs` | 20 |
+
+Windows の `test-install-backups.mjs` が 23 件なのは、POSIX 専用の 4 件が動かないためです。
+Linux の 27 件と同じ範囲ではありません。静的検査は doctor が `static-pass`、レコード検証 12 件、
+静的検査 5 件成功・違反 0・不明 0、文書の未完了マーカー 0 件。
+生成インデックスは再生成してもバイト一致でした（Windows では改行変換により
+`git status` だけが差分を示しますが、内容は最新です）。
+
+### 未解決: 承認の一度限りが Windows で破れる
+
+`test-sql-boundaries.mjs` の「only one concurrent call consumes approval」が Windows で
+断続的に失敗します。同一の承認に対して 6 並列で実行し、6 回中 1 回程度、**2 プロセスが承認を
+通過**します（いずれも終了コード 0・標準エラーは空。内部エラーによる誤許可ではありません）。
+専用の再現スクリプトでは 40 ラウンド中 4 回（10%）でした。
+
+原因は `kit/claude/hooks/guard-sql.mjs` の `isApproved()` です。`renameSync` の原子性で
+取得者を 1 つに絞る設計ですが、Windows の rename は開いたハンドル経由で行われるため、
+2 番目の呼び出しが「1 番目が既に改名した後のファイル」を自分の名前へ改名でき、
+両方が成功します。POSIX で成り立つ排他性が Windows では成り立ちません。
+
+**未修正です。** 中核の保証に関わる変更で、排他ロックを入れると異常終了時に
+そのフィンガープリントが恒久的に拒否側へ倒れる（安全側だが復旧に手作業が要る）という
+判断を伴うため、方針を決めてから直します。Linux / macOS への影響は未測定です。
 
 ## 基本6スイートの一括確認
 
@@ -85,14 +146,21 @@ Linux で実行した `--suite core --target all --json` は Node の6スイー�
 | 対象 | 状況 |
 |---|---|
 | Linux / Node | 全11スイート377件成功 |
-| PowerShell 7 / Windows PowerShell 5.1 | 統合版は未実行 |
-| macOS / Windows の Node | 統合版は未実行 |
-| GitHub Actions | 基点 `79fb401` の run `34418072254` は18ジョブ・実行ステップ0件で失敗 |
+| Windows PowerShell 5.1 | 基本6スイート成功。全11スイートも成功（`test-sql-boundaries` の並列1件を除く） |
+| PowerShell 7 | 未導入のため未検証。導入していない |
+| Windows の Node | 実行済み。上記2件を修正して成功 |
+| macOS の Node | 統合版は未実行 |
+| 承認の一度限り（Windows） | **失敗。`isApproved()` の rename が排他にならず、10%程度で2プロセスが通過。未修正** |
+| GitHub Actions | 課金停止で実行不可。18ジョブすべて `steps: 0`、注釈は `recent account payments have failed or your spending limit needs to be increased` |
 | Claude Code 本体 | 設定受理・優先順位・モード・フック接続・パス記法は未検証 |
 | 素の環境 | 新規導入からの確認が未完了 |
 | 実プロジェクトの DB ロール | 未検証。対象 DB に変更は加えていない |
 
-CI 停止の解消や現在の原因は確認できていません。上記 run は今回のコード追加前の結果であり、新しいコミットの CI 成功を示しません。
+CI が止まっている原因は特定できました。**コードの失敗ではありません。** 2026-09-09 の
+全 run が 5〜6 秒で失敗し、18 ジョブすべてがステップ 0 件で、注釈は支払い・上限に関する
+ものです。ランナーが割り当てられないため、どのステップも実行されていません。
+解消できるのはアカウントの課金設定だけで、こちらでは変更していません。
+ワークフロー側は PR で macOS を外す対策を既に入れており、これ以上コード側でできることはありません。
 ローカル成功を CI 成功として扱わず、過去の Windows 実測とも区別します。
 基本機能の実装とローカル検証は完了しましたが、マージ・公開はまだ行っていません。
 その他の制約と公開条件は [ロードマップ](../ROADMAP.md) を参照してください。

@@ -1,0 +1,39 @@
+{
+  "id": "install-001",
+  "title": "kit は approve-ddl を入れないので、DDL を止められた人は承認できない",
+  "summary": "guard-sql は DDL を承認トークンが出るまで止め、その拒否メッセージで承認スクリプトの実行を指示する。ところが install.mjs / install.ps1 が入れていたのは CLAUDE.md・フック・settings.json だけで、approve-ddl はどこにも置かれなかった。しかもメッセージが名指しするのは kit/scripts/approve-ddl.mjs というリポジトリ相対のパスで、kit を入れた人の作業ディレクトリには存在しない。止められた人にできることが「フックを外す」しかなくなる。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-09",
+  "environment": {
+    "os": "Ubuntu 22.04.5 LTS (Cowork desktop VM) / Ubuntu 24.04.4 LTS",
+    "shell": "bash / pwsh",
+    "shell_version": "5.1.16 / 7.4.6",
+    "claude_code_version": "unrecorded",
+    "node_version": "22.23.2"
+  },
+  "repro": [
+    "使い捨ての home に両方のインストーラを流す: node kit/scripts/install.mjs --claude-home /tmp/fakehome / pwsh -File kit/scripts/install.ps1 -ClaudeHome /tmp/fake-ps -Hook powershell",
+    "できたファイルを数える。CLAUDE.md・hooks/guard-sql・hooks/guard-secrets・settings.json の 4 つだけで、approve-ddl はどちらの経路でも 1 つも置かれない",
+    "入った先のフックに未承認 DDL を流すと、拒否メッセージが node kit/scripts/approve-ddl.mjs を指す。その home のどこにも kit/ は無い"
+  ],
+  "status": "closed",
+  "fix": "インストーラが <claude home>/scripts/approve-ddl.* を置く（-Hook で選んだ実装に合わせる）。フック側は自分の隣（hooks/../scripts/）に承認スクリプトがあればその絶対パスを、無ければ従来のリポジトリ相対パスを拒否メッセージに書く。入れた人には絶対パスが、リポジトリで作業している人には従来どおりの表示が出る。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/scripts/install.mjs",
+    "pattern": "approve-ddl.mjs",
+    "expect": "present",
+    "message": "インストーラが approve-ddl を置かなくなると、DDL を止められた人が承認できなくなる。"
+  },
+  "related": [],
+  "tags": [
+    "install",
+    "approve-ddl",
+    "usability"
+  ]
+}

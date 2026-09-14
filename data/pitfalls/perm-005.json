@@ -1,0 +1,27 @@
+{
+  "id": "perm-005",
+  "title": "Bash(rm -rf:*) は rm -rfv を止めない",
+  "summary": "前方一致は単語の途中で切れないので、フラグが 1 文字伸びた rm -rfv /foo は Bash(rm -rf:*) を抜ける。rm -fr も同じ。止めているのは「rm -rf という文字列」であって、「rm の危険な使い方」ではない。rm そのものは一度も叩いておらず、これは perm-001 で得た照合規則を rm に当てた帰結。",
+  "layer": "permissions",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/02-guardrails.md#ただし両方に同じ穴があります",
+
+  "inferred_from": [
+    "perm-001",
+    "docs/02-guardrails.md#測り方"
+  ],
+
+  "status": "open_recorded",
+  "why_not_closed": "塞ぐには rm そのものを deny するしかなく、そうすると rm -rf ./dist のような日常の操作まで止まる。誤検知の多いルールは外されるので、抜け方が分かったうえで残している。",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "判定しているのは Claude Code 本体なので、設定を置いて実際に rm -rfv を叩く以外に確かめる方法がない。叩けば inferred から measured に上げられる。"
+  },
+
+  "related": ["perm-001", "perm-004"],
+  "tags": ["deny", "prefix-match", "rm"]
+}

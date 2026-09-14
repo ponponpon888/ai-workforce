@@ -1,0 +1,39 @@
+{
+  "id": "hook-001",
+  "title": "SQL の中和をシェルのコマンド行に当てると、--sql 以降が消える",
+  "summary": "SQL の中和は -- を行コメントとして潰す。シェルのコマンド行に同じ処理を当てると npx supabase db execute --sql 'truncate bookings' の --sql 以降が丸ごと消え、残るのは npx supabase db execute だけになる。TRUNCATE が視界から外れて通る。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#3-つ目は賢くしたせいで空きました",
+
+  "measured_on": "2026-09-07",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "kit/ と手元の ~/.claude を 1 行ずつ突き合わせ、kit/ 側が間違っている箇所を 4 件見つけた。これはその 3 件目",
+    "塞ぐ前に 'TRUNCATE behind --sql' のテストを書いて流したら、フックは ALLOW（exit 0）を返した",
+    "いまは node kit/scripts/test-guard-sql.mjs が BLOCK 側に固定している"
+  ],
+
+  "status": "closed",
+  "fix": "ツール名とフィールド名の組で文法を決める。Bash / PowerShell ツールが command を渡してきたときはシェルのコマンド行として、中和をかけずにそのまま走査する。それ以外は SQL として中和する。",
+
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-sql.mjs",
+    "pattern": "grammar === 'shell'",
+    "expect": "present",
+    "message": "シェル文法の分岐が消えると、--sql の後ろが再びコメント扱いで消える。"
+  },
+
+  "related": [],
+  "tags": ["guard-sql", "false-negative", "grammar"]
+}

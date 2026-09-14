@@ -14,6 +14,15 @@
  * Blocked until a human approves the exact statement (see approve-ddl.mjs):
  *   CREATE / ALTER / GRANT / REVOKE / REINDEX / VACUUM
  *
+ * SQL does not have to appear on the command line. `psql -f x.sql`, `psql < x.sql`,
+ * `cat x.sql | psql` and `\i x.sql` all hand a database client a file, and a guard
+ * that only reads the command line sees none of it -- so writing the file first and
+ * running it second walked straight through. The hook runs before the tool does, but
+ * the file was written by an earlier call and is already on disk, so it can be read
+ * and scanned as SQL. When a file route is detected and nothing can be read, the call
+ * needs the same human approval a DDL statement needs: an unreadable path is not a
+ * reason to assume the file is harmless.
+ *
  * SCOPE
  * This stops accidents, not an adversary. Any agent holding a shell could write
  * an approval file itself. The point is that a model doing the wrong thing by
@@ -24,9 +33,22 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, statSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/**
+ * Where to tell the human to run the approval script. Installed, the hook sits in
+ * <claude home>/hooks and approve-ddl in <claude home>/scripts, so an absolute path
+ * can be given -- the repo-relative one only works from a checkout of this repo,
+ * which is not where anyone hits this message.
+ */
+const hookDir = dirname(fileURLToPath(import.meta.url));
+const installedApprove = resolve(hookDir, '..', 'scripts', 'approve-ddl.mjs');
+const APPROVE_COMMAND = existsSync(installedApprove)
+  ? `node "${installedApprove}"`
+  : 'node kit/scripts/approve-ddl.mjs';
 
 const APPROVAL_TTL_MINUTES = 15;
 const APPROVAL_DIR =
@@ -41,6 +63,30 @@ const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
 /** A shell call only counts as SQL if it actually invokes a database client. */
 const SQL_CLIENT_RE = /\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b/i;
 
+/**
+ * Markers that hand a database client a file instead of a statement. Each one is
+ * scanned only inside a command segment that invokes a client, so `rm -f /tmp/junk`
+ * sitting after `&&` is not mistaken for `psql -f`.
+ *
+ * `<(?!<)` matters: `psql <<'EOF'` is a here-document, not a redirect, and reading
+ * `<'EOF'` as a path would demand approval for every harmless here-document.
+ */
+const FILE_ROUTE_RES = [
+  /(?:^|\s)(?:-f|--file)[=\s]+(\S+)/g, // psql -f x.sql / --file=x.sql
+  /(?:^|\s)<(?!<)\s*(\S+)/g, //            psql < x.sql
+  /\\i r?\s*(\S+)/g, //                     placeholder, replaced below
+  /\bcat\s+(\S+)/g, //                     cat x.sql | psql
+  /(?:^|[\s"'`=])([^\s"'`;|<>]+\.sql)\b/g, // any .sql path, however it got there
+];
+// \i and \ir are psql's include commands, usually inside a -c string.
+FILE_ROUTE_RES[2] = /\\ir?\s+(\S+)/g;
+
+/** Command separators. A pipeline stays whole: `cat x.sql | psql` is one segment. */
+const SEGMENT_RE = /&&|\|\||;|\r?\n/;
+
+/** Files larger than this are not scanned; an unread file takes the approval path. */
+const MAX_SQL_FILE_BYTES = 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 
 function deny(reason, statement) {
@@ -53,7 +99,7 @@ function deny(reason, statement) {
       `What to do:\n` +
       `  1. Show this statement to the human and explain what it changes.\n` +
       `  2. If it is DDL and they agree, ask them to run:\n` +
-      `       node kit/scripts/approve-ddl.mjs '<the exact statement>'\n` +
+      `       ${APPROVE_COMMAND} '<the exact statement>'\n` +
       `     then retry the call unchanged.\n` +
       `  3. If it is a DELETE or UPDATE, add a WHERE clause.\n` +
       `  4. DROP and TRUNCATE are never approved by this hook. Do them by hand.\n`
@@ -126,6 +172,66 @@ function extractSql(toolInput) {
   return { value: '', key: '' };
 }
 
+/** Strip one layer of shell quoting from a token pulled out of a command line. */
+const unquote = (token) => token.replace(/^["'`]+/, '').replace(/["'`]+$/, '');
+
+/**
+ * Paths a command line hands to a database client. Only segments that invoke a
+ * client are scanned, so an unrelated `-f` elsewhere on the line is left alone.
+ */
+function fileRouteCandidates(command) {
+  const found = new Set();
+  for (const segment of command.split(SEGMENT_RE)) {
+    if (!SQL_CLIENT_RE.test(segment)) continue;
+    for (const re of FILE_ROUTE_RES) {
+      re.lastIndex = 0;
+      for (const m of segment.matchAll(re)) {
+        const path = unquote(m[1]);
+        if (path) found.add(path);
+      }
+    }
+  }
+  return [...found];
+}
+
+/** Read a candidate path, or null when there is nothing readable there. */
+function readSqlFile(path, cwd) {
+  try {
+    const absolute = isAbsolute(path) ? path : resolve(cwd || process.cwd(), path);
+    if (!existsSync(absolute)) return null;
+    const stat = statSync(absolute);
+    if (!stat.isFile() || stat.size > MAX_SQL_FILE_BYTES) return null;
+    return readFileSync(absolute, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Run the destructive-statement rules over one blob. Hard hits deny immediately;
+ * the first DDL statement is handed back so the approval is checked once for the
+ * whole call. `where` names the source in the block message.
+ */
+function scanStatements(text, grammar, where) {
+  let firstDdl = null;
+  for (const stmt of neutralize(text, grammar).split(';')) {
+    if (!stmt.trim()) continue;
+
+    if (/\bDROP\b/is.test(stmt)) deny(`DROP is never allowed from an agent.${where}`, stmt);
+    if (/\bTRUNCATE\b/is.test(stmt)) deny(`TRUNCATE is never allowed from an agent.${where}`, stmt);
+    if (/\bDELETE\s+FROM\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
+      deny(`DELETE without a WHERE clause.${where}`, stmt);
+    }
+    if (/\bUPDATE\b[\s\S]*\bSET\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
+      deny(`UPDATE without a WHERE clause.${where}`, stmt);
+    }
+    if (firstDdl === null && /\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b/is.test(stmt)) {
+      firstDdl = stmt;
+    }
+  }
+  return firstDdl;
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -157,25 +263,29 @@ try {
 
   if (grammar === 'shell' && !SQL_CLIENT_RE.test(sql)) process.exit(0);
 
-  let firstDdl = null;
+  let firstDdl = scanStatements(sql, grammar, '');
 
-  for (const stmt of neutralize(sql, grammar).split(';')) {
-    if (!stmt.trim()) continue;
-
-    if (/\bDROP\b/is.test(stmt)) {
-      deny('DROP is never allowed from an agent.', stmt);
-    }
-    if (/\bTRUNCATE\b/is.test(stmt)) {
-      deny('TRUNCATE is never allowed from an agent.', stmt);
-    }
-    if (/\bDELETE\s+FROM\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
-      deny('DELETE without a WHERE clause.', stmt);
-    }
-    if (/\bUPDATE\b[\s\S]*\bSET\b/is.test(stmt) && !/\bWHERE\b/is.test(stmt)) {
-      deny('UPDATE without a WHERE clause.', stmt);
-    }
-    if (firstDdl === null && /\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b/is.test(stmt)) {
-      firstDdl = stmt;
+  // The statement need not be on the command line. Read what the client is being
+  // pointed at and scan that too; a file route with nothing readable behind it
+  // takes the approval path rather than being waved through.
+  if (grammar === 'shell') {
+    const candidates = fileRouteCandidates(sql);
+    if (candidates.length > 0) {
+      let readAny = false;
+      for (const path of candidates) {
+        const content = readSqlFile(path, payload.cwd);
+        if (content === null) continue;
+        readAny = true;
+        const ddl = scanStatements(content, 'sql', ` (from ${path})`);
+        if (firstDdl === null) firstDdl = ddl;
+      }
+      if (!readAny && !isApproved(sql)) {
+        deny(
+          'this call feeds a SQL file to a database client, and none of the files ' +
+            `could be read (${candidates.join(', ')}), so what runs is unknown.`,
+          sql
+        );
+      }
     }
   }
 

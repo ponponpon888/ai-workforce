@@ -1,0 +1,185 @@
+{
+  "$comment": [
+    "Schema for pitfall records. This file IS the definition: validate-pitfalls.mjs reads it",
+    "and drives every shape, enum and pattern check from here. Only the conditional rules are",
+    "code, and each of those carries a rule id that is listed under \"rules\" below.",
+    "",
+    "Files beginning with _ are not records and are skipped by the validator.",
+    "One record per file. The file name must be <id>.json."
+  ],
+
+  "schema_version": 1,
+
+  "record_id_pattern": "^[a-z][a-z0-9]*-[0-9]{3}$",
+  "date_pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+
+  "unrecorded": "unrecorded",
+  "$comment_unrecorded": [
+    "Every environment field may hold the literal string \"unrecorded\". That is deliberate:",
+    "a measurement whose environment was never written down is still a measurement.",
+    "Never put a guessed value there. \"unrecorded\" is the honest answer.",
+    "",
+    "measured_on is NOT one of those fields. A measurement with no date cannot be aged, and a",
+    "record that cannot be aged cannot be re-checked when the thing it measured moves under it.",
+    "If the date is genuinely unknown, the record is not a measurement -- lower the confidence."
+  ],
+
+  "enums": {
+    "confidence": ["measured", "inferred", "documented", "unverified"],
+    "status": ["closed", "open_recorded", "untouched"],
+    "kind": ["trap", "limitation", "behaviour"],
+    "layer": ["instruction", "permissions", "hook", "runtime", "ci", "external", "app"],
+    "severity": ["high", "medium", "low"],
+    "detection_kind": ["settings-json", "file-content", "exit-code", "manual"],
+    "detection_expect": ["present", "absent"]
+  },
+
+  "fields": {
+    "id":            { "type": "string",   "presence": "always",        "pattern_ref": "record_id_pattern" },
+    "title":         { "type": "string",   "presence": "always",        "max_length": 100 },
+    "summary":       { "type": "string",   "presence": "always" },
+    "layer":         { "type": "string",   "presence": "always",        "enum": "layer" },
+    "kind":          { "type": "string",   "presence": "always",        "enum": "kind" },
+    "severity":      { "type": "string",   "presence": "always",        "enum": "severity" },
+    "confidence":    { "type": "string",   "presence": "always",        "enum": "confidence" },
+    "origin":        { "type": "string",   "presence": "always" },
+
+    "measured_on":   { "type": "string",   "presence": "measured-only", "pattern_ref": "date_pattern" },
+    "environment":   { "type": "object",   "presence": "measured-only" },
+    "repro":         { "type": "string[]", "presence": "measured-only" },
+
+    "sources":       { "type": "string[]", "presence": "required-when-documented" },
+    "inferred_from": { "type": "string[]", "presence": "required-when-inferred" },
+
+    "status":        { "type": "string",   "presence": "by-kind",       "enum": "status" },
+    "fix":           { "type": "string",   "presence": "required-when-closed" },
+    "why_not_closed":{ "type": "string",   "presence": "required-when-open-recorded" },
+
+    "detection":     { "type": "object",   "presence": "optional" },
+    "related":       { "type": "string[]", "presence": "optional" },
+    "tags":          { "type": "string[]", "presence": "optional" }
+  },
+
+  "environment": {
+    "$comment": "All five are required whenever the environment object exists. Value or \"unrecorded\".",
+    "fields": ["os", "shell", "shell_version", "claude_code_version", "node_version"]
+  },
+
+  "detection": {
+    "$comment": [
+      "What an external linter can check. required-when-checkable applies when checkable is true.",
+      "expect carries the polarity, and without it the pattern is unusable: \"grammar === 'shell'\"",
+      "must be present in the hook, \"PowerShell(sc:\" must be absent from settings.json, and a",
+      "reader cannot tell those apart from the pattern alone."
+    ],
+    "fields": {
+      "checkable": { "type": "boolean", "presence": "always" },
+      "kind":      { "type": "string",  "presence": "always", "enum": "detection_kind" },
+      "target":    { "type": "string",  "presence": "required-when-checkable" },
+      "pattern":   { "type": "string",  "presence": "required-when-checkable" },
+      "expect":    { "type": "string",  "presence": "required-when-checkable", "enum": "detection_expect" },
+      "message":   { "type": "string",  "presence": "optional" },
+      "note":      { "type": "string",  "presence": "optional" }
+    }
+  },
+
+  "claim_gate": {
+    "$comment": [
+      "The word \"measured\" may only appear in prose that belongs to a measured record.",
+      "title is deliberately out of scope: a title quoting a doc heading should not be policed."
+    ],
+    "pattern": "実測|測定した|検証済み|確認済み|measured",
+    "fields": ["summary", "fix", "why_not_closed"],
+    "allowed_when_confidence": "measured"
+  },
+
+  "origin": {
+    "$comment": [
+      "Where this pitfall is written down. Three shapes, matched in the order listed.",
+      "",
+      "The prose shape is <repo-relative path>#<heading anchor>, and both the file and the",
+      "anchor must exist. Never a line number: line numbers rot silently.",
+      "",
+      "The other two shapes exist because \"prose first\" is a rule that can be satisfied by a",
+      "three-line stub heading, and a stub is indistinguishable from real prose to a machine.",
+      "Rather than let the rule decay into a formality -- and push the documentation to grow",
+      "stubs -- a record may say outright that no prose exists yet. Neither shape is a free",
+      "pass: has_prose is derived from the shape and counted in the index, so the number of",
+      "pitfalls that live only as data is visible instead of hidden.",
+      "",
+      "Order matters. \"issue:42\" ends in digits after a colon and line_number_patterns would",
+      "otherwise read it as a line number, so the shapes are matched first and the line-number",
+      "check applies to the prose shape only.",
+      "",
+      "A shape with no \"pattern\" is the fallback and must come last. \"prefix\" is optional and",
+      "only makes a near-miss report itself instead of falling through to the prose shape."
+    ],
+    "shapes": [
+      {
+        "name": "issue",
+        "prefix": "issue:",
+        "pattern": "^issue:[1-9][0-9]*$",
+        "has_prose": false,
+        "$comment": "A report is the source. The number is an issue number in this repository."
+      },
+      {
+        "name": "record",
+        "pattern": "^record$",
+        "has_prose": false,
+        "$comment": "This record is the first place it was written down. No prose exists yet."
+      },
+      {
+        "name": "prose",
+        "has_prose": true,
+        "$comment": "<repo-relative path>#<heading anchor>. The fallback shape."
+      }
+    ],
+    "line_number_patterns": ["#L[0-9]+$", ":[0-9]+$"]
+  },
+
+  "has_prose": {
+    "$comment": [
+      "Derived at index build time from the shape of origin. Never stored in a record.",
+      "false means the pitfall exists as data and nowhere in the documentation yet. That is",
+      "not an error, and it is not a backlog item on its own. It is the number to watch: if",
+      "it only ever grows, the documentation has stopped following the data."
+    ]
+  },
+
+  "stale_risk": {
+    "$comment": [
+      "Derived at index build time. Never stored in a record.",
+      "A permissions or hook finding measured against an unknown Claude Code version cannot be",
+      "assumed to still hold: the thing being measured is Claude Code itself."
+    ],
+    "layers": ["permissions", "hook"],
+    "field": "claude_code_version",
+    "when_value": "unrecorded",
+    "values": {
+      "unknown_version": "measured against a Claude Code version that was never recorded",
+      "ok": "environment is recorded, or the layer does not depend on the Claude Code version",
+      "not_applicable": "the record is not a measurement, so there is no environment to age"
+    }
+  },
+
+  "rules": [
+    { "id": "R01", "what": "file name must be <id>.json" },
+    { "id": "R02", "what": "no missing required fields, no unknown fields" },
+    { "id": "R03", "what": "types and enum values are valid" },
+    { "id": "R04", "what": "id matches record_id_pattern" },
+    { "id": "R05", "what": "confidence==measured <=> measured_on, environment and repro are all present" },
+    { "id": "R06", "what": "environment holds exactly the five fields, each a value or \"unrecorded\"" },
+    { "id": "R07", "what": "confidence==documented requires a non-empty sources list" },
+    { "id": "R08", "what": "confidence==inferred requires a non-empty inferred_from list" },
+    { "id": "R09", "what": "kind==behaviour forbids status; kind trap|limitation requires it" },
+    { "id": "R10", "what": "status==closed requires fix; status==open_recorded requires why_not_closed" },
+    { "id": "R11", "what": "claim gate: measurement words only on a measured record" },
+    { "id": "R12", "what": "every id in related exists" },
+    { "id": "R13", "what": "origin matches a known shape; the prose shape needs a real file and no line number" },
+    { "id": "R14", "what": "the origin anchor matches a heading that exists in that file (prose shape only)" },
+    { "id": "R15", "what": "detection.checkable==true requires target and pattern" },
+    { "id": "R16", "what": "measured_on is a real date (YYYY-MM-DD). \"unrecorded\" is not accepted" },
+    { "id": "R17", "what": "the file parses as JSON and holds a JSON object" },
+    { "id": "R18", "what": "an id is unique across every record set" }
+  ]
+}

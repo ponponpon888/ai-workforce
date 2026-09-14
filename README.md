@@ -204,6 +204,22 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | 美容領域のマッチングプラットフォーム | 契約上の理由により名称を伏せています | [事例](docs/case-studies/beauty-matching.md) |
 | MUSUBU | LINE × AI の予約 SaaS | [事例](docs/case-studies/musubu.md) |
 
+## 導入支援・相談
+
+このリポジトリは MIT ライセンスで、ダウンロードして自分で導入できます。使い方の質問、再現可能な不具合、実際に踏んだ落とし穴は [Issues](https://github.com/ponponpon888/ai-workforce/issues) へどうぞ。公開Issueには、秘密情報・社内データ・顧客情報を貼らないでください。
+
+自社の環境に合わせた導入が必要な場合は、個別に支援できます。
+
+- 現在のClaude Code設定と運用フローの診断
+- 本番DB・秘密情報・Git操作に対するガードレール設計
+- 独自フック、診断ツール、承認フローの実装
+- 少人数チームへの導入設計と運用ルール整備
+- 小さな業務デモから始めるAI活用の検証
+
+相談時点で発注を決める必要はありません。現在の運用と困っていることを確認し、OSSの範囲で解決できるか、個別実装が必要かを切り分けます。
+
+**[AI Workforceの導入について相談する](https://www.shingokumon.com/contact)**
+
 ---
 
 ## 作った人

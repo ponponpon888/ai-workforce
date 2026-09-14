@@ -240,6 +240,22 @@ A setup presented as airtight looks better. But anyone copying it would get hurt
 I quietly left out. Knowing where the machine stops and the discipline starts is worth more than
 pretending there is no seam.
 
+## Adoption support and consulting
+
+This repository is MIT-licensed and can be installed without paid support. For usage questions, reproducible bugs, or pitfalls you have encountered, use [GitHub Issues](https://github.com/ponponpon888/ai-workforce/issues). Do not post secrets, internal company data, or customer information in a public issue.
+
+Hands-on support is available when the standard kit is not enough:
+
+- Review an existing Claude Code setup and operating workflow
+- Design guardrails for production databases, secrets, and Git operations
+- Implement custom hooks, diagnostics, and approval flows
+- Define rollout and operating rules for a small team
+- Validate an AI workflow through a small, focused business demo
+
+An initial conversation does not require a purchase. We will first separate what the open-source kit already solves from what needs environment-specific implementation.
+
+**[Discuss an AI Workforce adoption](https://www.shingokumon.com/contact)**
+
 ---
 
 ## Author

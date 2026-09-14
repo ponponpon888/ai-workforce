@@ -22,9 +22,11 @@
   Windows PowerShell 5.1 は 2026-09-10 に実行し、基本6スイート成功。PowerShell 7 は未導入のため未検証。
 - [ ] Windows / macOS の Node で統合版を実行する。
   Windows は 2026-09-10 に実行。`node --import` に Windows 絶対パスを渡していた不具合を直して全11スイート成功。macOS は未実行。
-- [ ] Windows で「承認は一度限り」が破れる問題を直す。`guard-sql.mjs` の `isApproved()` は
-  `renameSync` の原子性で取得者を1つに絞る設計だが、Windows では 6 並列の 10% 程度で
-  2 プロセスが同一の承認を通過する。詳細は [統合状況](docs/17-integration-status.md)。
+- [x] Windows で「承認は一度限り」が破れる問題を直した。`guard-sql.mjs` の `isApproved()` は
+  `renameSync` の原子性に頼っていたが、Windows では 6 並列の 10% 程度で 2 プロセスが同一の
+  承認を通過していた。排他生成ロックで取得を絞り、120 ラウンドで異常 0 件。
+  PowerShell 版は経路が異なり 90 ラウンドで異常なしのため未変更。
+  詳細は [統合状況](docs/17-integration-status.md)。
 - [ ] 別ユーザーまたは VM の素の環境で、新規導入・承認・復元を確認する。
 - [ ] Claude Code 本体で設定の受理、優先順位、モード、フック接続を確認する。
 - [ ] 権限のパス側グロブを実測し、秘密ファイルの Write / Edit 保護を確定する。

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { testApprovalLock } from './test-approval-lock.mjs';
 import { readTestTargetOptions } from './parse-test-target-options.mjs';
 // Isolated inputs only: never executes SQL or any command passed to the hook.
 import assert from 'node:assert/strict';
@@ -51,5 +52,7 @@ try{
  const concurrent='CREATE TABLE concurrent (id int)';approve(concurrent);
  const results=await Promise.all(Array.from({length:6},()=>new Promise(resolve=>{const c=spawn(exe,hookArgs,{env,stdio:['pipe','ignore','ignore']});c.on('error',()=>resolve(-1));c.on('close',resolve);c.stdin.on('error',()=>{});c.stdin.end(payload(concurrent));})));
  check('only one concurrent call consumes approval',()=>{assert.equal(results.filter(x=>x===0).length,1);assert.equal(results.filter(x=>x===2).length,5);});
+ const lockResults = await testApprovalLock({exe,hook,hookArgs,ps,temp,approvals,env,payload,call,token});
+ pass += lockResults.pass; fail += lockResults.fail;
  console.log(`pass: ${pass} fail: ${fail}`);process.exitCode=fail?1:0;
 }finally{rmSync(temp,{recursive:true,force:true});}

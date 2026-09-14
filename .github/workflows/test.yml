@@ -37,6 +37,12 @@ jobs:
         with:
           node-version: 20
 
+      - name: Diagnose the kit template
+        shell: bash
+        run: |
+          node kit/scripts/doctor.mjs --template
+          node kit/scripts/test-doctor.mjs
+
       - name: Scripts stay ASCII-only
         shell: bash
         run: |
@@ -71,6 +77,7 @@ jobs:
         run: |
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8'))"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs scripts/approve-ddl.mjs; do
             test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
@@ -83,6 +90,7 @@ jobs:
 
           pwsh -NoProfile -File ./kit/scripts/install.ps1 -ClaudeHome "$RUNNER_TEMP/fake-claude-ps" -Hook powershell
           pwsh -NoProfile -Command "Get-Content '$RUNNER_TEMP/fake-claude-ps/settings.json' -Raw | ConvertFrom-Json | Out-Null"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude-ps"
           for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 scripts/approve-ddl.ps1; do
             test -f "$RUNNER_TEMP/fake-claude-ps/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
@@ -117,6 +125,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Diagnose the kit template
+        shell: pwsh
+        run: |
+          node kit/scripts/doctor.mjs --template
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-doctor.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Parse every PowerShell script
         shell: pwsh
@@ -195,6 +211,8 @@ jobs:
           node kit/scripts/install.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Content "$env:RUNNER_TEMP/fake-claude/settings.json" -Raw | ConvertFrom-Json | Out-Null
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'scripts/approve-ddl.mjs') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude/$f")) { throw "installer did not write $f" }
           }
@@ -208,6 +226,8 @@ jobs:
           ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) { throw "installer did not write $f" }
           }

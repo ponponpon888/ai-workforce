@@ -21,9 +21,8 @@
     "cat x.sql | psql" and "\i x.sql" all hand a database client a file, and a guard
     that reads only the command line sees none of it. The hook runs before the tool
     does, but the file was written by an earlier call and is already on disk, so it
-    can be opened and scanned as SQL. When a file route is detected and nothing can
-    be read, the call needs the same approval a DDL statement needs: an unreadable
-    path is not a reason to assume the file is harmless.
+    can be opened and scanned as SQL. Every candidate must be readable. Nested includes and file DDL
+    are unsupported and blocked: command-only approval cannot bind file contents.
 
     NOTE ON SCOPE
     This stops accidents, not an adversary. Any agent holding a shell could write an
@@ -37,7 +36,7 @@
 
 .NOTES
     Exit 0 -> allow.  Exit 2 -> block, reason on stderr.
-    Any other failure exits 0: a broken guard must not brick the toolchain.
+    Internal inspection failures block with exit 2.
 #>
 
 [CmdletBinding()]
@@ -122,7 +121,7 @@ function Get-NeutralizedSql([string] $Sql, [string] $Grammar) {
 }
 
 function Get-SqlFingerprint([string] $Sql) {
-    $normalized = ([regex]::Replace($Sql, '\s+', ' ')).Trim()
+    $normalized = "aiwf-exact-v2" + [char]0 + $Sql
     $bytes  = [System.Text.Encoding]::UTF8.GetBytes($normalized)
     $sha    = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -135,9 +134,18 @@ function Test-Approved([string] $Sql) {
     $file = Join-Path $ApprovalDir ((Get-SqlFingerprint $Sql) + '.approval')
     if (-not (Test-Path -LiteralPath $file)) { return $false }
 
-    $age = (Get-Date) - (Get-Item -LiteralPath $file).LastWriteTime
-    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
-    return ($age.TotalMinutes -le $ApprovalTtlMinutes)
+    $claimed = $file + '.used-' + [guid]::NewGuid().ToString('N')
+    try { [System.IO.File]::Move($file, $claimed) } catch { return $false }
+    try {
+        $item = Get-Item -LiteralPath $claimed -ErrorAction Stop
+        if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return $false }
+        $age = [DateTime]::UtcNow - $item.LastWriteTimeUtc
+        return ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -le $ApprovalTtlMinutes -and
+            [string]::Equals([System.IO.File]::ReadAllText($claimed), $Sql, [System.StringComparison]::Ordinal))
+    } catch { return $false }
+    finally {
+        try { [System.IO.File]::Delete($claimed) } catch { } # already consumed
+    }
 }
 
 # Pull SQL out of whichever tool is being called, and report which field it came
@@ -174,7 +182,7 @@ $script:FileRoutePatterns = @(
 # A pipeline stays whole: "cat x.sql | psql" is one segment.
 $script:SegmentPattern = '&&|\|\||;|\r?\n'
 
-# Files larger than this are not scanned; an unread file takes the approval path.
+# Files larger than this are not scanned; unread files are blocked.
 $script:MaxSqlFileBytes = 1048576
 
 $script:SqlClientPattern = '(?is)\b(psql|sqlite3|mysql|mariadb|supabase\s+db|prisma\s+db|drizzle-kit)\b'
@@ -219,26 +227,47 @@ function Read-SqlFile([string] $Path, [string] $Cwd) {
 # Run the destructive-statement rules over one blob. Hard hits deny immediately;
 # the first DDL statement is handed back so the approval is checked once for the
 # whole call. $Where names the source in the block message.
+# Check each modifying verb against WHERE at the same parenthesis depth.
+# This remains a scoped lexical check, not a complete SQL parser.
+function Test-UnfilteredMutation([string] $Statement) {
+    $scoped = New-Object System.Collections.Generic.List[object]
+    $depth = 0
+    foreach ($m in [regex]::Matches($Statement.ToUpperInvariant(), '[A-Z_][A-Z_0-9]*|[()]')) {
+        $word = $m.Value
+        if ($word -eq ')') { $depth-- }
+        $scoped.Add([pscustomobject]@{ Word = $word; Depth = $depth })
+        if ($word -eq '(') { $depth++ }
+    }
+    for ($i = 0; $i -lt $scoped.Count; $i++) {
+        $start = $scoped[$i]
+        if ($start.Word -notin @('UPDATE', 'DELETE')) { continue }
+        $modifies = $false; $hasWhere = $false
+        $marker = if ($start.Word -eq 'UPDATE') { 'SET' } else { 'FROM' }
+        for ($j = $i + 1; $j -lt $scoped.Count; $j++) {
+            $t = $scoped[$j]
+            if ($t.Depth -lt $start.Depth) { break }
+            if ($t.Depth -ne $start.Depth) { continue }
+            if ($t.Word -eq $marker) { $modifies = $true }
+            if ($modifies -and $t.Word -eq 'WHERE') { $hasWhere = $true }
+        }
+        if ($modifies -and -not $hasWhere) { return $true }
+    }
+    return $false
+}
+
 function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where) {
     $firstDdl = $null
-    foreach ($stmt in ((Get-NeutralizedSql $Text $Grammar) -split ';')) {
+    $cleaned = Get-NeutralizedSql $Text $Grammar
+    if ($Grammar -eq 'sql' -and $cleaned -match '(?:^|[\r\n])\s*\\(?:i|ir)\b') {
+        Deny "Nested SQL includes are unsupported; submit the reviewed SQL directly.$Where" 'SQL include'
+    }
+    foreach ($stmt in ($cleaned -split ';')) {
         if (-not $stmt.Trim()) { continue }
-
-        if ($stmt -match '(?is)\bDROP\b') {
-            Deny "DROP is never allowed from an agent.$Where" $stmt
-        }
-        if ($stmt -match '(?is)\bTRUNCATE\b') {
-            Deny "TRUNCATE is never allowed from an agent.$Where" $stmt
-        }
-        if ($stmt -match '(?is)\bDELETE\s+FROM\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
-            Deny "DELETE without a WHERE clause.$Where" $stmt
-        }
-        if ($stmt -match '(?is)\bUPDATE\b[\s\S]*\bSET\b' -and $stmt -notmatch '(?is)\bWHERE\b') {
-            Deny "UPDATE without a WHERE clause.$Where" $stmt
-        }
-        if ($null -eq $firstDdl -and $stmt -match '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b') {
-            $firstDdl = $stmt
-        }
+        if ($stmt -match '(?is)\bDROP\b') { Deny "DROP is never allowed from an agent.$Where" $stmt }
+        if ($stmt -match '(?is)\bTRUNCATE\b') { Deny "TRUNCATE is never allowed from an agent.$Where" $stmt }
+        if (($Grammar -eq 'sql' -and $stmt -match '(?i)^\s*DO\b') -or ($Grammar -eq 'shell' -and $stmt -match '(?i)\bDO\s+(?:LANGUAGE\b|[''"$])')) { Deny "Procedural DO blocks are unsupported.$Where" $stmt }
+        if (Test-UnfilteredMutation $stmt) { Deny "UPDATE/DELETE needs a WHERE in the same SQL scope.$Where" $stmt }
+        if ($null -eq $firstDdl -and $stmt -match '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b') { $firstDdl = $stmt }
     }
     return $firstDdl
 }
@@ -285,7 +314,7 @@ try {
 
     # The statement need not be on the command line. Read what the client is being
     # pointed at and scan that too; a file route with nothing readable behind it
-    # takes the approval path rather than being waved through.
+    # is blocked rather than being waved through.
     if ($grammar -eq 'shell') {
         # @() is load-bearing. PowerShell unrolls a returned collection, so a single
         # candidate comes back as a bare string, and under Set-StrictMode -Version
@@ -294,17 +323,11 @@ try {
         $candidates = @(Get-FileRouteCandidate $sql)
         if ($candidates.Count -gt 0) {
             $cwd = if ($payload.PSObject.Properties.Name -contains 'cwd') { [string]$payload.cwd } else { '' }
-            $readAny = $false
             foreach ($path in $candidates) {
                 $content = Read-SqlFile $path $cwd
-                if ($null -eq $content) { continue }
-                $readAny = $true
+                if ($null -eq $content) { Deny 'SQL file is unreadable; cannot verify its contents.' 'Unreadable SQL file' }
                 $ddl = Invoke-StatementScan $content 'sql' " (from $path)"
-                if ($null -eq $firstDdl) { $firstDdl = $ddl }
-            }
-            if (-not $readAny -and -not (Test-Approved $sql)) {
-                $joined = $candidates -join ', '
-                Deny "this call feeds a SQL file to a database client, and none of the files could be read ($joined), so what runs is unknown." $sql
+                if ($null -ne $ddl) { Deny 'File-based DDL approval is unsupported; submit and approve the SQL text directly.' 'DDL in SQL file' }
             }
         }
     }
@@ -320,8 +343,7 @@ try {
     exit 0
 }
 catch {
-    # Fail open, loudly. A guard that crashes must not become a guard that blocks
-    # everything -- that trains people to disable it.
-    [Console]::Error.WriteLine("[guard-sql] hook error (allowing call): $($_.Exception.Message)")
-    exit 0
+    # An inspection failure is not a successful safety check. Do not print input.
+    [Console]::Error.WriteLine('[guard-sql] hook error (blocked): unable to inspect input')
+    exit 2
 }

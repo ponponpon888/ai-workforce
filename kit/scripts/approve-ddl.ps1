@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Run this yourself, after reading the SQL. It writes a token named after the
-    SHA-256 of the whitespace-normalized statement. The hook consumes the token on
+    SHA-256 of the exact UTF-8 statement (v2 domain). The hook consumes the token on
     first use and refuses it after the TTL, so an approval cannot be reused later
     for a statement you never saw.
 
@@ -44,7 +44,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Path') {
 
 if (-not $Sql.Trim()) { throw 'Empty SQL.' }
 
-$normalized = ([regex]::Replace($Sql, '\s+', ' ')).Trim()
+$normalized = "aiwf-exact-v2" + [char]0 + $Sql
 $sha = [System.Security.Cryptography.SHA256]::Create()
 try {
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalized)
@@ -75,7 +75,7 @@ $file = Join-Path $ApprovalDir "$fingerprint.approval"
 
 # BOM-free UTF-8, always.
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($file, $normalized, $utf8NoBom)
+[System.IO.File]::WriteAllText($file, $Sql, $utf8NoBom)
 
 Write-Host "Approved. Retry the tool call unchanged." -ForegroundColor Green
 Write-Host "token: $file"

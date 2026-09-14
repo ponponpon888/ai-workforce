@@ -161,6 +161,17 @@ node kit/scripts/install.mjs
 
 **消しません。** 上書きするものは必ず `.bak.<日時>` に退避します。
 
+## 設定と導入状態を診断する
+
+```powershell
+node kit/scripts/doctor.mjs --template  # 配布設定の静的チェック
+node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを確認
+```
+
+設定や登録されたコマンドは変更・実行しません。結果は `static-pass` / `error` /
+`incomplete` に分かれます。**静的チェックの成功は、Claude Code本体での動作確認を意味しません。**
+判定範囲と終了コードは [診断の説明](docs/09-settings-doctor.md) に記載しています。
+
 ---
 
 ## ドキュメント
@@ -176,6 +187,7 @@ node kit/scripts/install.mjs
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話 |
 | [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
+| [09 設定診断](docs/09-settings-doctor.md) | 配布設定と導入状態を読み取り専用で静的検査する |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 

@@ -14,7 +14,9 @@
  *   node kit/scripts/test-pull-all.mjs
  */
 
+import { readTestTargetOptions } from './parse-test-target-options.mjs';
 import { spawnSync } from 'node:child_process';
+import { checkPullAuthentication } from './check-pull-auth-fixture.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -23,6 +25,7 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
+  utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -33,12 +36,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // The same fixture is used to test both implementations, so they cannot drift.
 //   node test-pull-all.mjs                 -> tests pull-all.mjs
 //   node test-pull-all.mjs --target ps     -> tests pull-all.ps1 via pwsh
-const targetArg = process.argv.includes('--target')
-  ? process.argv[process.argv.indexOf('--target') + 1]
-  : 'node';
-const pwshExe = process.argv.includes('--pwsh')
-  ? process.argv[process.argv.indexOf('--pwsh') + 1]
-  : 'pwsh';
+const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions();
 
 function invocation(reposDir) {
   if (targetArg === 'ps') {
@@ -227,20 +225,21 @@ check(
   'feature commit still exists',
   existsSync(join(repos.featureBranch, 'feature.txt'))
 );
-// Unattended has to mean unattended. Asserted against the source of whichever
-// target is under test, because a script that stops to ask for credentials
-// blocks forever — there is no way to observe that from outside without
-// hanging the suite on the very failure it is meant to catch.
-const targetSource = readFileSync(
-  resolve(here, targetArg === 'ps' ? 'pull-all.ps1' : 'pull-all.mjs'),
-  'utf8'
-);
-check(
-  'credential prompts are disabled',
-  /GIT_TERMINAL_PROMPT\s*=\s*'0'/.test(targetSource) &&
-    /GCM_INTERACTIVE\s*=\s*'never'/.test(targetSource),
-  'must set GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never before any git call'
-);
+// Exercise actual HTTP authentication and observe the environment in Git's
+// credential helper. The fixture has a deadline so a regression cannot hang CI.
+try {
+  await checkPullAuthentication(targetArg, pwshExe);
+  check('HTTP authentication fails promptly with noninteractive Git settings', true);
+} catch (error) {
+  check('HTTP authentication fails promptly with noninteractive Git settings', false, error.message);
+}
+
+try {
+  await checkPullAuthentication(targetArg, pwshExe, true);
+  check('feature branch authentication failure is reported, not skipped', true);
+} catch (error) {
+  check('feature branch authentication failure is reported, not skipped', false, error.message);
+}
 
 console.log('\ndestroys nothing:');
 check(
@@ -314,6 +313,266 @@ for (const [repo, result] of [
 ]) {
   const re = new RegExp(`^\\s*\\S+\\s+${repo}\\s+${result.replace('/', '\\/')}\\s*$`, 'm');
   check(`${repo} is reported as ${result}`, re.test(summaryText), summaryText.trim().slice(0, 400));
+}
+
+// A local ref lock is an update failure, not divergent history.
+const lockedRoot = join(rootDir, 'repos-locked');
+mkdirSync(lockedRoot);
+git(lockedRoot, 'clone', '--quiet', originDir, 'locked');
+const lockedRepo = join(lockedRoot, 'locked');
+git(lockedRepo, 'checkout', '-q', '-b', 'feat/locked');
+git(lockedRepo, 'branch', '-f', 'main', FIRST);
+const lockedBefore = head(lockedRepo);
+writeFileSync(join(lockedRepo, '.git', 'refs', 'heads', 'main.lock'), 'fixture lock');
+const [lockedExe, lockedArgs] = invocation(lockedRoot);
+const lockedRun = spawnSync(lockedExe, lockedArgs, { encoding: 'utf8', env: GIT_ENV, timeout: 15000 });
+check('local branch lock reports failure', lockedRun.status === 1);
+const lockedLogs = readdirSync(join(lockedRoot, '_logs')).map(name =>
+  readFileSync(join(lockedRoot, '_logs', name), 'utf8')).join('\n');
+check('local branch lock is fail/update, not skip/diverged', /locked\s+fail\/update/.test(lockedLogs));
+check('local branch lock preserves checkout and main', head(lockedRepo) === lockedBefore &&
+  shaOf(lockedRepo, 'main') === FIRST && branchOf(lockedRepo) === 'feat/locked');
+
+// Real Git reports a corrupt index as an error, not a dirty working tree.
+const corruptRoot = join(rootDir, 'repos-corrupt');
+mkdirSync(corruptRoot);
+git(corruptRoot, 'clone', '--quiet', originDir, 'corrupt');
+const corruptRepo = join(corruptRoot, 'corrupt');
+const corruptHead = head(corruptRepo);
+const corruptIndex = join(corruptRepo, '.git', 'index');
+writeFileSync(corruptIndex, 'intentionally invalid index');
+const [corruptExe, corruptArgs] = invocation(corruptRoot);
+const corruptRun = spawnSync(corruptExe, corruptArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+check('corrupt Git index reports failure', corruptRun.status === 1);
+const corruptLogs = readdirSync(join(corruptRoot, '_logs')).map(name =>
+  readFileSync(join(corruptRoot, '_logs', name), 'utf8')).join('\n');
+check('corrupt index is fail/status, not skip/dirty', /corrupt\s+fail\/status/.test(corruptLogs) && !/skip\/dirty/.test(corruptLogs));
+check('status failure leaves index, commit and work intact', head(corruptRepo) === corruptHead &&
+  readFileSync(corruptIndex, 'utf8') === 'intentionally invalid index' &&
+  readFileSync(join(corruptRepo, 'a.txt'), 'utf8') === 'one\ntwo\n' &&
+  !existsSync(join(corruptRepo, '.git', 'FETCH_HEAD')));
+
+// A resolved-to-HEAD revert can look clean while the operation is unfinished.
+// The sequencer fixture separately represents a paused multi-commit operation.
+for (const operation of ['revert', 'sequencer']) {
+  const busyRoot = join(rootDir, `repos-${operation}`);
+  mkdirSync(busyRoot);
+  git(busyRoot, 'clone', '--quiet', originDir, 'busy');
+  const busyRepo = join(busyRoot, 'busy');
+  const marker = join(busyRepo, '.git', operation === 'revert' ? 'REVERT_HEAD' : 'sequencer');
+  if (operation === 'revert') {
+    writeFileSync(join(busyRepo, 'a.txt'), 'changed after second\n');
+    git(busyRepo, 'commit', '-am', 'conflicting later change');
+    const reverted = git(busyRepo, 'revert', '--no-edit', SECOND);
+    if (reverted.code === 0 || !existsSync(marker)) throw new Error('Revert fixture did not conflict');
+    git(busyRepo, 'restore', '--source=HEAD', '--staged', '--worktree', 'a.txt');
+  } else {
+    git(busyRepo, 'reset', '--hard', FIRST); // fixture setup only
+    mkdirSync(marker);
+    writeFileSync(join(marker, 'todo'), `pick ${SECOND} second\n`);
+  }
+  const status = git(busyRepo, 'status', '--porcelain');
+  if (status.code !== 0 || status.out) throw new Error('Busy fixture must have a clean working tree');
+  const before = head(busyRepo);
+  const contents = readFileSync(join(busyRepo, 'a.txt'));
+  const markerFile = operation === 'revert' ? marker : join(marker, 'todo');
+  const markerContents = readFileSync(markerFile);
+  const [exe, args] = invocation(busyRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(busyRoot, '_logs')).map(name =>
+    readFileSync(join(busyRoot, '_logs', name), 'utf8')).join('\n');
+  check(`${operation} with clean work tree is reported as in progress`, result.status === 0 && /busy\s+skip\/in-progress/.test(logs));
+  check(`${operation} leaves commits and work untouched`, head(busyRepo) === before &&
+    readFileSync(join(busyRepo, 'a.txt')).equals(contents));
+  check(`${operation} preserves operation state without fetching`, existsSync(markerFile) &&
+    readFileSync(markerFile).equals(markerContents) && !existsSync(join(busyRepo, '.git', 'FETCH_HEAD')));
+}
+
+// User display preferences must not hide work from the safety check.
+for (const hidden of ['untracked', 'submodule']) {
+  const hiddenRoot = join(rootDir, `repos-hidden-${hidden}`);
+  mkdirSync(hiddenRoot);
+  git(hiddenRoot, 'clone', '--quiet', originDir, 'hidden');
+  const repo = join(hiddenRoot, 'hidden');
+  let workFile;
+  if (hidden === 'untracked') {
+    git(repo, 'reset', '--hard', FIRST); // fixture setup only
+    git(repo, 'config', 'status.showUntrackedFiles', 'no');
+    workFile = join(repo, 'local-notes.txt');
+  } else {
+    git(repo, 'checkout', '-b', 'feat/module');
+    const added = git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', originDir, 'module');
+    if (added.code !== 0) throw new Error(added.out);
+    git(repo, 'commit', '-am', 'add module');
+    git(repo, 'branch', '-f', 'main', FIRST); // fixture setup only
+    git(repo, 'config', 'submodule.module.ignore', 'all');
+    workFile = join(repo, 'module', 'a.txt');
+  }
+  writeFileSync(workFile, 'local work must survive\n');
+  const hiddenStatus = git(repo, 'status', '--porcelain');
+  if (hiddenStatus.code !== 0 || hiddenStatus.out) throw new Error('Fixture must hide changes with plain status');
+  const beforeHead = head(repo);
+  const beforeMain = shaOf(repo, 'main');
+  const [exe, args] = invocation(hiddenRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(hiddenRoot, '_logs')).map(name =>
+    readFileSync(join(hiddenRoot, '_logs', name), 'utf8')).join('\n');
+  check(`hidden ${hidden} work is reported as dirty`, result.status === 0 && /hidden\s+skip\/dirty/.test(logs));
+  check(`hidden ${hidden} work prevents branch updates`, head(repo) === beforeHead && shaOf(repo, 'main') === beforeMain);
+  check(`hidden ${hidden} work is preserved without fetching`, readFileSync(workFile, 'utf8') === 'local work must survive\n' &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')));
+}
+
+// Invalid log destinations must stop before updating otherwise eligible repos.
+for (const kind of ['file', 'parent-file']) {
+  const logRoot = join(rootDir, `repos-log-${kind}`);
+  mkdirSync(logRoot);
+  git(logRoot, 'clone', '--quiet', originDir, 'ready');
+  const repo = join(logRoot, 'ready');
+  git(repo, 'reset', '--hard', FIRST); // fixture setup only
+  const blocker = join(rootDir, `log-blocker-${kind}`);
+  writeFileSync(blocker, 'keep existing file');
+  const destination = kind === 'file' ? blocker : join(blocker, 'logs');
+  const [exe, args] = invocation(logRoot);
+  const result = spawnSync(exe, [...args, targetArg === 'ps' ? '-LogDir' : '--log-dir', destination],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check(`log ${kind} failure is reported with exit 1`, result.status === 1 &&
+    /Cannot (create log directory|write log)/.test((result.stdout || '') + (result.stderr || '')));
+  check(`log ${kind} failure stops before updating`, head(repo) === FIRST &&
+    readFileSync(join(repo, 'a.txt'), 'utf8') === 'one\n' &&
+    readFileSync(blocker, 'utf8') === 'keep existing file' &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')));
+}
+
+// Bad retention values must not prune existing history or start updates.
+for (const retention of ['0', '-1']) {
+  const retentionRoot = join(rootDir, `repos-retention-${retention}`);
+  mkdirSync(retentionRoot);
+  git(retentionRoot, 'clone', '--quiet', originDir, 'ready');
+  const repo = join(retentionRoot, 'ready');
+  git(repo, 'reset', '--hard', FIRST); // fixture setup only
+  const logs = join(retentionRoot, '_logs');
+  mkdirSync(logs);
+  const oldLog = join(logs, 'pull-all_old.log');
+  writeFileSync(oldLog, 'keep history');
+  utimesSync(oldLog, new Date(0), new Date(0));
+  const [exe, args] = invocation(retentionRoot);
+  const result = spawnSync(exe, [...args, targetArg === 'ps' ? '-LogRetentionDays' : '--retention-days', retention],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check(`retention ${retention} preserves history and stops before updates`, result.status === 2 &&
+    /positive/.test((result.stdout || '') + (result.stderr || '')) && head(repo) === FIRST &&
+    !existsSync(join(repo, '.git', 'FETCH_HEAD')) && readdirSync(logs).length === 1 &&
+    existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep history');
+}
+
+// An unborn HEAD must not turn a branch lookup error into a fetch operation.
+{
+  const unbornRoot = join(rootDir, 'repos-unborn');
+  mkdirSync(unbornRoot);
+  const repo = join(unbornRoot, 'unborn');
+  git(unbornRoot, 'init', '--initial-branch=main', repo);
+  git(repo, 'remote', 'add', 'origin', originDir);
+  const headFile = join(repo, '.git', 'HEAD');
+  const before = readFileSync(headFile);
+  const [exe, args] = invocation(unbornRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const logs = readdirSync(join(unbornRoot, '_logs')).map(name =>
+    readFileSync(join(unbornRoot, '_logs', name), 'utf8')).join('\n');
+  check('unborn HEAD reports branch lookup failure', result.status === 1 && /unborn\s+fail\/branch/.test(logs));
+  check('unborn HEAD does not fetch or create a branch', !existsSync(join(repo, '.git', 'FETCH_HEAD')) &&
+    git(repo, 'show-ref', '--verify', 'refs/heads/main').code !== 0);
+  check('unborn HEAD leaves initial work tree intact', readFileSync(headFile).equals(before) &&
+    readdirSync(repo).length === 1 && readdirSync(repo)[0] === '.git');
+}
+
+// Validate the root before creating the default log directory beneath it.
+for (const kind of ['missing', 'file']) {
+  const invalidPath = join(rootDir, `root-${kind}`);
+  if (kind === 'file') writeFileSync(invalidPath, 'keep root file');
+  const [rootExe, rootArgs] = invocation(invalidPath);
+  const result = spawnSync(rootExe, rootArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  const unchanged = kind === 'missing' ? !existsSync(invalidPath)
+    : readFileSync(invalidPath, 'utf8') === 'keep root file';
+  check(`${kind} root fails before creating logs`, result.status === 1 && unchanged &&
+    ((result.stdout || '') + (result.stderr || '')).includes('Root must be an existing directory'));
+}
+
+{
+  const previewRoot = join(rootDir, 'repos-preview');
+  mkdirSync(previewRoot);
+  git(previewRoot, 'clone', '--quiet', originDir, 'preview');
+  const previewRepo = join(previewRoot, 'preview');
+  git(previewRepo, 'reset', '--hard', FIRST); // fixture setup only
+  const previewExe = targetArg === 'ps' ? pwshExe : process.execPath;
+  const previewArgs = targetArg === 'ps'
+    ? ['-NoProfile', '-File', resolve(here, 'pull-all.ps1'), '-Root', previewRoot, '-DryRun']
+    : [resolve(here, 'pull-all.mjs'), '--root', previewRoot, '--dry-run'];
+  const firstPreview = spawnSync(previewExe, previewArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('dry-run creates no log directory', firstPreview.status === 0 && !existsSync(join(previewRoot, '_logs')));
+  const oldLogDir = join(rootDir, 'preview-logs');
+  mkdirSync(oldLogDir);
+  const oldLog = join(oldLogDir, 'pull-all_old.log');
+  writeFileSync(oldLog, 'keep historical log');
+  utimesSync(oldLog, new Date(0), new Date(0));
+  const preview = spawnSync(previewExe, [...previewArgs, targetArg === 'ps' ? '-LogDir' : '--log-dir', oldLogDir],
+    { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('dry-run preserves expired logs and creates no new log', preview.status === 0 &&
+    readdirSync(oldLogDir).length === 1 && existsSync(oldLog) && readFileSync(oldLog, 'utf8') === 'keep historical log');
+  check('dry-run leaves checkout behind remote without pulling', head(previewRepo) === FIRST &&
+    readFileSync(join(previewRepo, 'a.txt'), 'utf8') === 'one\n' && /would pull/.test(preview.stdout));
+}
+
+{
+  const selectionRoot = join(rootDir, 'repos-selection');
+  mkdirSync(selectionRoot);
+  git(selectionRoot, 'clone', '--quiet', originDir, 'valid');
+  const validRepo = join(selectionRoot, 'valid');
+  git(validRepo, 'reset', '--hard', FIRST); // fixture setup only
+  mkdirSync(join(selectionRoot, 'ordinary'));
+  mkdirSync(join(selectionRoot, 'broken', '.git'), { recursive: true });
+  function runSelection(names) {
+    if (targetArg !== 'ps') return spawnSync(process.execPath,
+      [resolve(here, 'pull-all.mjs'), '--root', selectionRoot, '--repos', names.join(',')],
+      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    // -File does not reliably bind multiple string[] values across PS versions.
+    // A literal wrapper exercises the native array parameter without shell parsing.
+    const quote = value => "'" + value.replaceAll("'", "''") + "'";
+    const wrapper = join(rootDir, 'select-repos.ps1');
+    writeFileSync(wrapper, '\uFEFF' + `& ${quote(resolve(here, 'pull-all.ps1'))} -Root ${quote(selectionRoot)} -Repos @(${names.map(quote).join(',')})\nexit $LASTEXITCODE\n`, 'utf8');
+    return spawnSync(pwshExe, ['-NoProfile', '-File', wrapper], { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  }
+  for (const name of ['missing', 'ordinary', 'broken']) {
+    const r = runSelection(['valid', name]);
+    check(`explicit ${name} target stops the batch before updates`, r.status === 1 &&
+      /Invalid requested repository/.test((r.stdout || '') + (r.stderr || '')) && head(validRepo) === FIRST &&
+      !existsSync(join(selectionRoot, '_logs')));
+  }
+  const selected = runSelection(['valid']);
+  check('valid explicit target still updates', selected.status === 0 && head(validRepo) === SECOND);
+}
+
+// Node's CLI used to ignore misspellings and consume a following flag as a value.
+// PowerShell has a separate parameter binder; these cases target the Node CLI.
+if (targetArg !== 'ps') {
+  const invalidRoot = join(rootDir, 'invalid-cli-root');
+  for (const [name, extra] of [
+    ['unknown option', ['--quite']],
+    ['missing value', ['--log-dir']],
+    ['following flag as value', ['--log-dir', '--quiet']],
+    ['empty value', ['--log-dir', '']],
+    ['duplicate root', ['--root', invalidRoot]],
+    ['positional argument', ['unexpected']],
+    ['invalid retention', ['--retention-days', 'NaN']],
+    ['negative retention', ['--retention-days', '-1']],
+    ['zero retention', ['--retention-days', '0']],
+    ['fractional retention', ['--retention-days', '1.5']],
+    ['empty repository entry', ['--repos', 'api,']],
+    ['repository traversal', ['--repos', '../outside']],
+  ]) {
+    const bad = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', invalidRoot, ...extra],
+      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    check(`invalid CLI ${name} stops before writes`, bad.status === 2 && !existsSync(invalidRoot));
+  }
 }
 
 rmSync(rootDir, { recursive: true, force: true });

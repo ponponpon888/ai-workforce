@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readTestTargetOptions } from './parse-test-target-options.mjs';
 // Isolated inputs only: never executes SQL or any command passed to the hook.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -8,8 +9,9 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 const here=dirname(fileURLToPath(import.meta.url));
-const ps=process.argv.includes('--target') && process.argv[process.argv.indexOf('--target')+1]==='ps';
-const exe=ps ? (process.argv.includes('--pwsh') ? process.argv[process.argv.indexOf('--pwsh')+1] : 'pwsh') : process.execPath;
+const { target, pwsh } = readTestTargetOptions();
+const ps = target === 'ps';
+const exe = ps ? pwsh : process.execPath;
 const hook=resolve(here,'../claude/hooks/guard-sql.'+(ps?'ps1':'mjs'));
 const hookArgs=ps?['-NoProfile','-File',hook]:[hook];
 const temp=mkdtempSync(join(tmpdir(),'aiwf-boundaries-'));

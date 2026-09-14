@@ -82,8 +82,9 @@ C:\Dev\musubu で作業してください。
 | 次 | 自動承認 | セッションごとに 1 回ダイアログが出るのが面倒 |
 | いま | 承認をスキップ（取り消せない操作だけ手で止める） | — |
 
-**これはチャット側の話です。** 手元の Claude Code は `settings.json` で `defaultMode: "ask"` 固定、
-bypass モードにも入れないようにしてあります（[02](02-guardrails.md)）。
+**これはチャット側の話です。** Claude Code 用の現在のテンプレートは `permissions.defaultMode: "default"` と、
+`permissions.disableBypassPermissionsMode: "disable"` を設定しています。
+実機での適用確認は未完了です（[02](02-guardrails.md)）。
 
 チャット側の設定には、**機械的な歯止めがほとんどありません**。
 `guard-sql` と `deny` リストは手元の Claude Code にしか効かないので、

@@ -69,7 +69,8 @@ export function inspectSettings(settings, { template = false, claudeHome = join(
       if (!template) for (const extension of ['mjs', 'ps1']) {
         const path = join(resolve(claudeHome), 'hooks', `${guard.name}.${extension}`);
         const forms = [path, path.replaceAll('\\', '/')];
-        const expected = forms.map(f => extension === 'mjs' ? `node "${f}"` : `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${f}"`);
+        const expected = forms.flatMap(f => extension === 'mjs' ? [`node "${f}"`] :
+          ['powershell.exe', 'pwsh'].map(exe => `${exe} -NoProfile -ExecutionPolicy Bypass -File "${f}"`));
         if (expected.includes(hook.command)) { matches = true; file = path; }
       }
       if (!matches) continue;

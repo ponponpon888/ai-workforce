@@ -12,7 +12,7 @@
  *   - A repo mid-rebase, mid-merge, mid-cherry-pick, mid-bisect, or on a
  *     detached HEAD is skipped.
  *   - On the default branch with a clean tree: fast-forward-only pull.
- *   - On a feature branch: `git fetch origin main:main` advances the local
+ *   - On a feature branch: a remote fetch followed by a local fast-forward advances the local
  *     default branch without leaving the branch you are on. If that would not
  *     fast-forward, git refuses and the repo is reported, not forced.
  *
@@ -40,25 +40,73 @@ process.env.GCM_INTERACTIVE = 'never';
 // --- arguments --------------------------------------------------------------
 
 const argv = process.argv.slice(2);
-const flag = (f) => argv.includes(f);
-const opt = (f, d) => {
-  const i = argv.indexOf(f);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : d;
-};
+const switches = new Set(['--dry-run', '--quiet']);
+const values = new Set(['--root', '--repos', '--log-dir', '--retention-days']);
+const options = new Map();
+function usageError(message) {
+  process.stderr.write(`pull-all: ${message}\n`);
+  process.exit(2);
+}
+for (let i = 0; i < argv.length; i++) {
+  const key = argv[i];
+  if (!switches.has(key) && !values.has(key)) usageError('unknown option or positional argument');
+  if (options.has(key)) usageError(`duplicate option: ${key}`);
+  if (switches.has(key)) {
+    options.set(key, true);
+  } else {
+    const value = argv[++i];
+    if (!value || !value.trim() || value.startsWith('--')) usageError(`missing value: ${key}`);
+    options.set(key, value);
+  }
+}
+const root = resolve((options.get('--root') ?? join(homedir(), 'Dev')).replace(/^~(?=$|[/\\])/, homedir()));
+const only = options.has('--repos') ? options.get('--repos').split(',').map(s => s.trim()) : [];
+if (only.some(name => !name || name === '.' || name === '..' || /[/\\:]/.test(name))) {
+  usageError('--repos must contain direct child directory names separated by commas');
+}
+const retentionText = options.get('--retention-days') ?? '30';
+if (!/^\d+$/.test(retentionText) || !Number.isSafeInteger(Number(retentionText)) || Number(retentionText) < 1) {
+  usageError('--retention-days must be a positive safe integer');
+}
+const logDir = resolve(options.get('--log-dir') ?? join(root, '_logs'));
+const retentionDays = Number(retentionText);
+const dryRun = options.has('--dry-run');
+const quiet = options.has('--quiet');
+if (dryRun) process.env.GIT_OPTIONAL_LOCKS = '0';
 
-const root = resolve(opt('--root', join(homedir(), 'Dev')).replace(/^~(?=$|[/\\])/, homedir()));
-const only = opt('--repos', '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const logDir = resolve(opt('--log-dir', join(root, '_logs')));
-const retentionDays = Number(opt('--retention-days', '30'));
-const dryRun = flag('--dry-run');
-const quiet = flag('--quiet');
+// Check before mkdir(logDir): the default log directory is inside root,
+// so creating it first would silently create a misspelled/missing root too.
+try {
+  if (!statSync(root).isDirectory()) throw new Error('not a directory');
+} catch {
+  process.stderr.write('pull-all: Root must be an existing directory. Nothing was updated.\n');
+  process.exit(1);
+}
+
+// Explicit selections must all be usable before updating any member of the batch.
+// Keep auto-discovery permissive; users may store non-repository folders there.
+const requestedTargets = [...new Set(only)].map(name => join(root, name));
+for (const target of requestedTargets) {
+  let valid = false;
+  try {
+    valid = statSync(target).isDirectory() && existsSync(join(target, '.git')) &&
+      git(target, ['rev-parse', '--absolute-git-dir']).code === 0;
+  } catch { /* report the selected target below */ }
+  if (!valid) {
+    process.stderr.write(`pull-all: Invalid requested repository: ${basename(target)}. Nothing was updated.\n`);
+    process.exit(1);
+  }
+}
 
 // --- logging ----------------------------------------------------------------
 
-mkdirSync(logDir, { recursive: true });
+if (!dryRun) {
+  try { mkdirSync(logDir, { recursive: true }); }
+  catch {
+    process.stderr.write('pull-all: Cannot create log directory. Stopping.\n');
+    process.exit(1);
+  }
+}
 const logFile = join(
   logDir,
   `pull-all_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15)}.log`
@@ -67,10 +115,12 @@ const logFile = join(
 function log(message) {
   const line = `${new Date().toTimeString().slice(0, 8)}  ${message}`;
   if (!quiet) console.log(line);
+  if (dryRun) return;
   try {
     appendFileSync(logFile, line + '\n', 'utf8');
   } catch {
-    /* logging must never be the thing that fails the run */
+    process.stderr.write('pull-all: Cannot write log. Stopping.\n');
+    process.exit(1);
   }
 }
 
@@ -88,14 +138,10 @@ if (spawnSync('git', ['--version'], { encoding: 'utf8' }).status !== 0) {
   log('git not found on PATH. Nothing to do.');
   process.exit(1);
 }
-if (!existsSync(root)) {
-  log(`Root not found: ${root}`);
-  process.exit(1);
-}
 
 let targets;
 if (only.length) {
-  targets = only.map((n) => join(root, n)).filter((p) => existsSync(join(p, '.git')));
+  targets = requestedTargets;
 } else {
   targets = readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(root, e.name, '.git')))
@@ -106,7 +152,7 @@ log(`pull-all start  root=${root}  repos=${targets.length}${dryRun ? '  (dry run
 
 // --- the work ---------------------------------------------------------------
 
-const IN_PROGRESS = ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'BISECT_LOG'];
+const IN_PROGRESS = ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'BISECT_LOG'];
 const summary = [];
 
 for (const repo of targets) {
@@ -129,13 +175,25 @@ for (const repo of targets) {
     continue;
   }
 
-  if (git(repo, ['status', '--porcelain']).out) {
+  const status = git(repo, ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none']);
+  if (status.code !== 0) {
+    log(`${name} : FAILED reading working tree status -- ${status.out}`);
+    record('fail/status');
+    continue;
+  }
+  if (status.out) {
     log(`${name} : SKIP (dirty working tree)`);
     record('skip/dirty');
     continue;
   }
 
-  const branch = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']).out;
+  const branchResult = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  if (branchResult.code !== 0 || !branchResult.out) {
+    log(`${name} : FAILED reading current branch -- ${branchResult.out}`);
+    record('fail/branch');
+    continue;
+  }
+  const branch = branchResult.out;
   if (branch === 'HEAD') {
     log(`${name} : SKIP (detached HEAD)`);
     record('skip/detached');
@@ -166,15 +224,34 @@ for (const repo of targets) {
     continue;
   }
 
-  // On a feature branch: advance the local default branch in place. This cannot
-  // touch the checkout, and git refuses if it is not a fast-forward.
-  const r = git(repo, ['fetch', 'origin', `${def}:${def}`]);
+  // Separate transport failure from a refused local fast-forward. Never
+  // classify authentication/network errors as normal divergent-history skips.
+  const fetched = git(repo, ['fetch', '--no-tags', 'origin', def]);
+  if (fetched.code !== 0) {
+    log(`${name} : FAILED fetch -- ${fetched.out}`);
+    record('fail/fetch');
+    continue;
+  }
+  const fetchedHead = git(repo, ['rev-parse', '--verify', 'FETCH_HEAD^{commit}']);
+  if (fetchedHead.code !== 0) {
+    log(`${name} : FAILED resolving fetched commit -- ${fetchedHead.out}`);
+    record('fail/fetch');
+    continue;
+  }
+  // A local fetch still enforces fast-forward and checked-out-branch safety.
+  const r = git(repo, ['fetch', '--no-tags', '.', `${fetchedHead.out}:refs/heads/${def}`]);
   if (r.code === 0) {
     log(`${name} : ok (on '${branch}', ${def} advanced)`);
     record('ok/branch');
   } else {
-    log(`${name} : ${def} not fast-forwardable, left alone -- ${r.out}`);
-    record('skip/diverged');
+    const ancestry = git(repo, ['merge-base', '--is-ancestor', `refs/heads/${def}`, fetchedHead.out]);
+    if (ancestry.code === 1) {
+      log(`${name} : ${def} not fast-forwardable, left alone -- ${r.out}`);
+      record('skip/diverged');
+    } else {
+      log(`${name} : FAILED local branch update -- ${r.out}`);
+      record('fail/update');
+    }
   }
 }
 
@@ -183,7 +260,7 @@ for (const repo of targets) {
 log('--- summary ---');
 for (const s of summary) log(`${s.name.padEnd(28)} ${s.result}`);
 
-try {
+if (!dryRun) try {
   const cutoff = Date.now() - retentionDays * 86400000;
   for (const f of readdirSync(logDir)) {
     if (!/^pull-all_.*\.log$/.test(f)) continue;
@@ -194,7 +271,7 @@ try {
   /* pruning old logs is not worth failing the run over */
 }
 
-log(`done. log: ${logFile}`);
+log(dryRun ? 'done. dry run: no log file written.' : `done. log: ${logFile}`);
 
 // Non-zero only when something actually failed. Skips are the normal, safe path.
 process.exit(summary.some((s) => s.result.startsWith('fail')) ? 1 : 0);

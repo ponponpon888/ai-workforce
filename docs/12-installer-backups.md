@@ -1,0 +1,181 @@
+# 12. インストールの保護と検証
+
+インストーラは既存の設定を置き換えます。設定を保持してフックだけ手動で追加する場合は、
+Node版の `--skip-settings`、PowerShell版の `-SkipSettings` を使用してください。
+設定の自動マージは行いません。
+
+## 更新の順序
+
+1. Node版は全引数を検査する。未知の引数、値の欠落・空文字、重複、余分な位置引数は終了コード1で停止
+2. 選択された配布ファイルをすべて読み込み、展開後の設定がJSONオブジェクトとして解析できることを確認
+3. 全出力先を検査する。出力先がディレクトリ、親ディレクトリとして使う場所がファイルなら停止
+4. 既存ファイルと出力予定のUTF-8バイト列が同じなら `unchanged` と表示してスキップ
+5. 異なる既存ファイルをバックアップし、更新する
+
+2〜5は両インストーラ共通です。読み込み・事前検査で失敗した場合は、導入先への書き込みを開始しません。
+同一内容のファイルは更新日時を保持し、バックアップや更新確認も省きます。BOMや改行の違いは変更扱いです。
+
+## バックアップと確認
+
+バックアップは同じディレクトリの `元のファイル名.bak.時刻.一意ID` に保存します。
+時刻だけだった旧形式と異なり、同じ秒の再インストールでも履歴が衝突しません。
+コピー処理でも既存バックアップの上書きを禁止します。コピーに失敗した対象は更新しません。
+バックアップの自動削除は行いません。
+
+PowerShell版の `-Confirm` でディレクトリ作成またはバックアップを断った場合、そのファイルをスキップします。
+バックアップを断った後、上書きだけを承認する経路はありません。全体中断ではないためログを確認してください。
+`-WhatIf` とNode版の `--dry-run` は予定を表示し、書き込みません。
+
+## 設定とパス
+
+Node版の設定テンプレートは1回だけ展開し、保存先の `$&` などを置換命令として解釈しません。
+JSON文字列は標準のシリアライザでエスケープします。POSIX向けのフックパスでは、二重引用符内で
+解釈されるバックスラッシュ・二重引用符・ドル記号・バッククォートを別途エスケープします。
+WindowsとPowerShellインストーラの引用処理には、このPOSIX向け変更は適用されません。
+
+## ローカル検証
+
+まとめて確認する場合は、リポジトリのルートで次を実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs
+# 一括検証コマンド自体の回帰テスト
+node kit/scripts/test-verify-installers.mjs
+# 結果をJSONで保存する場合
+node kit/scripts/verify-installers.mjs --json > installer-verification.json
+```
+
+Node、PowerShell 7、Windows PowerShell 5.1を順に確認します。終了コードは、全対象成功が0、
+テスト失敗が1、未導入・対象OS外などで未検証が残る場合は2です。失敗と未検証が混在すれば1です。
+Linux上の成功をWindowsでの検証として扱いません。実行環境のインストールやCI設定の変更はしません。
+JSONには失敗時のテスト出力も含むため、外部共有前にローカルパス等を確認してください。
+
+個別に実行する場合も、リポジトリのルートで実行します。テストは一時ディレクトリを使用し、実際のClaudeホームを変更しません。
+Node.jsが必要です。PowerShell用テストは、指定した実行ファイルが見つからなければ失敗します。
+
+```powershell
+# Nodeインストーラ
+node kit/scripts/test-install-backups.mjs
+
+# PowerShell 7インストーラ（pwshのインストールが必要）
+node kit/scripts/test-install-backups.mjs --target ps --pwsh pwsh
+
+# Windows PowerShell 5.1インストーラ（Windowsで実行）
+node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
+```
+
+コマンドごとに `$LASTEXITCODE` が0であることと、失敗件数が0であることを確認してください。
+いずれかが失敗した場合、他の実行が成功していても、その環境の検証は完了ではありません。
+既存CIのインストーラジョブとPowerShell 5.1ジョブにも同じテストを組み込んでいます。
+
+| 検査 | 確認すること |
+|---|---|
+| バックアップ | 時計を固定した連続更新で元のバイト列を保持し、旧形式も上書きしない |
+| 再実行 | 同じ5ファイルのバイト列・更新日時を保持し、変更ファイルだけバックアップ |
+| 事前検査 | 引数不正、配布ファイル欠落、不正JSON、配置衝突で既存ファイルを変更しない |
+| スキップ・試行 | 対象外ファイルを保持し、試行実行で作成しない |
+| 確認操作 | PowerShellでバックアップ拒否後も対象ファイルを保持する |
+| フック接続 | 空白を含む導入先で、生成された設定コマンドからNodeフックを起動する |
+| 特殊文字 | Node/POSIXで変数名・バッククォート・引用符を含む導入先から起動する |
+
+フック接続テストは、危険なSQLと機密読み取りの拒否、参照SQLと通常読み取りの許可を検査します。
+SQLや読み取りコマンドはJSON入力として渡すだけで、データベース操作や読み取り自体は実行しません。
+PowerShellインストーラの接続テストも、既定のNodeフックを対象とします。
+
+## 検証の限界
+
+- 書き込み開始後のディスク障害などに対する全体ロールバックはない
+- 書き込み権限、空き容量、同時インストールや並行ファイル変更を保証しない
+- 設定スキーマ全体の検証や、Claude Code本体による設定受理・フック呼び出しは検査しない
+- PowerShellフック自体の接続確認とWindowsでの特殊パス対応は別途必要
+
+Linux / Node v24.19.0で27テスト成功を確認しています。
+2026-09-10にWindows 11 / Node v24.13.0で23件、Windows PowerShell 5.1で15件の成功を確認しました。
+Windowsの23件はPOSIX専用の4件が動かないためで、Linuxの27件と同じ範囲ではありません。
+PowerShell 7は未導入のため未検証です。
+PRのCIが開始前に失敗している場合も、これらの検証が成功した扱いにはしません。
+
+Node対象をWindowsで実行すると、以前は23件中14件が失敗していました。
+`node --import` にWindowsの絶対パスを渡していたためで、ESMローダが `c:` をスキームと読んで拒否します。
+`pathToFileURL()` を通すよう修正済みです。POSIXでは絶対パスがそのまま指定子として解決されるため表面化しませんでした。
+
+PowerShell対象のテストは、インストーラを `-Confirm:$false` で呼びます。
+`install.ps1` は `ConfirmImpact = 'Medium'` なので既定の `$ConfirmPreference = 'High'` では確認が出ませんが、
+テスト側がその既定に依存しないよう明示しています。`$ConfirmPreference` を `Low` にすると、
+明示のない呼び出しはコンソールがあれば入力待ちで止まり、なければ `NullReferenceException` で落ちます。
+インストーラ本体の確認と `-WhatIf` は変更していません。`-WhatIf` は `-Confirm:$false` より優先されるため、
+試行実行の検査はそのまま通ります。
+
+## 検証対象の指定ミスを防ぐ
+
+`test-install-backups.mjs` と `test-pull-all.mjs` の直接実行では、`--target` は `node` または `ps` のみ指定できます。
+未知の値・オプション、値不足、重複指定はテスト開始前に終了コード2で停止します。
+`--pwsh` は `--target ps` と組み合わせ、実行ファイル名またはパスを指定します。
+以前は対象名の誤入力でも Node 版を検証してしまいました。現在はその結果を PowerShell の検証と取り違えないよう拒否します。
+
+```powershell
+node kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
+node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
+```
+
+## 実行環境を選んで検証
+
+検証ランナーの `--target` で `all`（既定）、`node`、`powershell-7`、`windows-powershell-5.1` を選べます。
+Windows PowerShell 5.1 の自動更新だけを検証する場合は次を実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite pull-all --target windows-powershell-5.1 --json
+```
+
+インストーラは `--suite installers` に変更します。Node.js は検証ランナーの実行に必要です。
+終了コード0は選択した対象の成功を示します。未選択の環境を検証済みにはしません。
+選択した環境が利用できない場合は `unverified` と終了コード2を返します。
+JSON の `requested_target` と `selected_targets`、通常表示の先頭行で検証範囲を確認できます。
+直接実行するテストスクリプトの `--target node|ps` とは指定名が異なります。
+
+## 秘密ファイルガードの検証
+
+同じランナーで `--suite guard-secrets` も選択できます。
+入力するのは検査用のコマンド文字列で、秘密ファイルを実際に読み出すコマンドは実行しません。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite guard-secrets --target windows-powershell-5.1 --json
+```
+
+結果の `scope` は `guard-secrets-tests-on-this-machine` です。
+PowerShell 本体が使えない環境では未検証となり、Node 版の成功に置き換えません。
+
+## 基本機能をまとめて検証
+
+`--suite core` はインストーラ、自動更新、秘密ファイルガード、SQLガード、SQL境界・承認、配置済みフック接続の6スイートを実行します。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite core --target windows-powershell-5.1 --json
+```
+
+全ランタイムは `--target all`、Nodeのみは `--target node` です。
+SQLは検査用ペイロードとしてフックに渡すだけで、データベースには接続しません。
+JSONの `selected_suites` と各対象の `checks` で、実行した範囲と個別結果を確認できます。
+一部が失敗しても残りの検査結果を集め、終了コード1で返します。
+利用できない対象は終了コード2の未検証です。
+core は上記6スイートの検証で、doctor・レコード検査などを含む全開発テストとは別です。
+
+PowerShell版SQLテストは実行ごとに固有の一時フォルダを使います。
+`test-guard-sql.ps1 -ApprovalDir` を直接指定する場合も、既存のパスは拒否して保持します。
+
+
+### 配置したフックまでつなぐ検証
+
+`--suite installed-approval`（core にも含まれる）は、一時的なホームへインストールし、
+その settings.json に登録されたコマンドをそのまま実行します。
+SQL の未承認拒否・完全一致承認・改変拒否・再利用拒否と、秘密ファイルの拒否・公開ファイルの許可を確認します。
+対象ペイロードのシェルコマンドや SQL 自体は実行しません。
+
+```powershell
+node kit/scripts/verify-installers.mjs --suite installed-approval --target windows-powershell-5.1 --json
+```
+
+`install.ps1 -Hook powershell` は、実行中の PowerShell が7以上なら `pwsh`、5.1なら `powershell.exe` を登録します。
+登録した実行ファイルは Claude Code の PATH からも見つかる必要があります。
+doctor は両形式を静的検査しますが、実行ファイルの存在や Claude Code のフック接続を保証しません。
+この一貫検証も Claude Code 本体を起動する検査や、素の Windows VM での導入確認とは別です。

@@ -162,10 +162,13 @@ What to do:
 
 # The first secret path named anywhere in this segment, or $null.
 function Find-SecretPath([string] $Text) {
+    # Classify Windows paths using the same patterns as slash-separated paths.
+    $Text = $Text.Replace('\', '/')
     foreach ($p in $SecretPatterns) {
         foreach ($m in [regex]::Matches($Text, $p.Pattern)) {
             if ($p.Dotenv) {
-                $tail = $m.Value.Substring($m.Value.IndexOf('.env') + 4)
+                $fileName = ($m.Value -split '/')[-1]
+                $tail = $fileName.Substring(4)
                 $isPublic = $false
                 foreach ($part in ($tail -split '\.')) {
                     if ($part -and ($PublicEnvSuffixes -contains $part.ToLowerInvariant())) {
@@ -194,7 +197,7 @@ function Get-Leaf([string] $Token) {
     $parts = @($bare -split '[\\/]')
     $leaf = $parts[$parts.Count - 1]
     if (-not $leaf) { $leaf = $bare }
-    return $leaf.ToLowerInvariant()
+    return ($leaf.ToLowerInvariant() -replace '\.exe$', '')
 }
 
 # The command word of a segment: leading environment assignments and 'sudo' are

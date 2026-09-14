@@ -17,7 +17,7 @@
 param(
     # Defaults are resolved AFTER param(), not here. See the note below.
     [string] $Hook,
-    [string] $ApprovalDir = $(Join-Path ([System.IO.Path]::GetTempPath()) 'aiwf-test-approvals')
+    [string] $ApprovalDir
 )
 
 Set-StrictMode -Version Latest
@@ -34,7 +34,10 @@ if (-not $Hook) {
 }
 
 if (-not (Test-Path -LiteralPath $Hook)) { throw "hook not found: $Hook" }
-if (Test-Path -LiteralPath $ApprovalDir) { Remove-Item -LiteralPath $ApprovalDir -Recurse -Force }
+if (-not $ApprovalDir) {
+    $ApprovalDir = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-test-approvals-' + [guid]::NewGuid().ToString('N'))
+}
+if (Test-Path -LiteralPath $ApprovalDir) { throw 'ApprovalDir must not already exist.' }
 New-Item -ItemType Directory -Path $ApprovalDir -Force | Out-Null
 
 $pwshExe = (Get-Process -Id $PID).Path
@@ -42,8 +45,7 @@ $pwshExe = (Get-Process -Id $PID).Path
 # Real files, because the file route is the whole point: the hook has to open what
 # the client is pointed at. A fixture that does not exist on disk exercises the
 # unreadable path instead, which is a different rule.
-$sqlDir = Join-Path ([System.IO.Path]::GetTempPath()) 'aiwf-test-sql'
-if (Test-Path -LiteralPath $sqlDir) { Remove-Item -LiteralPath $sqlDir -Recurse -Force }
+$sqlDir = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-test-sql-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $sqlDir -Force | Out-Null
 
 function New-SqlFixture([string] $Name, [string] $Body) {

@@ -12,7 +12,7 @@
       - A dirty working tree is skipped entirely.
       - A repository mid-rebase, mid-merge, mid-bisect or on a detached HEAD is skipped.
       - On the default branch with a clean tree: fast-forward only pull.
-      - On a feature branch: 'git fetch origin main:main' advances the local default
+      - On a feature branch: remote fetch followed by local fast-forward advances the default
         branch without leaving the branch you are on. If that would not fast-forward,
         git refuses and the repository is reported, not forced.
 
@@ -38,7 +38,10 @@ param(
     [string] $LogDir = $(Join-Path $Root '_logs'),
 
     # Keep this many days of logs.
-    [int] $LogRetentionDays = 30
+    [int] $LogRetentionDays = 30,
+
+    # Preview local decisions without fetching or writing logs.
+    [switch] $DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -51,19 +54,17 @@ $ErrorActionPreference = 'Continue'
 # GIT_TERMINAL_PROMPT does not reach.
 $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
+if ($DryRun) { $env:GIT_OPTIONAL_LOCKS = '0' }
 
-# --- logging ---------------------------------------------------------------
-
-if (-not (Test-Path -LiteralPath $LogDir)) {
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+if ($LogRetentionDays -lt 1) {
+    Write-Error 'LogRetentionDays must be a positive integer. Nothing was updated.'
+    exit 2
 }
-$logFile = Join-Path $LogDir ('pull-all_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
-function Write-Log([string] $Message, [string] $Color = 'Gray') {
-    $line = '{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
-    Write-Host $line -ForegroundColor $Color
-    [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+# Validate before log creation, which otherwise creates a missing root too.
+if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+    Write-Error 'Root must be an existing directory. Nothing was updated.'
+    exit 1
 }
 
 function Invoke-Git([string] $RepoPath, [string[]] $GitArgs) {
@@ -74,6 +75,69 @@ function Invoke-Git([string] $RepoPath, [string[]] $GitArgs) {
     }
 }
 
+# Explicit selections are checked together before any log or update is written.
+$hasSelection = $PSBoundParameters.ContainsKey('Repos')
+$requestedTargets = @()
+if ($hasSelection) {
+    if (-not $Repos -or $Repos.Count -eq 0) {
+        Write-Error 'Repos must contain direct child directory names.'
+        exit 2
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Error 'git not found on PATH. Nothing to do.'
+        exit 1
+    }
+    foreach ($entry in $Repos) {
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            Write-Error 'Repos must contain direct child directory names.'
+            exit 2
+        }
+        $repoName = $entry.Trim()
+        if ($repoName -eq '.' -or $repoName -eq '..' -or $repoName -match '[/\\:]') {
+            Write-Error 'Repos must contain direct child directory names.'
+            exit 2
+        }
+        $target = Join-Path $Root $repoName
+        $valid = (Test-Path -LiteralPath $target -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $target '.git'))
+        if ($valid) {
+            $probe = Invoke-Git $target @('rev-parse', '--absolute-git-dir')
+            $valid = $probe.ExitCode -eq 0
+        }
+        if (-not $valid) {
+            Write-Error "Invalid requested repository: $repoName. Nothing was updated."
+            exit 1
+        }
+        if ($requestedTargets -cnotcontains $target) { $requestedTargets += $target }
+    }
+}
+
+# --- logging ---------------------------------------------------------------
+
+if (-not $DryRun -and -not (Test-Path -LiteralPath $LogDir)) {
+    try {
+        New-Item -ItemType Directory -Path $LogDir -Force -ErrorAction Stop | Out-Null
+    } catch {
+        Write-Error 'Cannot create log directory. Stopping.'
+        exit 1
+    }
+}
+$logFile = Join-Path $LogDir ('pull-all_{0}.log' -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+function Write-Log([string] $Message, [string] $Color = 'Gray') {
+    $line = '{0}  {1}' -f (Get-Date -Format 'HH:mm:ss'), $Message
+    Write-Host $line -ForegroundColor $Color
+    if (-not $DryRun) {
+        try {
+            [System.IO.File]::AppendAllText($logFile, $line + [Environment]::NewLine, $utf8NoBom)
+        } catch {
+            Write-Error 'Cannot write log. Stopping.'
+            exit 1
+        }
+    }
+}
+
 # --- discovery -------------------------------------------------------------
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -81,13 +145,9 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if (-not (Test-Path -LiteralPath $Root)) {
-    Write-Log "Root not found: $Root" 'Red'
-    exit 1
-}
 
-if ($Repos) {
-    $targets = $Repos | ForEach-Object { Join-Path $Root $_ } | Where-Object { Test-Path -LiteralPath $_ }
+if ($hasSelection) {
+    $targets = $requestedTargets
 } else {
     $targets = Get-ChildItem -LiteralPath $Root -Directory |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |
@@ -111,7 +171,7 @@ foreach ($repo in $targets) {
     $gitDir = $gitDirResult.Output
 
     # --- refuse to act on anything mid-operation ---------------------------
-    $inProgress = @('rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'BISECT_LOG') |
+    $inProgress = @('rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'BISECT_LOG') |
         Where-Object { Test-Path -LiteralPath (Join-Path $gitDir $_) }
 
     if ($inProgress) {
@@ -120,14 +180,25 @@ foreach ($repo in $targets) {
         continue
     }
 
-    $status = Invoke-Git $repo @('status', '--porcelain')
+    $status = Invoke-Git $repo @('status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none')
+    if ($status.ExitCode -ne 0) {
+        Write-Log "$name : FAILED reading working tree status -- $($status.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/status' }
+        continue
+    }
     if ($status.Output) {
         Write-Log "$name : SKIP (dirty working tree)" 'Yellow'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/dirty' }
         continue
     }
 
-    $branch = (Invoke-Git $repo @('rev-parse', '--abbrev-ref', 'HEAD')).Output
+    $branchResult = Invoke-Git $repo @('rev-parse', '--abbrev-ref', 'HEAD')
+    if ($branchResult.ExitCode -ne 0 -or -not $branchResult.Output) {
+        Write-Log "$name : FAILED reading current branch -- $($branchResult.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/branch' }
+        continue
+    }
+    $branch = $branchResult.Output
     if ($branch -eq 'HEAD') {
         Write-Log "$name : SKIP (detached HEAD)" 'Yellow'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/detached' }
@@ -137,6 +208,16 @@ foreach ($repo in $targets) {
     # --- work out the default branch ---------------------------------------
     $head = (Invoke-Git $repo @('symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD')).Output
     if ($head -match '^origin/(.+)$') { $default = $Matches[1] } else { $default = 'main' }
+
+    if ($DryRun) {
+        if ($branch -eq $default) {
+            Write-Log "$name : would pull --ff-only ($default)"
+        } else {
+            Write-Log "$name : would fetch origin $default and attempt local fast-forward (on '$branch')"
+        }
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'dry-run' }
+        continue
+    }
 
     if ($branch -eq $default) {
         $r = Invoke-Git $repo @('pull', '--ff-only')
@@ -150,15 +231,33 @@ foreach ($repo in $targets) {
         continue
     }
 
-    # On a feature branch: advance the local default branch in place. This
-    # cannot touch the checkout, and git refuses if it is not a fast-forward.
-    $r = Invoke-Git $repo @('fetch', 'origin', "${default}:${default}")
+    # Separate transport failure from a refused local fast-forward.
+    $fetched = Invoke-Git $repo @('fetch', '--no-tags', 'origin', $default)
+    if ($fetched.ExitCode -ne 0) {
+        Write-Log "$name : FAILED fetch -- $($fetched.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/fetch' }
+        continue
+    }
+    $fetchedHead = Invoke-Git $repo @('rev-parse', '--verify', 'FETCH_HEAD^{commit}')
+    if ($fetchedHead.ExitCode -ne 0) {
+        Write-Log "$name : FAILED resolving fetched commit -- $($fetchedHead.Output)" 'Red'
+        $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/fetch' }
+        continue
+    }
+    $commit = $fetchedHead.Output
+    $r = Invoke-Git $repo @('fetch', '--no-tags', '.', "${commit}:refs/heads/${default}")
     if ($r.ExitCode -eq 0) {
         Write-Log "$name : ok (on '$branch', $default advanced)" 'Green'
         $summary += [pscustomobject]@{ Repo = $name; Result = 'ok/branch' }
     } else {
-        Write-Log "$name : $default not fast-forwardable, left alone -- $($r.Output)" 'Yellow'
-        $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/diverged' }
+        $ancestry = Invoke-Git $repo @('merge-base', '--is-ancestor', "refs/heads/${default}", $commit)
+        if ($ancestry.ExitCode -eq 1) {
+            Write-Log "$name : $default not fast-forwardable, left alone -- $($r.Output)" 'Yellow'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'skip/diverged' }
+        } else {
+            Write-Log "$name : FAILED local branch update -- $($r.Output)" 'Red'
+            $summary += [pscustomobject]@{ Repo = $name; Result = 'fail/update' }
+        }
     }
 }
 
@@ -167,11 +266,14 @@ foreach ($repo in $targets) {
 Write-Log '--- summary ---'
 foreach ($s in $summary) { Write-Log ('{0,-28} {1}' -f $s.Repo, $s.Result) }
 
-Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction SilentlyContinue |
-    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogRetentionDays) } |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-
-Write-Log "done. log: $logFile"
+if (-not $DryRun) {
+    Get-ChildItem -LiteralPath $LogDir -Filter 'pull-all_*.log' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$LogRetentionDays) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Log "done. log: $logFile"
+} else {
+    Write-Log 'done. dry-run; no logs written.'
+}
 
 # Exit explicitly. Without this the script just ends, and $LASTEXITCODE is still
 # whatever the last `git` call returned -- non-zero for any repository that was

@@ -51,26 +51,48 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Step([string] $Message) { Write-Host "  $Message" -ForegroundColor Gray }
 
+$pending = New-Object 'System.Collections.Generic.List[object]'
 function Install-File {
+    param([string] $Content, [string] $Destination)
+    $pending.Add(@{ Content = $Content; Destination = $Destination })
+}
+
+function Write-InstalledFile {
     param(
         [Parameter(Mandatory)][string] $Content,
         [Parameter(Mandatory)][string] $Destination
     )
 
+    if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+        $existingBytes = [System.IO.File]::ReadAllBytes($Destination)
+        $desiredBytes = $utf8NoBom.GetBytes($Content)
+        if ([Convert]::ToBase64String($existingBytes) -ceq [Convert]::ToBase64String($desiredBytes)) {
+            Write-Step "unchanged -> $Destination"
+            return
+        }
+    }
     $dir = Split-Path -Parent $Destination
     if (-not (Test-Path -LiteralPath $dir)) {
         if ($PSCmdlet.ShouldProcess($dir, 'create directory')) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        } elseif (-not $WhatIfPreference) {
+            Write-Step "skipped (directory creation declined) -> $Destination"
+            return
         }
     }
 
     if (Test-Path -LiteralPath $Destination) {
-        $backup = "$Destination.bak.$stamp"
+        $backup = "$Destination.bak.$stamp.$([Guid]::NewGuid().ToString('N'))"
         if ($PSCmdlet.ShouldProcess($Destination, "back up to $(Split-Path $backup -Leaf)")) {
-            Copy-Item -LiteralPath $Destination -Destination $backup -Force
+            # Fail before writing the destination if a backup already exists.
+            [System.IO.File]::Copy($Destination, $backup, $false)
             Write-Step "backed up -> $backup"
         } else {
             Write-Step "would back up -> $backup"
+            if (-not $WhatIfPreference) {
+                Write-Step "skipped (backup declined) -> $Destination"
+                return
+            }
         }
     }
 
@@ -117,8 +139,9 @@ if ($Hook -eq 'node') {
 } else {
     $sqlFile        = 'guard-sql.ps1'
     $secretsFile    = 'guard-secrets.ps1'
-    $hookCommand    = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
-    $secretsCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
+    $hookExecutable = if ($PSVersionTable.PSVersion.Major -ge 7) { 'pwsh' } else { 'powershell.exe' }
+    $hookCommand    = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
+    $secretsCommand = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
 }
 
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would
@@ -152,6 +175,11 @@ if ($SkipSettings) {
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     $settings = $settings.Replace('{{GUARD_SECRETS_COMMAND}}', ($secretsCommand -replace '\\', '\\\\' -replace '"', '\"'))
+    # Validate JSON before any destination is changed.
+    $parsed = ConvertFrom-Json -InputObject $settings -ErrorAction Stop
+    if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) {
+        throw 'install: settings must be a JSON object'
+    }
     Install-File -Content $settings -Destination (Join-Path $ClaudeHome 'settings.json')
     # One deny rule is Windows-only. On Windows it is live, and wider than the
     # name suggests; under pwsh on Linux or macOS it is dead weight. Say which.
@@ -165,6 +193,30 @@ if ($SkipSettings) {
     } else {
         Write-Step '      It is inert here. Trim it if you like.'
     }
+}
+
+# Reject layout conflicts before updating even the first file.
+foreach ($entry in $pending) {
+    if ((Test-Path -LiteralPath $entry.Destination) -and
+        -not (Test-Path -LiteralPath $entry.Destination -PathType Leaf)) {
+        throw "install: destination is not a file: $($entry.Destination)"
+    }
+    $parent = Split-Path -Parent $entry.Destination
+    while ($parent) {
+        if (Test-Path -LiteralPath $parent) {
+            if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+                throw "install: parent is not a directory: $parent"
+            }
+            break
+        }
+        $next = Split-Path -Parent $parent
+        if ($next -eq $parent) { break }
+        $parent = $next
+    }
+}
+# All selected sources and destination shapes are checked before the first write.
+foreach ($entry in $pending) {
+    Write-InstalledFile -Content $entry.Content -Destination $entry.Destination
 }
 
 # --- 4. what is left to do by hand -----------------------------------------

@@ -62,9 +62,10 @@ English: [02-guardrails.en.md](02-guardrails.en.md)
 ]
 ```
 
-同時に、`defaultMode` を `ask`、`disableBypassPermissionsMode` を `true`、
-トップレベルの `disableAutoMode` を `true` にして、
-**「全部承認なしで通すモード」に入れなくしています**。
+現在の `kit/claude/settings.json` は、`permissions.defaultMode` を `default`、
+`permissions.disableBypassPermissionsMode` と `permissions.disableAutoMode` を `"disable"` にしています。
+これはテンプレートの設定値です。Claude Code 本体での設定受理・優先順位・動作確認は、
+[統合状況](17-integration-status.md) の実機検証として残っています。
 
 > これは**手元の Claude Code** の設定です。私はチャット（Cowork）側では承認をスキップに
 > していて、そこにはこの設定が効きません。矛盾しているように見えますが、経路が別です。
@@ -770,3 +771,17 @@ supabase で `select 1; drop table nothing;` を実行して
 
 `[guard-sql] BLOCKED: DROP is never allowed from an agent.` が出れば正常。
 何も起きずに実行されたら、フックが配線されていません。
+
+## Windows 形式の秘密ファイルパス
+
+`guard-secrets` はパス判定時にバックスラッシュをスラッシュへ統一します。
+`Get-Content C:\Dev\app\secrets\prod.yaml` や `.ssh\config` の読み取りも検出対象です。
+`secrets\README.md` や `secrets\masker.ts` など、既存の文書・ソースコードの例外は維持します。
+これはコマンド文字列の事故防止検査であり、シェルの全構文を解析するものではありません。
+
+秘密ファイルガードは、コマンド名末尾の `.exe`（大小文字を区別しない）を除いて読み取り操作を判定します。
+`git.exe show HEAD:.env` や `python.exe -c` による秘密ファイル読み取りも検出し、
+`git.exe add .env` と公開テンプレートの読み取りは引き続き許可します。
+
+公開テンプレートの例外（example / sample / template / dist）はファイル名だけで判定します。
+親フォルダが `.env.example.cache` などの名前でも、その中の `.env` は秘密ファイルとして検出します。

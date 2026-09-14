@@ -78,6 +78,12 @@ jobs:
       - name: Test installers
         shell: bash
         run: |
+          node kit/scripts/test-installed-approval.mjs
+          node kit/scripts/test-installed-approval.mjs --target ps
+          node kit/scripts/test-verify-installers.mjs
+          node kit/scripts/test-install-backups.mjs
+          node kit/scripts/test-install-backups.mjs --target ps
+
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8'))"
           node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
@@ -104,6 +110,7 @@ jobs:
           node kit/scripts/validate-pitfalls.mjs
           node kit/scripts/test-validate-pitfalls.mjs
           node kit/scripts/test-lint-pitfalls.mjs
+          node kit/scripts/test-check-doc-todos.mjs
           node kit/scripts/build-pitfall-index.mjs
           changed=$(git status --porcelain -- data/pitfalls.index.json)
           if [ -n "$changed" ]; then
@@ -116,11 +123,7 @@ jobs:
       - name: Report TODO markers in release docs
         continue-on-error: true
         shell: bash
-        run: |
-          if grep -rn 'TODO' docs README.md README.en.md; then
-            echo "::warning::TODO markers still present"
-            exit 1
-          fi
+        run: node kit/scripts/check-doc-todos.mjs
 
   windows:
     name: test (Windows)
@@ -183,6 +186,10 @@ jobs:
         shell: powershell
         run: |
           $PSVersionTable.PSVersion
+          node kit/scripts/test-install-backups.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-installed-approval.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./kit/scripts/test-guard-sql.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-sql-boundaries.mjs --target ps --pwsh powershell.exe
@@ -196,11 +203,15 @@ jobs:
         shell: pwsh
         run: |
           $probe = Join-Path $env:RUNNER_TEMP 'exitcode-probe'
-          New-Item -ItemType Directory -Path "$probe/notarepo" -Force | Out-Null
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          & git init --initial-branch=main "$probe/repo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & git -C "$probe/repo" -c user.name=fixture -c user.email=fixture@example.invalid commit --allow-empty -m fixture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $wrapper = Join-Path $probe 'wrapper.ps1'
           $cases = @(
             './kit/scripts/test-guard-sql.ps1',
-            "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos notarepo",
+            "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos repo -DryRun",
             "./kit/scripts/install.ps1 -ClaudeHome '$probe/fake-claude' -Hook powershell",
             "./kit/scripts/approve-ddl.ps1 -Sql 'create table probe_t (id int)' -ApprovalDir '$probe/approvals' -Force"
           )
@@ -219,6 +230,17 @@ jobs:
       - name: Test installers
         shell: pwsh
         run: |
+          node kit/scripts/test-installed-approval.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-installed-approval.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-verify-installers.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-install-backups.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-install-backups.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           node kit/scripts/install.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Content "$env:RUNNER_TEMP/fake-claude/settings.json" -Raw | ConvertFrom-Json | Out-Null

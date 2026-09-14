@@ -6,12 +6,17 @@
 このリポジトリは、その「歯止め」と「段取り」を、動く形で公開しています。
 
 > **正直な断り書き。** 中身は、本番を守っている構成を**公開用に書き起こしたもの**です。
-> 手元で動いている実物そのものではありません。テストは通っていて CI で 3 OS で回していますが、
-> 実物との突き合わせは [ROADMAP](ROADMAP.md) の Week 1 に残っています。
+> 手元で動いている実物そのものではありません。このブランチは修正の統合検証中です。
+> Linux / Node の検証結果と、Windows・CI・実機で残る確認は [統合状況](docs/17-integration-status.md) を参照してください。
 
 日本語が正本です / [English summary](README.en.md)
 
 ---
+
+まず1つだけ試す場合は、[SQLガード単体の最小手順](docs/14-try-guard-sql.md)へ。
+既存設定を変更せず、データベースへの接続も不要です。
+既存設定がある場合は、[フックだけ取り込む手順](docs/16-merge-existing-settings.md)へ。
+導入後に戻す場合は、[復元手順](docs/15-restore-after-install.md)を参照してください。
 
 ## これは何か
 
@@ -83,10 +88,10 @@ node kit/scripts/test-guard-sql.mjs    # pass: 44   fail: 0
 **シェル経由で読むのを止めます**。`deny` の `Read(./.env)` は Read ツールにしか
 効かないので、`cat .env` も `Get-Content .env` も素通りしていました。
 落とすのは「秘密ファイルのパス」と「読み出しの形」が両方あるときだけです
-（合計 51 ケース: 落とす 26 / 通す 25）。
+（合計 65 ケース: 落とす 34 / 通す 31）。
 
 ```bash
-node kit/scripts/test-guard-secrets.mjs   # pass: 51   fail: 0
+node kit/scripts/test-guard-secrets.mjs   # pass: 65   fail: 0
 ```
 
 フックは 2 種類あって、挙動は同じです。
@@ -122,7 +127,7 @@ CI では Node 版を Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubu
 確認しているのは主に「触ってはいけないものに触らなかった」side です。
 
 ```bash
-node kit/scripts/test-pull-all.mjs     # pass: 23   fail: 0
+node kit/scripts/test-pull-all.mjs     # pass: 72   fail: 0
 ```
 
 **Windows PowerShell 5.1 でも確認済みです。** 5.1 は 7.x とは別物で、実際にそこでしか
@@ -161,6 +166,8 @@ node kit/scripts/install.mjs
 
 **消しません。** 上書きするものは必ず `.bak.<日時>` に退避します。
 
+---
+
 ## 設定と導入状態を診断する
 
 ```powershell
@@ -187,7 +194,6 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話 |
 | [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
-| [09 設定診断](docs/09-settings-doctor.md) | 配布設定と導入状態を読み取り専用で静的検査する |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 
@@ -247,3 +253,4 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 
 MIT. 商用利用・改変・再配布すべて自由です。クレジットも不要です。
 役に立ったら Star か、どう使ったかを教えてもらえると嬉しいです。
+

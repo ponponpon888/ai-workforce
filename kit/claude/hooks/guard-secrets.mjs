@@ -67,7 +67,8 @@ const SECRET_PATTERNS = [
     re: /(?<![\w.\-])(?:[\w.\-/~]*\/)?\.env(?![\w])(?:\.[\w-]+)*/g,
     exempt: (hit) =>
       hit
-        .slice(hit.indexOf('.env') + '.env'.length)
+        .split('/').pop()
+        .slice('.env'.length)
         .split('.')
         .filter(Boolean)
         .some((part) => PUBLIC_ENV_SUFFIXES.includes(part.toLowerCase())),
@@ -151,6 +152,8 @@ function deny(command, hit) {
 
 /** The first secret path named anywhere in this segment, or null. */
 function secretPathIn(text) {
+  // Classify Windows paths using the same patterns as slash-separated paths.
+  text = text.replaceAll('\\', '/');
   for (const pattern of SECRET_PATTERNS) {
     pattern.re.lastIndex = 0;
     let m;
@@ -165,7 +168,7 @@ function secretPathIn(text) {
 /** `"/usr/bin/cat"` is still `cat`. */
 function leafOf(token) {
   const bare = token.replace(/^['"]+|['"]+$/g, '');
-  return (bare.split(/[\\/]/).pop() || bare).toLowerCase();
+  return (bare.split(/[\\/]/).pop() || bare).toLowerCase().replace(/\.exe$/, '');
 }
 
 /**

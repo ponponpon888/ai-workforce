@@ -1,0 +1,69 @@
+name: critical-gate
+
+on:
+  pull_request:
+    paths:
+      - 'kit/critical-gate/**'
+      - '.github/workflows/critical-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: critical-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: offline gate (${{ matrix.id }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: linux-node22
+            os: ubuntu-latest
+            node: '22.16.0'
+          - id: windows-node24
+            os: windows-latest
+            node: '24.13.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        id: node
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Linux baseline
+        if: matrix.id == 'linux-node22'
+        shell: pwsh
+        run: |
+          node ./kit/critical-gate/verify.mjs --output "$env:RUNNER_TEMP/critical-linux" --expected-platform linux --expected-node 22.16.0
+          exit $LASTEXITCODE
+      - name: Windows PowerShell 5.1
+        if: matrix.id == 'windows-node24'
+        shell: powershell
+        run: |
+          & ./kit/critical-gate/verify.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'critical-win51')
+          exit $LASTEXITCODE
+      - name: Windows PowerShell 7
+        if: ${{ !cancelled() && matrix.id == 'windows-node24' && steps.node.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          & ./kit/critical-gate/verify.ps1 -OutputDirectory (Join-Path $env:RUNNER_TEMP 'critical-win7')
+          exit $LASTEXITCODE
+      - name: Save verification evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: critical-gate-${{ matrix.id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/critical-linux/
+            ${{ runner.temp }}/critical-win51/
+            ${{ runner.temp }}/critical-win7/
+          if-no-files-found: error
+          retention-days: 7

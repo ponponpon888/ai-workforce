@@ -6,54 +6,45 @@ on:
   pull_request:
   workflow_dispatch:
 
-# WHY macOS ONLY RUNS ON push AND workflow_dispatch
-# On 2026-09-08 macOS billed $3.16 for 51 minutes, Linux $1.79 for 298 and Windows $1.77 for
-# 177. The macOS rate is roughly 10x Linux, so the runner with the fewest minutes cost the
-# most, and the next day it finished off the $12 free allowance. Past that, jobs stop being
-# given a runner at all: they are created, no step runs, and nothing in the log mentions
-# billing. Pull requests are what runs many times a day, so that is where the expensive
-# runner comes out.
+# A new commit makes older results obsolete. Cancel the superseded run instead
+# of paying for both. Keep separate groups per PR or branch.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# WHY THE SUITES ARE GROUPED BY OS
 #
-# It is done by swapping the matrix list on the event rather than by a job-level `if`, for
-# two reasons. The matrix context is not available in a job-level `if`, so the condition
-# could not see which OS it was about. And even where a condition can be written, the runner
-# is allocated -- and charged -- before a step is skipped, which would not have saved
-# anything. Removing the entry from the matrix is the only form where macOS never starts.
+# The former workflow started 18 jobs for one pull request. Most finished in
+# seconds, but each repeated runner startup, checkout, and Node setup. Grouping
+# the same coverage into one job per OS removes that repeated overhead without
+# removing the tests.
 #
-# Job names are unchanged. See docs/02-guardrails.md and data/pitfalls/ci-001.json.
+# Pull requests run Ubuntu and Windows. macOS is intentionally limited to main
+# pushes and manual runs because its hosted-runner rate is much higher. Windows
+# PowerShell 5.1 stays in the Windows job because it is a distinct runtime and
+# has caught real failures that pwsh 7 did not.
 
 jobs:
-  parse:
-    name: parse all scripts
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse every .ps1
-        shell: pwsh
-        run: |
-          $bad = 0
-          Get-ChildItem -Path . -Filter *.ps1 -Recurse | ForEach-Object {
-            $errors = $null; $tokens = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
-            if ($errors.Count -gt 0) {
-              $bad++
-              Write-Host "::error file=$($_.FullName)::parse errors"
-              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
-            } else {
-              Write-Host "ok: $($_.Name)"
-            }
-          }
-          if ($bad -gt 0) { exit 1 }
-
-  ascii:
-    name: scripts stay ASCII-only
+  ubuntu:
+    name: test (Ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fail on non-ASCII in .ps1
-        # Windows PowerShell 5.1 reads a BOM-free UTF-8 script as the system ANSI
-        # codepage. Non-ASCII in a .ps1 becomes mojibake at runtime on a Japanese
-        # Windows install. Keep them ASCII.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Diagnose the kit template
+        shell: bash
+        run: |
+          node kit/scripts/doctor.mjs --template
+          node kit/scripts/test-doctor.mjs
+
+      - name: Scripts stay ASCII-only
+        shell: bash
         run: |
           bad=0
           while IFS= read -r f; do
@@ -64,19 +55,144 @@ jobs:
           done < <(find . -name '*.ps1')
           exit $bad
 
-  exit-codes:
-    name: entry points report success
+      - name: Test Node implementations
+        shell: bash
+        run: |
+          node kit/scripts/test-guard-sql.mjs
+          node kit/scripts/test-sql-boundaries.mjs
+          node kit/scripts/test-guard-secrets.mjs
+          node kit/scripts/test-pull-all.mjs
+
+      - name: Test PowerShell implementations under pwsh
+        shell: pwsh
+        run: |
+          ./kit/scripts/test-guard-sql.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-sql-boundaries.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-guard-secrets.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-pull-all.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test installers
+        shell: bash
+        run: |
+          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
+          node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8'))"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
+          for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs scripts/approve-ddl.mjs; do
+            test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
+          done
+
+          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-skip" --skip-settings --skip-claude-md
+          for f in CLAUDE.md settings.json; do
+            test ! -e "$RUNNER_TEMP/fake-skip/$f" || { echo "::error::--skip flags did not skip $f"; exit 1; }
+          done
+          test -f "$RUNNER_TEMP/fake-skip/hooks/guard-sql.mjs" || { echo "::error::hook missing"; exit 1; }
+
+          pwsh -NoProfile -File ./kit/scripts/install.ps1 -ClaudeHome "$RUNNER_TEMP/fake-claude-ps" -Hook powershell
+          pwsh -NoProfile -Command "Get-Content '$RUNNER_TEMP/fake-claude-ps/settings.json' -Raw | ConvertFrom-Json | Out-Null"
+          node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude-ps"
+          for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 scripts/approve-ddl.ps1; do
+            test -f "$RUNNER_TEMP/fake-claude-ps/$f" || { echo "::error::installer did not write $f"; exit 1; }
+          done
+
+      - name: Validate pitfall records and committed index
+        shell: bash
+        run: |
+          node kit/scripts/validate-pitfalls.mjs
+          node kit/scripts/test-validate-pitfalls.mjs
+          node kit/scripts/test-lint-pitfalls.mjs
+          node kit/scripts/build-pitfall-index.mjs
+          changed=$(git status --porcelain -- data/pitfalls.index.json)
+          if [ -n "$changed" ]; then
+            git diff -- data/pitfalls.index.json
+            echo "::error::data/pitfalls.index.json is stale or untracked"
+            exit 1
+          fi
+          node kit/scripts/lint-pitfalls.mjs
+
+      - name: Report TODO markers in release docs
+        continue-on-error: true
+        shell: bash
+        run: |
+          if grep -rn 'TODO' docs README.md README.en.md; then
+            echo "::warning::TODO markers still present"
+            exit 1
+          fi
+
+  windows:
+    name: test (Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      # A .ps1 that ends without an explicit `exit` leaves $LASTEXITCODE holding
-      # whatever the last native command returned. Actions ends a pwsh step with
-      # `exit $LASTEXITCODE`, so a script that did its job can still report the
-      # step as failed -- which is exactly how a fully passing guard-sql suite
-      # (pass: 29 fail: 0) turned three jobs red. Running the file with -File
-      # hides it, so it is invisible outside CI. Call each entry point the way
-      # Actions does, on its success path, and require 0.
-      - name: Every entry point exits 0 on success
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Diagnose the kit template
+        shell: pwsh
+        run: |
+          node kit/scripts/doctor.mjs --template
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-doctor.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Parse every PowerShell script
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Path . -Filter *.ps1 -Recurse | ForEach-Object {
+            $errors = $null
+            $tokens = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $bad++
+              Write-Host "::error file=$($_.FullName)::parse errors"
+              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            }
+          }
+          if ($bad -gt 0) { exit 1 }
+
+      - name: Test Node implementations
+        shell: pwsh
+        run: |
+          node kit/scripts/test-guard-sql.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-sql-boundaries.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-guard-secrets.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-pull-all.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test PowerShell implementations under pwsh
+        shell: pwsh
+        run: |
+          ./kit/scripts/test-guard-sql.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-sql-boundaries.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-guard-secrets.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-pull-all.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Test Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $PSVersionTable.PSVersion
+          ./kit/scripts/test-guard-sql.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-sql-boundaries.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node ./kit/scripts/test-guard-secrets.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify entry-point success codes
         shell: pwsh
         run: |
           $probe = Join-Path $env:RUNNER_TEMP 'exitcode-probe'
@@ -96,198 +212,51 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               $bad++
               Write-Host "::error::$case did its job but exited $LASTEXITCODE"
-            } else {
-              Write-Host "ok: $case"
             }
           }
           if ($bad -gt 0) { exit 1 }
 
-  guard-sql-node:
-    name: guard-sql (node)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: node kit/scripts/test-guard-sql.mjs
-
-  guard-sql-powershell:
-    name: guard-sql (powershell)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run tests
-        shell: pwsh
-        run: ./kit/scripts/test-guard-sql.ps1
-
-  guard-sql-windows-powershell-51:
-    name: guard-sql (Windows PowerShell 5.1)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      # `shell: powershell` is Windows PowerShell 5.1, not pwsh 7.x. They are
-      # different runtimes and they disagree in ways that only show up here --
-      # 5.1 leaves $PSCommandPath empty inside a param() default value when
-      # [CmdletBinding()] is present, which crashed this suite before a single
-      # test ran. 7.x populates it, so CI on pwsh alone never saw it.
-      - name: Report the version actually in use
-        shell: powershell
-        run: $PSVersionTable.PSVersion
-      - name: Run tests
-        shell: powershell
-        run: ./kit/scripts/test-guard-sql.ps1
-      - name: Run pull-all tests against the PowerShell implementation
-        shell: powershell
-        run: node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
-      - name: Run guard-secrets tests against the PowerShell implementation
-        shell: powershell
-        run: node ./kit/scripts/test-guard-secrets.mjs --target ps --pwsh powershell.exe
-
-  guard-secrets-node:
-    name: guard-secrets (node)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: node kit/scripts/test-guard-secrets.mjs
-
-  guard-secrets-powershell:
-    name: guard-secrets (powershell)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      # One suite drives both implementations, so guard-secrets.mjs and
-      # guard-secrets.ps1 cannot drift apart. The driver is Node either way;
-      # --target ps only changes which file the payload is piped into.
-      - run: node kit/scripts/test-guard-secrets.mjs --target ps
-        shell: bash
-
-  pull-all:
-    name: pull-all never destroys work
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      # Builds a real bare origin and six real clones (clean, dirty, feature
-      # branch, detached HEAD, mid-rebase, diverged), runs the script over them
-      # and checks that nothing was lost.
-      - run: node kit/scripts/test-pull-all.mjs
-      - run: node kit/scripts/test-pull-all.mjs --target ps
-        shell: bash
-
-  installers:
-    name: installers run clean
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      # Exiting 0 is not the same as having installed anything. Every file the
-      # kit promises is checked by name, because a step that only asserts the
-      # exit code passes just as happily when the installer writes nothing.
-      - name: install.mjs into a throwaway home
-        shell: bash
-        run: |
-          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
-          node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8')); console.log('settings.json is valid JSON')"
-          for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs scripts/approve-ddl.mjs; do
-            test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
-            echo "  present: $f"
-          done
-      - name: install.mjs honours the skip flags
-        shell: bash
-        run: |
-          node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-skip" --skip-settings --skip-claude-md
-          for f in CLAUDE.md settings.json; do
-            test -e "$RUNNER_TEMP/fake-skip/$f" && { echo "::error::--skip flags did not skip $f"; exit 1; }
-          done
-          test -f "$RUNNER_TEMP/fake-skip/hooks/guard-sql.mjs" || { echo "::error::hook missing"; exit 1; }
-          echo '  skipped CLAUDE.md and settings.json, installed the hooks'
-      - name: install.ps1 into a throwaway home
+      - name: Test installers
         shell: pwsh
         run: |
-          ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
-          Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
-          Write-Host 'settings.json is valid JSON'
-          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
-            if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) {
-              Write-Host "::error::installer did not write $f"
-              exit 1
-            }
-            Write-Host "  present: $f"
+          node kit/scripts/install.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content "$env:RUNNER_TEMP/fake-claude/settings.json" -Raw | ConvertFrom-Json | Out-Null
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'scripts/approve-ddl.mjs') {
+            if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude/$f")) { throw "installer did not write $f" }
           }
 
-  pitfalls:
-    name: pitfall records validate, index is current
-    runs-on: ubuntu-latest
+          node kit/scripts/install.mjs --claude-home "$env:RUNNER_TEMP/fake-skip" --skip-settings --skip-claude-md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($f in 'CLAUDE.md', 'settings.json') {
+            if (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-skip/$f") { throw "--skip flags did not skip $f" }
+          }
+
+          ./kit/scripts/install.ps1 -ClaudeHome "$env:RUNNER_TEMP/fake-claude-ps" -Hook powershell
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
+          node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
+            if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) { throw "installer did not write $f" }
+          }
+
+  macos:
+    name: test (macOS)
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node kit/scripts/validate-pitfalls.mjs
-      - run: node kit/scripts/test-validate-pitfalls.mjs
-      - run: node kit/scripts/test-lint-pitfalls.mjs
-      # The index is a build product that is committed, so it can go stale without anyone
-      # noticing -- a record added without regenerating it would leave a linter reading
-      # yesterday's data while the records look right. Rebuild and require no diff.
-      # `git status --porcelain`, not `git diff`: diff says nothing about a file that is not
-      # tracked, so an index that was generated but never committed would pass silently.
-      - name: The committed index matches the records
+      - name: Test cross-platform entry points
+        shell: bash
         run: |
-          node kit/scripts/build-pitfall-index.mjs
-          changed=$(git status --porcelain -- data/pitfalls.index.json)
-          if [ -n "$changed" ]; then
-            git diff -- data/pitfalls.index.json
-            echo "::error::data/pitfalls.index.json is stale or untracked. Run: node kit/scripts/build-pitfall-index.mjs"
-            exit 1
-          fi
-
-      - run: node kit/scripts/lint-pitfalls.mjs
-
-  todos:
-    name: no TODO left in docs
-    runs-on: ubuntu-latest
-    # Case studies are drafts until v0.1. Flip this to a hard failure at release.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          if grep -rn 'TODO' docs README.md README.en.md; then
-            echo "::warning::TODO markers still present"
-            exit 1
-          fi
-
+          node kit/scripts/test-guard-sql.mjs
+          node kit/scripts/test-sql-boundaries.mjs
+          node kit/scripts/test-guard-secrets.mjs
+          node kit/scripts/test-pull-all.mjs
+          node kit/scripts/test-pull-all.mjs --target ps

@@ -114,7 +114,7 @@ assert('unapproved DDL inside a file', BLOCK, callHook('Bash', { command: `psql 
 // This one used to be a "must allow" case, on the reasoning that a path is not a
 // statement. That reasoning is what left the file route open: the path is not the
 // statement, it is where the statement is. An unreadable file is now treated as an
-// unknown statement and needs the same approval a DDL statement needs.
+// unknown statement and is blocked even when the command has an approval.
 assert('a file route with nothing readable behind it', BLOCK,
   callHook('Bash', { command: `npx supabase db push --file ${MISSING_SQL}` }));
 
@@ -165,11 +165,11 @@ assert('DROP still blocked inside an approved batch', BLOCK,
   callHook(SB, { query: 'create table a (id int); drop table b' }));
 
 // An unreadable file route is refused for lack of knowledge, not because it is
-// known to be bad, so a human approval of the exact call clears it.
+// known to be bad, but unread content cannot be bound to a command-only approval.
 const BLIND = `psql -f ${MISSING_SQL}`;
 approve(BLIND);
-assert('approved blind file route passes', ALLOW, callHook('Bash', { command: BLIND }));
-assert('and its token is single use', BLOCK, callHook('Bash', { command: BLIND }));
+assert('blind file route stays blocked despite approval', BLOCK, callHook('Bash', { command: BLIND }));
+assert('blind file route remains blocked', BLOCK, callHook('Bash', { command: BLIND }));
 
 rmSync(APPROVAL_DIR, { recursive: true, force: true });
 rmSync(SQL_DIR, { recursive: true, force: true });

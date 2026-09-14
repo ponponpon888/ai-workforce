@@ -140,7 +140,7 @@ Assert-Result 'unapproved DDL inside a file'   $BLOCK (Invoke-Hook 'Bash' @{ com
 # This one used to be a "must allow" case, on the reasoning that a path is not a
 # statement. That reasoning is what left the file route open: the path is not the
 # statement, it is where the statement is. An unreadable file is now treated as an
-# unknown statement and needs the same approval a DDL statement needs.
+# unknown statement and is blocked even when the command has an approval.
 Assert-Result 'a file route with nothing readable behind it' $BLOCK (Invoke-Hook 'Bash' @{ command = ('npx supabase db push --file ' + $MissingSql) })
 
 Write-Host ''
@@ -190,11 +190,11 @@ Assert-Result 'multi-statement token is single use too' $BLOCK (Invoke-Hook 'mcp
 Assert-Result 'DROP still blocked inside an approved batch' $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'create table a (id int); drop table b' })
 
 # An unreadable file route is refused for lack of knowledge, not because it is known
-# to be bad, so a human approval of the exact call clears it.
+# to be bad, but unread content cannot be bound to a command-only approval.
 $blind = 'psql -f ' + $MissingSql
 & $approve -Sql $blind -ApprovalDir $ApprovalDir -Force | Out-Null
-Assert-Result 'approved blind file route passes' $ALLOW (Invoke-Hook 'Bash' @{ command = $blind })
-Assert-Result 'and its token is single use' $BLOCK (Invoke-Hook 'Bash' @{ command = $blind })
+Assert-Result 'blind file route stays blocked despite approval' $BLOCK (Invoke-Hook 'Bash' @{ command = $blind })
+Assert-Result 'blind file route remains blocked' $BLOCK (Invoke-Hook 'Bash' @{ command = $blind })
 
 Remove-Item -LiteralPath $ApprovalDir -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $sqlDir -Recurse -Force -ErrorAction SilentlyContinue

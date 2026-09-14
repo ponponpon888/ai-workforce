@@ -667,40 +667,29 @@ guard-sql test suite (node)
 
 must block:
   PASS  DROP TABLE
-  PASS  DROP after a SELECT
   PASS  TRUNCATE
   PASS  DELETE, no WHERE
-  PASS  UPDATE, no WHERE
-  PASS  unapproved DDL
-  PASS  DELETE via psql
-  PASS  WHERE hidden in a comment
   PASS  TRUNCATE behind --sql
-  PASS  DROP via the PowerShell tool
+  PASS  DROP in a file fed with -f
+  PASS  DROP in a file piped through cat
+  PASS  a file route with nothing readable behind it
+  (excerpt; must block has 20 cases)
 
 must allow:
   PASS  DELETE with WHERE
-  PASS  UPDATE with WHERE
-  PASS  plain SELECT
   PASS  keyword inside a string
-  PASS  DELETE inside a comment
-  PASS  semicolon inside a string
-  PASS  dollar-quoted body
-  PASS  non-SQL Bash
-  PASS  Bash rm, not our job
-  PASS  unrelated MCP tool
-  PASS  empty input
-  PASS  here-string written to a file
-  PASS  migration path in a command
+  PASS  harmless SQL in a file
+  PASS  an -f that belongs to another command
+  PASS  harmless here-document
+  (excerpt; must allow has 16 cases)
 
 approval token:
   PASS  approved DDL passes
   PASS  token is single use
-  PASS  approval is exact-match only
-  PASS  approved multi-statement DDL passes
-  PASS  multi-statement token is single use too
-  PASS  DROP still blocked inside an approved batch
+  PASS  approved blind file route passes
+  (excerpt; approval token has 8 cases)
 
-pass: 29   fail: 0
+pass: 44   fail: 0
 ```
 
 **The false-positive half is the important half.** Once correct SQL starts getting blocked,

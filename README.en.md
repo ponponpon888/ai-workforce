@@ -95,7 +95,7 @@ The tests matter more than the hook. **The false-positive half is the important 
 that fires on correct SQL gets switched off, and then you have no guard at all.
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 44   fail: 0
 ```
 
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string
@@ -220,6 +220,7 @@ usable as-is; translations are welcome.
 | [05 Production database](docs/05-production-db.md) | Where the line sits with Supabase |
 | [06 Closing the chat-side hole](docs/06-supabase-mcp.md) | Supabase MCP `read_only` / `project_ref`, prompt injection |
 | [07 GitHub and Vercel](docs/07-github-vercel.md) | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
+| [08 Pitfall records](docs/08-pitfall-records.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
 | [Case studies](docs/case-studies/) | Excerpts from products that are actually running |
 | [99 FAQ](docs/99-faq.md) | |
 

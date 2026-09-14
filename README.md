@@ -73,10 +73,10 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 文が 1 文字違えば通りません。
 
 誤検知しないことの方が大事なので、テストは「止まるべきもの」と
-「止まってはいけないもの」を両方見ています（合計 29 ケース: 落とす 10 / 通す 13 / 承認トークン 6）。
+「止まってはいけないもの」を両方見ています（合計 44 ケース: 落とす 20 / 通す 16 / 承認トークン 8）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 29   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 44   fail: 0
 ```
 
 同じ形のフックがもう 1 つあります。`guard-secrets` は、`.env` や秘密鍵を
@@ -161,8 +161,6 @@ node kit/scripts/install.mjs
 
 **消しません。** 上書きするものは必ず `.bak.<日時>` に退避します。
 
----
-
 ## 設定と導入状態を診断する
 
 ```powershell
@@ -188,6 +186,8 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き |
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話 |
+| [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
+| [09 設定診断](docs/09-settings-doctor.md) | 配布設定と導入状態を読み取り専用で静的検査する |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 

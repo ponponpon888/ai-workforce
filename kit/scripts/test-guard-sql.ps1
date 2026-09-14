@@ -39,6 +39,25 @@ New-Item -ItemType Directory -Path $ApprovalDir -Force | Out-Null
 
 $pwshExe = (Get-Process -Id $PID).Path
 
+# Real files, because the file route is the whole point: the hook has to open what
+# the client is pointed at. A fixture that does not exist on disk exercises the
+# unreadable path instead, which is a different rule.
+$sqlDir = Join-Path ([System.IO.Path]::GetTempPath()) 'aiwf-test-sql'
+if (Test-Path -LiteralPath $sqlDir) { Remove-Item -LiteralPath $sqlDir -Recurse -Force }
+New-Item -ItemType Directory -Path $sqlDir -Force | Out-Null
+
+function New-SqlFixture([string] $Name, [string] $Body) {
+    $path = Join-Path $sqlDir $Name
+    [System.IO.File]::WriteAllText($path, $Body)
+    return $path
+}
+
+$OkSql      = New-SqlFixture 'ok.sql'      "select 1;`n"
+$DropSql    = New-SqlFixture 'bad.sql'     "drop table users;`n"
+$DdlSql     = New-SqlFixture 'ddl.sql'     "create table a (id int);`n"
+$QuotedSql  = New-SqlFixture 'quoted.sql'  "insert into notes (body) values ('drop the old flow');`n"
+$MissingSql = Join-Path $sqlDir 'not-written.sql'
+
 function Invoke-Hook {
     param([string] $ToolName, [hashtable] $ToolInput)
 
@@ -107,6 +126,23 @@ Assert-Result 'WHERE hidden in a comment' $BLOCK (Invoke-Hook 'mcp__Supabase__ex
 Assert-Result 'TRUNCATE behind --sql' $BLOCK (Invoke-Hook 'Bash' @{ command = "npx supabase db execute --sql 'truncate bookings'" })
 Assert-Result 'DROP via the PowerShell tool' $BLOCK (Invoke-Hook 'PowerShell' @{ command = 'psql $env:DB -c "drop table x"' })
 
+# SQL does not have to be on the command line. Each of these hands a client a file;
+# a guard that reads only the command line saw none of them.
+Assert-Result 'DROP in a file fed with -f'     $BLOCK (Invoke-Hook 'Bash' @{ command = ('psql -f ' + $DropSql) })
+Assert-Result 'DROP in a file fed with --file=' $BLOCK (Invoke-Hook 'Bash' @{ command = ('psql --file=' + $DropSql) })
+Assert-Result 'DROP in a file redirected in'   $BLOCK (Invoke-Hook 'Bash' @{ command = ('psql < ' + $DropSql) })
+Assert-Result 'DROP in a file piped through cat' $BLOCK (Invoke-Hook 'Bash' @{ command = ('cat ' + $DropSql + ' | psql') })
+Assert-Result 'DROP in a file included with \i' $BLOCK (Invoke-Hook 'Bash' @{ command = ('psql -c "\i ' + $DropSql + '"') })
+Assert-Result 'DROP in a file fed to mysql'    $BLOCK (Invoke-Hook 'Bash' @{ command = ('mysql app < ' + $DropSql) })
+Assert-Result 'DROP in a file fed to sqlite3'  $BLOCK (Invoke-Hook 'Bash' @{ command = ('sqlite3 app.db < ' + $DropSql) })
+Assert-Result 'DROP in a file fed to supabase db execute' $BLOCK (Invoke-Hook 'Bash' @{ command = ('npx supabase db execute --file ' + $DropSql) })
+Assert-Result 'unapproved DDL inside a file'   $BLOCK (Invoke-Hook 'Bash' @{ command = ('psql -f ' + $DdlSql) })
+# This one used to be a "must allow" case, on the reasoning that a path is not a
+# statement. That reasoning is what left the file route open: the path is not the
+# statement, it is where the statement is. An unreadable file is now treated as an
+# unknown statement and needs the same approval a DDL statement needs.
+Assert-Result 'a file route with nothing readable behind it' $BLOCK (Invoke-Hook 'Bash' @{ command = ('npx supabase db push --file ' + $MissingSql) })
+
 Write-Host ''
 Write-Host 'must allow:' -ForegroundColor White
 Assert-Result 'DELETE with WHERE'     $ALLOW (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'delete from bookings where id = 1' })
@@ -124,7 +160,14 @@ Assert-Result 'empty input'           $ALLOW (Invoke-Hook 'Bash' @{ command = ''
 # writing SQL into a file is not executing it, and a path is not a statement.
 $hereDoc = "@'`ndrop extension `"pg_net`";`n'@ | Set-Content supabase/migrations/20260101_x.sql"
 Assert-Result 'here-string written to a file' $ALLOW (Invoke-Hook 'PowerShell' @{ command = $hereDoc })
-Assert-Result 'migration path in a command' $ALLOW (Invoke-Hook 'Bash' @{ command = 'npx supabase db push --file supabase/migrations/20260101_x.sql' })
+Assert-Result 'harmless SQL in a file' $ALLOW (Invoke-Hook 'Bash' @{ command = ('psql -f ' + $OkSql) })
+Assert-Result 'keyword inside a string, in a file' $ALLOW (Invoke-Hook 'Bash' @{ command = ('psql -f ' + $QuotedSql) })
+# The false-positive half of reading file routes. Each of these looks like one and
+# is not: an -f that belongs to another command, and a here-document, whose << the
+# redirect pattern must not read as a path.
+Assert-Result 'an -f that belongs to another command' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && rm -f /tmp/junk' })
+$hereDocSql = "psql <<'EOF'`nselect 1;`nEOF"
+Assert-Result 'harmless here-document' $ALLOW (Invoke-Hook 'Bash' @{ command = $hereDocSql })
 
 Write-Host ''
 Write-Host 'approval token:' -ForegroundColor White
@@ -146,7 +189,15 @@ Assert-Result 'multi-statement token is single use too' $BLOCK (Invoke-Hook 'mcp
 & $approve -Sql $multi -ApprovalDir $ApprovalDir -Force | Out-Null
 Assert-Result 'DROP still blocked inside an approved batch' $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'create table a (id int); drop table b' })
 
+# An unreadable file route is refused for lack of knowledge, not because it is known
+# to be bad, so a human approval of the exact call clears it.
+$blind = 'psql -f ' + $MissingSql
+& $approve -Sql $blind -ApprovalDir $ApprovalDir -Force | Out-Null
+Assert-Result 'approved blind file route passes' $ALLOW (Invoke-Hook 'Bash' @{ command = $blind })
+Assert-Result 'and its token is single use' $BLOCK (Invoke-Hook 'Bash' @{ command = $blind })
+
 Remove-Item -LiteralPath $ApprovalDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $sqlDir -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''
 Write-Host ("pass: {0}   fail: {1}" -f $pass, $fail) -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })

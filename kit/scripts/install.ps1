@@ -35,7 +35,10 @@ param(
     [string] $ClaudeHome = $(Join-Path $HOME '.claude'),
 
     # Skip settings.json, keep whatever you already have there.
-    [switch] $SkipSettings
+    [switch] $SkipSettings,
+
+    # Skip CLAUDE.md, keep whatever you already have there.
+    [switch] $SkipClaudeMd
 )
 
 Set-StrictMode -Version Latest
@@ -89,10 +92,14 @@ Write-Host ''
 
 # --- 1. shared CLAUDE.md ---------------------------------------------------
 
-$claudeMdSource = if ($Lang -eq 'en') { 'CLAUDE.en.md' } else { 'CLAUDE.md' }
-$claudeMd = Get-Content -LiteralPath (Join-Path $srcClaude $claudeMdSource) -Raw -Encoding UTF8
 Write-Host '1. shared CLAUDE.md' -ForegroundColor White
-Install-File -Content $claudeMd -Destination (Join-Path $ClaudeHome 'CLAUDE.md')
+if ($SkipClaudeMd) {
+    Write-Step 'skipped (-SkipClaudeMd). Keeping the CLAUDE.md you already have.'
+} else {
+    $claudeMdSource = if ($Lang -eq 'en') { 'CLAUDE.en.md' } else { 'CLAUDE.md' }
+    $claudeMd = Get-Content -LiteralPath (Join-Path $srcClaude $claudeMdSource) -Raw -Encoding UTF8
+    Install-File -Content $claudeMd -Destination (Join-Path $ClaudeHome 'CLAUDE.md')
+}
 
 # --- 2. hooks --------------------------------------------------------------
 
@@ -120,6 +127,17 @@ foreach ($hookFile in @($sqlFile, $secretsFile)) {
     $hookContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\$hookFile") -Raw -Encoding UTF8
     Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
 }
+
+# --- 2b. approval script ---------------------------------------------------
+#
+# guard-sql refuses DDL until a human approves the exact statement, and its refusal
+# message names the script that issues the approval. Without this the message points
+# at a path inside a checkout of this repo, which is not where anyone reads it.
+
+Write-Host '2b. approval script' -ForegroundColor White
+$approveFile = if ($Hook -eq 'node') { 'approve-ddl.mjs' } else { 'approve-ddl.ps1' }
+$approveContent = Get-Content -LiteralPath (Join-Path $kitRoot "scripts\$approveFile") -Raw -Encoding UTF8
+Install-File -Content $approveContent -Destination (Join-Path $ClaudeHome "scripts\$approveFile")
 
 # --- 3. settings.json ------------------------------------------------------
 

@@ -293,6 +293,8 @@ CI が 7.x だけだったので、この 2 件をどちらも見逃していま
 
 ### 3 つ目は、賢くしたせいで空きました
 
+見つけたのは 2026-09-07、上の 4 件の差分を取った日です。
+
 中和処理そのものは正しい。SQL のコメントを潰さないと、`-- delete from t` のような
 コメント行で誤検知します。それを避けるために入れた処理です。
 
@@ -419,6 +421,36 @@ Node 版は失敗したら 1 を返しますが、PowerShell 版は 0 を返し�
 
 ---
 
+## macOS のジョブが無料枠を食い潰していました
+
+2026-09-09、CI の全ジョブが数秒で落ちるようになりました。ジョブは作られるのに
+ステップが 1 つも実行されず、ランナー名も空。**変更を 1 行も含まない `main` を
+回しても同じ**なので、コードでもワークフローでもありません。
+
+原因は GitHub Actions の無料枠 $12 を使い切っていたことでした。
+超過分は請求されずに停止するので、Billed amount は全部 $0 のままです。
+**エラーメッセージのどこにも課金の話は出てきません。**
+
+前日（9/8）の内訳です。
+
+| ランナー | 実行時間 | 金額 |
+|---|---|---|
+| macOS | 51 分 | **$3.16** |
+| Linux | 298 分 | $1.79 |
+| Windows | 177 分 | $1.77 |
+
+**分数が最小の macOS が、金額では最大です。** 単価が Linux の約 10 倍あります。
+所要時間を見ている限り、これには気づけません。「3 OS で回しています」と書いたとき、
+コストが 3 等分されるとは限らない、という話です。
+
+いまは macOS を `pull_request` から外し、`push`（main）と `workflow_dispatch` の
+ときだけ回しています。PR は 1 日に何度も回るところなので、そこから単価の高い
+ランナーを抜くのが一番効きます。ジョブ名は変えていません。
+
+記録: [`data/pitfalls/ci-001.json`](../data/pitfalls/ci-001.json)
+
+---
+
 ## 記法が 2 つあって、どちらも効いていました
 
 `kit/` の deny は `Bash(rm -rf *)`、手元の実物は `Bash(rm -rf:*)`。
@@ -429,7 +461,16 @@ Node 版は失敗したら 1 を返しますが、PowerShell 版は 0 を返し�
 
 ### 測り方
 
-使い捨ての設定に deny を 3 行置いて、`echo` を叩くだけです。
+2026-09-08 に、**2 回に分けて計 10 観測**しました。使い捨ての設定に deny を置いて、
+`echo` を叩くだけです。
+
+1 回目はワイルドカード付きの 2 行だけで測って、**両方とも通りました**。
+これは「どちらの記法も効かない」ではありません。設定が読まれていなかっただけです
+（→「対照群がなければ、間違った結論を出していました」）。
+ワイルドカード無しの `Bash(echo exact)` を 1 行足して、**それが落ちることを先に
+確かめてから**測り直しています。
+
+2 回目は 3 行です。
 
 ```
 "Bash(echo exact)"       ← ワイルドカード無し
@@ -437,7 +478,7 @@ Node 版は失敗したら 1 を返しますが、PowerShell 版は 0 を返し�
 "Bash(echo sfx *)"       ← 空白記法
 ```
 
-結果です。
+2 回目の結果です。
 
 | パターン | `echo x` | `echo x hello` | `echo xhello` |
 |---|---|---|---|
@@ -506,7 +547,7 @@ PowerShell では `rm` は `Remove-Item` の別名です。`del` `rd` `rmdir` `e
 deny がコマンド文字列の前方一致なら、**`PowerShell(Remove-Item:*)` は `rm -rf x` を
 止めない**はずです。だとすると 6 語ぜんぶ書く必要がある。
 
-測りました。**止まりました。**
+2026-09-08、記法の測定と同じ回に測りました。**止まりました。**
 
 ```
 deny に PowerShell(Remove-Item:*) / allow に PowerShell(rm:*)
@@ -665,47 +706,36 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 29 ケース（落とす 10 / 通す 13 / 承認トークン 6）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。
+合計 44 ケース（落とす 20 / 通す 16 / 承認トークン 8）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。
 
 ```
 guard-sql test suite (node)
 
 must block:
   PASS  DROP TABLE
-  PASS  DROP after a SELECT
   PASS  TRUNCATE
   PASS  DELETE, no WHERE
-  PASS  UPDATE, no WHERE
-  PASS  unapproved DDL
-  PASS  DELETE via psql
-  PASS  WHERE hidden in a comment
   PASS  TRUNCATE behind --sql
-  PASS  DROP via the PowerShell tool
+  PASS  DROP in a file fed with -f
+  PASS  DROP in a file piped through cat
+  PASS  a file route with nothing readable behind it
+  (抜粋。must block は 20 件)
 
 must allow:
   PASS  DELETE with WHERE
-  PASS  UPDATE with WHERE
-  PASS  plain SELECT
   PASS  keyword inside a string
-  PASS  DELETE inside a comment
-  PASS  semicolon inside a string
-  PASS  dollar-quoted body
-  PASS  non-SQL Bash
-  PASS  Bash rm, not our job
-  PASS  unrelated MCP tool
-  PASS  empty input
-  PASS  here-string written to a file
-  PASS  migration path in a command
+  PASS  harmless SQL in a file
+  PASS  an -f that belongs to another command
+  PASS  harmless here-document
+  (抜粋。must allow は 16 件)
 
 approval token:
   PASS  approved DDL passes
   PASS  token is single use
-  PASS  approval is exact-match only
-  PASS  approved multi-statement DDL passes
-  PASS  multi-statement token is single use too
-  PASS  DROP still blocked inside an approved batch
+  PASS  approved blind file route passes
+  (抜粋。approval token は 8 件)
 
-pass: 29   fail: 0
+pass: 44   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。

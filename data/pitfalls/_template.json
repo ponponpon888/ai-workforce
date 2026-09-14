@@ -1,0 +1,65 @@
+{
+  "$comment": [
+    "Copy this file to <id>.json and fill it in. Files starting with _ are not records.",
+    "Delete every key you do not need -- an unknown or wrongly-present key is an error, and",
+    "that is on purpose: it is how a half-filled record gets caught instead of shipped.",
+    "",
+    "Which optional keys you keep depends on confidence and kind:",
+    "  confidence measured   -> keep measured_on, environment, repro   (required)",
+    "  confidence documented -> keep sources                           (required); delete the three above",
+    "  confidence inferred   -> keep inferred_from                     (required); delete the three above",
+    "  confidence unverified -> delete all of the above",
+    "  kind behaviour        -> DELETE status, fix, why_not_closed",
+    "  kind trap|limitation  -> keep status; closed needs fix, open_recorded needs why_not_closed",
+    "",
+    "origin has three shapes:",
+    "  docs/<file>.md#<heading anchor>   the prose is already written; both must exist",
+    "  issue:<number>                    a report is the source",
+    "  record                            this record is the first place it is written down",
+    "The last two are for an observation with no prose yet. Do not write a stub heading just",
+    "to satisfy the first shape -- the index counts records with no prose, so say so instead.",
+    "",
+    "Never guess an environment value. Write \"unrecorded\".",
+    "measured_on does NOT take \"unrecorded\": if you cannot date it, it is not a measurement.",
+    "Run: node kit/scripts/validate-pitfalls.mjs"
+  ],
+
+  "id": "perm-000",
+  "title": "one line, what goes wrong",
+  "summary": "what happens, in a few sentences. No measurement words unless confidence is measured.",
+  "layer": "permissions",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "unverified",
+  "origin": "docs/02-guardrails.md#a-heading-that-exists",
+
+  "measured_on": "YYYY-MM-DD",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "one step per line",
+    "what you ran, and what came back"
+  ],
+
+  "sources": ["https://example.com/official-doc"],
+  "inferred_from": ["perm-001", "docs/02-guardrails.md#some-heading"],
+
+  "status": "untouched",
+  "fix": "what closed it",
+  "why_not_closed": "why it is being left open",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "why a machine cannot check this one. When checkable is true, delete this and give",
+    "$checkable_shape": "target + pattern + expect (present|absent) + message"
+  },
+
+  "related": [],
+  "tags": []
+}

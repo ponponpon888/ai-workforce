@@ -1,0 +1,26 @@
+{
+  "id": "mcp-001",
+  "title": "Postgres のロール分離は、Supabase MCP には効かない",
+  "summary": "MCP は Management API を通り、こちらの開発者アカウントの権限で動く。Postgres のロールに GRANT / REVOKE をかけても、MCP はその上を通る。剥がしたい相手が、剥がす権限を持っている側にいる。",
+  "layer": "external",
+  "kind": "limitation",
+  "severity": "high",
+  "confidence": "documented",
+  "origin": "docs/06-supabase-mcp.md#最初に考えた対策は効きません",
+
+  "sources": [
+    "https://supabase.com/docs/guides/ai-tools/mcp"
+  ],
+
+  "status": "closed",
+  "fix": "接続 URL のパラメータで絞る。read_only=true でサーバー側が読み取り専用ユーザーに切り替わり、project_ref=<id> で対象プロジェクトが 1 つに限定される。ロール分離自体は、接続文字列で直接 Postgres に繋ぐ経路（psql、スクリプト、アプリのサービスアカウント）にだけ効く。",
+
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "MCP の接続 URL はチャット側の設定にあり、このリポジトリの中に無いので検査できない。"
+  },
+
+  "related": [],
+  "tags": ["supabase", "mcp", "read-only", "plausible-but-useless"]
+}

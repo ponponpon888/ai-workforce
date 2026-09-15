@@ -318,3 +318,152 @@ Copy-Item -LiteralPath C:\Users\kuron\.claude\settings.json.bak.measure2 -Destin
 
 書けたら、レコードの `origin` はこのファイルの見出しアンカーに向けられます。
 `origin: "record"` を使わずに済む形です。
+
+---
+
+## 結果（2026-09-15、Claude Code 2.1.272）
+
+### バージョンドリフト
+
+実行中に `claude --version` が **2.1.272** と判明（ラウンド0の基準線は
+2.1.266 で取得していた）。2.1.272 で**ラウンド0を撮り直した**。差分は
+`auto_mode` レコードの `bashFirstSteer` が `"strict"`→`"relaxed"` になった
+ことのみ。循環4モード（auto/manual/accept edits/plan）・bypassが循環に出ない
+ことは再現し、`--permission-mode bypassPermissions` も同様に成功（終了コード0、
+`permissionMode:"bypassPermissions"`、`auto_mode.bypass:true`）。以降の
+ラウンド1〜4は 2.1.272 のこの基準線と比較する。
+
+### ラウンド1
+
+`defaultMode: "ask"`（無効値）を設置したところ、**"Settings Error" ダイアログ**
+が表示された:
+
+```
+C:\Users\kuron\.claude\settings.json
+  permissions.defaultMode: Invalid value. Expected one of:
+  "acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"
+
+Files with errors are skipped entirely, not just the invalid settings.
+
+> 1. Fix with Claude
+  2. Exit and fix manually
+  3. Continue without these settings
+```
+
+「3. Continue without these settings」を選択。以降、そのセッションは
+モード循環4種（Round0と同一）・`auto_mode` レコードの `bashFirstSteer:"relaxed"`
+と一致し、**ラウンド0と同じ状態（ファイル全体がスキップされ組み込みの既定
+に戻る）だったことを確認**。
+
+**確定: 無効値は黙殺されるのではなく、対話的なエラー画面を出し、選択に
+よってはファイル全体がスキップされる。** 手順書冒頭の想定（「黙殺」/「起動
+しない」/「解釈される」の3択）のどれとも違う、4つ目の挙動だった。
+
+### ラウンド2・2b（パス側グロブ、Read専用deny）
+
+18観測のうち、**C1（`Bash(echo zzqcontrol)`）が誤設計だった**。このマシンの
+シェル実行ツール名は `Bash` ではなく `PowerShell` であるため、`Bash(...)` の
+deny はそもそも対象に当たらず ALLOWED になった（対照無効）。同じ理由で
+**C3・C4（サブディレクトリ／dotディレクトリの「通るはず」対照）も誤設計**
+だった — それぞれ `./zzq-dir/**` と `./**/.zzq-dot/*` という別のdeny行が
+ディレクトリ全体を覆う場所に置かれており、対照として機能しなかった（DENIED
+だったが、これは対照の不備によるもので、深さの効果を独立に示すものではない）。
+
+**有効だったデータ（C2のルート対照が通ったことで裏付け済み）:**
+
+ルート直下の9記法（素 / `./` / `**/` / `./**/` / `//**/` / 素+サフィックス`*` /
+`./`+サフィックス`*` / `**/`+プレフィックス`*` / `//**/`+dotファイル）は
+**全て一致してDENIED**。第1回（2026-09-08）の確定を2.1.272で再現。
+`./zzq-dir/**`・`./**/.zzq-dot/*` もそれぞれ配下のファイルをDENIEDにしており、
+ディレクトリ全体を覆うグロブとして機能することを確認（対照が汚染されていた
+ため「ディレクトリ全体を覆う」こと自体は確認できるが、内側の個別ファイル
+名の効果とは分離できない）。
+
+`Edit(./zzq-l.cfg)` のみのdeny行: Read=ALLOWED / Edit=DENIED / Write=DENIED。
+第1回の確定（Editのdenyは片方向、Readには漏れない）を再現。
+
+**追加ラウンド2b（Read専用deny、本題）**: `PowerShell(echo zzqcontrol)`（対照
+修正）と `Read(zzq-m.cfg)` のみのdeny行で再実行。
+
+| # | 操作 | 結果 |
+|---|---|---|
+| C1 | `echo zzqcontrol`（PowerShell経由） | DENIED（対照成立） |
+| C2 | `zzq-pass.cfg` Read | ALLOWED（対照成立） |
+| 3 | `zzq-m.cfg` Read | DENIED |
+| 4 | `zzq-m.cfg` **Edit** | DENIED（`File is covered by a Read deny rule...`） |
+| 5 | `zzq-m.cfg` **Write** | DENIED（同上） |
+
+**確定（ROADMAPの最大の未確定への答え）: `Read(...)` 単独のdenyはEdit・Write
+の両方を止める。** 第1回の「`Edit(...)`単独のdenyはWriteも止めるがReadには
+漏れない」と合わせると非対称: `Edit`系denyは片方向（Write連動・Read素通り）、
+`Read`系denyは両方向（Edit・Write両方阻止）で一番強い。実物の
+`Read(./secrets/**)` と `Read(//**/.ssh/**)` はこれによりEdit/Writeからも
+実際に守られていたことになる。
+
+副次的に判明: PowerShellツール経由の `Set-Content` で `zzq-m.cfg` に書き込む
+テストは行っていない（`Edit`/`Write`ツールのdenyをシェル経由で迂回できるかは
+未検証のまま。ROADMAPの保留事項に追加）。
+
+### ラウンド3（kitの形）
+
+`disableAutoMode: true`（トップレベル）＋`disableBypassPermissionsMode: true`
+（`permissions`内）を設置したところ、**2つとも無効値としてSettings Errorが
+表示された**:
+
+```
+disableAutoMode: Invalid value. Expected one of: "disable"
+permissions.disableBypassPermissionsMode: Invalid value. Expected one of: "disable"
+```
+
+「3. Continue without these settings」を選択。以降のセッションはRound0/1と
+同じ状態（循環4モード、`auto mode on`表示）に戻ることを確認。bypass側も
+`claude --permission-mode bypassPermissions -p "echo ok"` が終了コード0で成功
+し、`auto_mode.bypass:true` を確認 — **`disableBypassPermissionsMode: true`
+（トップレベル/無効値）はファイル全体のスキップにより一切効いていない。**
+
+**確定: `disableAutoMode` と `disableBypassPermissionsMode` の有効な値は
+`"disable"`（文字列）のみ。** `true`（真偽値）は両方とも無効値であり、単に
+無視されるのではなく、そのsettings.json全体（allow/deny/ask含む）がスキップ
+される副作用がある。
+
+**注記（2026-09-15、事後確認）**: ここで再現した「トップレベル+`true`」は
+2026-09-09時点の `kit/claude/settings.json` の姿。**現在の
+`kit/claude/settings.json` はPR #10（2026-09-14マージ）で既に
+`permissions.disableAutoMode: "disable"` / `permissions.disableBypassPermissionsMode: "disable"`
+に修正済み**（実物と同じ置き場所・同じ値）。したがってラウンド3は「まだ
+直っていないkitの不具合の実測」ではなく、「直す前の形が実際どう壊れて
+いたか」の記録になる。ラウンド4の結果が、そのままPR #10の修正が実機で
+機能することの確認になる。
+
+### ラウンド4（実物の形）
+
+`permissions.disableAutoMode: "disable"` を設置。**Settings Errorは表示され
+ず**、起動直後に以下が明示された:
+
+```
+auto mode disabled by settings
+```
+
+ステータスバーは `manual mode on` で開始（Round0/1/3の `auto mode on` 開始
+とは異なる）。循環の4モード自体（auto/manual/accept edits/plan）は維持され、
+Shingoさんの目視で確認済み。
+
+**確定: `permissions.disableAutoMode: "disable"` は正しく受理され、既定
+モードがautoからmanualに変わる。** 現行の実物（Shingoさんの手元設定）はこの
+形なので、autoモードは最初から無効化された状態で運用されていたことになる。
+
+### この回で決着した項目
+
+- パス側グロブ記法（ルート直下9種）: 第1回の確定を2.1.272で再現・確定
+- `Read(...)`単独denyがEdit/Writeを両方止めること: 確定（ROADMAP最大の未確定）
+- `disableAutoMode`/`disableBypassPermissionsMode`の値（`"disable"`のみ有効）
+  と置き場所（`permissions`の中）: 確定
+- 無効値の挙動: 黙殺ではなく対話的エラー、選択次第でファイル全体スキップ
+- kitの現状: PR #10で既に正しい形。今回の実測がその実地確認になった
+
+### 未決のまま持ち越し
+
+- サブディレクトリ・dotディレクトリの「通るはず」対照の再設計（対照が
+  他のdeny行に汚染されない場所に置き直す必要がある）
+- PowerShellツール経由の書き込み（`Set-Content`等）がEdit/Writeツールのdeny
+  を迂回できるか

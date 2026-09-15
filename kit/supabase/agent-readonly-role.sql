@@ -23,9 +23,11 @@
 --  4. Build a connection string with this role and hand THAT to the agent,
 --     never the postgres or service_role credentials.
 --
---  Written for Postgres 15 (Supabase) and intended to be idempotent, but NOT YET RUN
---  against a live project. Read every statement before you execute it, and run the
---  verification block at the bottom. An untested guardrail is not a guardrail.
+--  Written for Postgres 15+ (Supabase). Verified against a live project
+--  (2026-09-15, Postgres 17.6.1, empty tables): the role's four privilege
+--  flags (rolsuper/rolbypassrls/rolcreatedb/rolcreaterole) were confirmed
+--  false, and has_table_privilege / has_schema_privilege confirmed SELECT
+--  allowed while INSERT/UPDATE/DELETE/CREATE were denied. See ROADMAP.md.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -98,7 +100,10 @@ revoke all on schema storage from agent_readonly;
 -- ---------------------------------------------------------------------------
 -- 6. Verify
 --
---    Run this as agent_readonly. Every statement must fail except the first.
+--    Run this as agent_readonly (a direct connection string, not the
+--    Supabase MCP -- MCP runs as your developer account and will not show
+--    these restrictions; see the note at the top). Every statement must
+--    fail except the first.
 --
 --      select count(*) from public.<some_table>;   -- must succeed
 --      insert into public.<some_table> default values;  -- must fail
@@ -107,15 +112,40 @@ revoke all on schema storage from agent_readonly;
 --      create table public.probe (id int);              -- must fail
 --
 --    An untested guardrail is not a guardrail. Run all five.
+--
+--    If you cannot run a direct psql session (no client installed, or a
+--    guardrail hook -- e.g. guard-sql -- flags a keyword like 'CREATE'
+--    appearing inside a has_schema_privilege(...) string argument as DDL
+--    when the SQL is passed through a shell tool), a privilege-only check
+--    run through the Supabase MCP or SQL editor gives the same answer
+--    without touching any data:
+--
+--      select
+--        has_table_privilege('agent_readonly', 'public.<some_table>', 'SELECT') as can_select,
+--        has_table_privilege('agent_readonly', 'public.<some_table>', 'INSERT') as can_insert,
+--        has_table_privilege('agent_readonly', 'public.<some_table>', 'UPDATE') as can_update,
+--        has_table_privilege('agent_readonly', 'public.<some_table>', 'DELETE') as can_delete,
+--        has_schema_privilege('agent_readonly', 'public', 'CREATE') as can_create_in_public;
+--
+--    can_select must be true; the other four must be false. This checks
+--    the grants only, not RLS row visibility -- run the five live
+--    statements too when you can, on a table you are prepared to see
+--    partially exercised (WHERE-less UPDATE/DELETE on a non-empty table
+--    is exactly the kind of statement your own production-DB rules should
+--    make you stop and confirm before running).
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
 -- To remove the role again:
 --
+--   grant agent_readonly to postgres;
 --   reassign owned by agent_readonly to postgres;
 --   drop owned by agent_readonly;
 --   drop role agent_readonly;
 --
--- (DROP ROLE fails while the role still owns or is granted anything, which is
---  why the two lines above come first.)
+-- (On Supabase, `postgres` is not a full superuser and is not automatically
+--  a member of roles it did not create -- the GRANT above is required first,
+--  or REASSIGN/DROP OWNED fail with "permission denied to reassign/drop
+--  objects". DROP ROLE fails while the role still owns or is granted
+--  anything, which is why REASSIGN/DROP OWNED come first.)
 -- ---------------------------------------------------------------------------

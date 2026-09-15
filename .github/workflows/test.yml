@@ -282,3 +282,7 @@ jobs:
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target ps
+      - name: Run the core suite via verify-installers (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: node kit/scripts/verify-installers.mjs --suite core --target node --json

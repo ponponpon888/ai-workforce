@@ -33,11 +33,15 @@
   2026-09-10 に Windows PowerShell 5.1 で基本6スイート成功。2026-09-15 に PowerShell 7.6.6
   （Node v24.13.0）を導入し、同じ基本6スイート（installed-approval / installers / pull-all /
   guard-secrets / guard-sql / sql-boundaries）が全て合格。origin/main の一時 worktree から実行した。
+- [x] Windows / macOS の Node で統合版を実行する。
+  Windows は 2026-09-10 に実行済み。macOS は手元に実機が無いため、`test.yml` の macOS ジョブに
+  `verify-installers.mjs --suite core --target node --json` を手動実行（`workflow_dispatch`）
+  専用のステップとして追加し（PR #21、main push・PR では動かずコストを増やさない）、
+  2026-09-15 に手動実行で Ubuntu / Windows / macOS 全ジョブ Success、macOS のこのステップは
+  43秒で完了した。
 
 ## v0.1 までに終わらせること
 
-- [ ] Windows / macOS の Node で統合版を実行する。
-  Windows は 2026-09-10 に実行。`node --import` に Windows 絶対パスを渡していた不具合を直して全11スイート成功。macOS は未実行。
 - [x] Windows で「承認は一度限り」が破れる問題を直した。`guard-sql.mjs` の `isApproved()` は
   `renameSync` の原子性に頼っていたが、Windows では 6 並列の 10% 程度で 2 プロセスが同一の
   承認を通過していた。排他生成ロックで取得を絞り、120 ラウンドで異常 0 件。

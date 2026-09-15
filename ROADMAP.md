@@ -44,7 +44,17 @@
   `node kit/scripts/install.mjs` を実行。`CLAUDE.md` / `hooks/guard-sql.mjs` /
   `hooks/guard-secrets.mjs` / `scripts/approve-ddl.mjs` / `settings.json` が正しく書き込まれ、
   `doctor.mjs` は `static-pass`、`test-guard-sql.mjs` 44/44、`test-guard-secrets.mjs` 65/65
-  で合格。VM は使わず新規ローカルユーザーで代用した。承認・復元の確認は未実施のまま残っている。
+  で合格。VM は使わず新規ローカルユーザーで代用した。
+- [x] `agent-readonly-role.sql` の検証5項目を実 DB で確認した。2026-09-15、専用 Supabase
+  プロジェクト（空テーブル）で `agent_readonly` ロールを作成し、特権フラグ4つ
+  （rolsuper/rolbypassrls/rolcreatedb/rolcreaterole）が全て false、
+  `has_table_privilege` / `has_schema_privilege` で SELECT のみ許可・
+  INSERT/UPDATE/DELETE/CREATE が拒否されることを確認。検証後ロールは削除済み。
+  副産物: guard-sql がシェル経由のコマンドで文字列リテラルを伏せないため、
+  `has_schema_privilege(...'CREATE')` のような無害な SELECT を誤って DDL として
+  ブロックすることがある（false positive、実害なし）。Supabase の `postgres` ロールは
+  完全なスーパーユーザーではなく、他ロールの `REASSIGN`/`DROP OWNED` には事前に
+  `GRANT <role> TO postgres` が必要と判明、ファイルの削除手順に追記した。
 
 ## v0.1 までに終わらせること
 
@@ -55,10 +65,10 @@
   詳細は [統合状況](docs/17-integration-status.md)。
 - [ ] 新規導入した素の環境（`aiwftest` ユーザー、`C:\Users\Public\ai-workforce-test`）で、
   実際にDDL承認フロー（`approve-ddl`）と設定の復元手順を確認する。新規導入自体は確認済み。
-- [ ] Claude Code 本体でのフック接続・優先順位を確認する（設定の受理とモードは実測第2回で確定済み）。
-  素の環境（上記）を使って、`select 1; drop table nothing;` と `cat .env` を Claude Code に
-  実行させ、フックが実際に発火するかを見るとよい。
-- [ ] 対象プロジェクトを確定し、`agent-readonly-role.sql` の検証5項目を実 DB で確認する。まだ実行していない。
+- [ ] Claude Code 本体でのフック接続の実地確認（設定の受理・モード・agent-readonly の実効権限は
+  実測第2回と今回の Supabase 検証で確定済み）。`aiwftest` 環境でオンボーディングの都合により
+  保留にした — `select 1; drop table nothing;` と `cat .env` を Claude Code に実行させて
+  フックが実際に発火するかを見る。テストスイート（44/44・65/65）は合格済みなので優先度は低い。
 - [ ] 上記結果をレビューし、統合 PR のマージとリリースを行う。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
@@ -91,5 +101,5 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - 検証用に作成したもの: ローカルユーザー `aiwftest`（パスワード変更のため `net user aiwftest`
   で unlock 済み）と `C:\Users\Public\ai-workforce-test`。承認・復元の確認が終わったら、
   `net user aiwftest /delete` と対象フォルダの削除で片付ける。
-
-機能追加そのものや記事の量産を目的にしません。確認していない動作や残る制約は明記します。
+- guard-sql の false positive（シェル経由コマンドで文字列リテラル内の DDL キーワードに反応する）
+  を塞ぐか、既知の制約として残すかを検討する。

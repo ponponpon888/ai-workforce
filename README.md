@@ -5,9 +5,22 @@
 コードを書くのは AI。人間がやるのは、判断と、AI が事故らないための機械的な歯止めを敷くこと。
 このリポジトリは、その「歯止め」と「段取り」を、動く形で公開しています。
 
+## 実際に踏んだこと
+
+- **無効な設定を1つ書くと、`settings.json` が丸ごと無視される。** `disableAutoMode: true`
+  のような無効値があると、Claude Code は黙って無視するのではなく、`allow` / `deny` / `ask`
+  を含む設定ファイル全体をスキップする。ガードレールを書いたつもりで、何も守っていない
+  状態になり得る。（[実測](measurements/2026-09-10-modes-and-paths.md)）
+- **`Read` だけの deny と `Edit` だけの deny は、対称ではない。** `Read(./secrets/**)` は
+  Edit・Write の両方も止めるが、`Edit(...)` だけを deny しても Read は素通りする。
+  どちらか片方しか書いていないと、思っているより弱い。
+- Windows PowerShell 5.1 でしか再現しない不具合が複数見つかっている（7.x では起きない）。
+  日本語圏の実測記事でもここまでは書かれていない。
+
 > **正直な断り書き。** 中身は、本番を守っている構成を**公開用に書き起こしたもの**です。
-> 手元で動いている実物そのものではありません。このブランチは修正の統合検証中です。
-> Linux / Node の検証結果と、Windows・CI・実機で残る確認は [統合状況](docs/17-integration-status.md) を参照してください。
+> 手元で動いている実物そのものではありません。
+> Windows PowerShell 5.1 / 7、Linux、macOS の Node、GitHub Actions（Ubuntu/Windows/macOS）
+> で実機確認済み。検証数・対象は [統合状況](docs/17-integration-status.md) を参照。
 
 日本語が正本です / [English summary](README.en.md)
 
@@ -253,4 +266,3 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 
 MIT. 商用利用・改変・再配布すべて自由です。クレジットも不要です。
 役に立ったら Star か、どう使ったかを教えてもらえると嬉しいです。
-

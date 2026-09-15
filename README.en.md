@@ -275,12 +275,12 @@ the case studies. Indicative ranges, scoped per project:
 
 | Scope | Range (JPY) | Approx. (USD) |
 |---|---|---|
-| Small — landing page, single workflow, guardrail review | ¥100,000 – ¥300,000 | ~$700 – $2,000 |
-| Medium — a working product: auth, database, admin, email | ¥300,000 – ¥1,000,000 | ~$2,000 – $6,700 |
-| Large — multi-sided platform, integrations, ongoing build | ¥1,000,000+ | ~$6,700+ |
-| Maintenance | from ¥12,000 / month | from ~$80 / month |
+| Guardrail and workflow review — audit an existing setup, deliver a written plan | ¥300,000 – ¥600,000 | ~$2,000 – $4,000 |
+| A working product — auth, database, admin, email, deployed | ¥600,000 – ¥1,500,000 | ~$4,000 – $10,000 |
+| Multi-sided platform, integrations, ongoing build | ¥1,500,000+ | ~$10,000+ |
+| Maintenance | from ¥30,000 / month | from ~$200 / month |
 
-USD figures are approximate and follow the exchange rate; the JPY figures are the actual ones.
+USD figures are approximate and track the exchange rate; the JPY figures are the actual ones.
 
 An initial conversation does not require a purchase. We will first separate what the open-source kit already solves from what needs environment-specific implementation.
 

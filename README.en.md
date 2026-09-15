@@ -5,10 +5,25 @@
 AI writes the code. The human decides what to build and installs the mechanical stops that keep
 AI from breaking production. This repository is those stops and that workflow, in runnable form.
 
+## Things I found out the hard way
+
+- **One invalid setting and your entire `settings.json` is ignored.** Write something like
+  `disableAutoMode: true` (the valid value is the string `"disable"`) and Claude Code does not
+  quietly skip that line — it skips the whole file, `allow`, `deny` and `ask` included. You can
+  believe you have guardrails and have none.
+  ([measurement](measurements/2026-09-10-modes-and-paths.md))
+- **`Read` denies and `Edit` denies are not symmetric.** `Read(./secrets/**)` also stops Edit
+  and Write. `Edit(...)` alone does **not** stop Read. Write only one of them and you are weaker
+  than you think.
+- Several bugs reproduce only on Windows PowerShell 5.1 and never on 7.x. A suite can be green
+  on your machine and red the moment CI runs the other interpreter.
+
 > **An honest caveat.** These files are the setup that protects production, **written out for
-> publication** — not a copy of what is running on my machine right now. The tests pass and CI
-> runs them on three operating systems, but reconciling them against the live files is still
-> open work, tracked in [ROADMAP](ROADMAP.md).
+> publication** — not a copy of what is running on my machine right now.
+> Verified on real hardware: Windows PowerShell 5.1 and 7, Linux and macOS on Node, a clean
+> user account with no prior `~/.claude`, and GitHub Actions across Ubuntu, Windows and macOS.
+> Counts and scope are in [integration status](docs/17-integration-status.md); what is still
+> open is in [ROADMAP](ROADMAP.md).
 
 Japanese is the canonical version: [README.md](README.md)
 
@@ -104,10 +119,10 @@ Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub
 A second hook of the same shape, `guard-secrets`, stops a shell command from reading `.env` or a
 private key. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and
 `Get-Content .env` were walking straight past it. It refuses only when the command both names a
-secret file and is a shape that reads one (51 cases: 26 must block, 25 must allow).
+secret file and is a shape that reads one (65 cases: 34 must block, 31 must allow).
 
 ```bash
-node kit/scripts/test-guard-secrets.mjs   # pass: 51   fail: 0
+node kit/scripts/test-guard-secrets.mjs   # pass: 65   fail: 0
 ```
 
 → [docs/02](docs/02-guardrails.md) · [guard-sql.mjs](kit/claude/hooks/guard-sql.mjs) ·
@@ -235,6 +250,9 @@ than guessed:
   through Git only and protect `main` with a ruleset — not a Vercel setting.
 - I could not confirm whether Vercel's MCP supports per-tool restriction or project-scoped
   tokens, so `docs/07` says so instead of guessing.
+- `guard-sql` has a known false positive: when SQL arrives through a shell tool, string
+  literals are not masked, so a harmless `has_schema_privilege(..., 'CREATE')` reads as DDL.
+  Left open and recorded rather than patched in a hurry.
 
 A setup presented as airtight looks better. But anyone copying it would get hurt by the parts
 I quietly left out. Knowing where the machine stops and the discipline starts is worth more than
@@ -251,6 +269,18 @@ Hands-on support is available when the standard kit is not enough:
 - Implement custom hooks, diagnostics, and approval flows
 - Define rollout and operating rules for a small team
 - Validate an AI workflow through a small, focused business demo
+
+I also build the products themselves — the Next.js + Supabase + Vercel platforms described in
+the case studies. Indicative ranges, scoped per project:
+
+| Scope | Range (JPY) | Approx. (USD) |
+|---|---|---|
+| Small — landing page, single workflow, guardrail review | ¥100,000 – ¥300,000 | ~$700 – $2,000 |
+| Medium — a working product: auth, database, admin, email | ¥300,000 – ¥1,000,000 | ~$2,000 – $6,700 |
+| Large — multi-sided platform, integrations, ongoing build | ¥1,000,000+ | ~$6,700+ |
+| Maintenance | from ¥12,000 / month | from ~$80 / month |
+
+USD figures are approximate and follow the exchange rate; the JPY figures are the actual ones.
 
 An initial conversation does not require a purchase. We will first separate what the open-source kit already solves from what needs environment-specific implementation.
 

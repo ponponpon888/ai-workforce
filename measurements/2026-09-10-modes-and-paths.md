@@ -1,7 +1,7 @@
 # 実測 第2回 — 権限モードと deny のパス記法
 
-2026-09-09 作成、未実行。1 回のセッション（正しくは 5 回の再起動）で 2 つの
-未決を片付けるための手順です。
+2026-09-09 作成、**2026-09-15 改訂**（ラウンド4を実物の形に修正、bypass permissions の測定手順を追加）。
+1 回のセッション（正しくは 5 回の再起動）で 2 つの未決を片付けるための手順です。
 
 ## これで決まること
 
@@ -10,11 +10,16 @@ ROADMAP の 3 項目に答えます。
 1. **`kit` の `defaultMode: "ask"` は存在しない値です。** 無効値を書いたとき
    Claude Code が何をするか（起動しない / 黙殺して組み込みの既定に落ちる /
    何かに解釈する）は公式に記載がありません
-2. **`disableAutoMode` は `true` か `"disable"` か。** 公式のモード表に載って
-   いるのは `"disable"` の方だけで、`kit` は `true` を出しています
+2. **`disableAutoMode` は「値」だけでなく「置き場所」も kit と実物で違います。**
+   `kit` はトップレベルに `true`、実物は `permissions` の中に `"disable"`。
+   未知は「値」と「置き場所」の2軸ですが、測るのは実在する2つの形だけです
+   （ラウンド3＝kitの形、ラウンド4＝実物の形）
 3. **`deny` のパス側グロブ記法。** 素 / `./` / `**/` / `./**/` / `//**/` と、
    サフィックス・プレフィックス・dot 始まりの組み合わせ。第 1 回はルート直下
    までしか帰属できませんでした
+4. **bypass permissions がどちらの形で止まるか。** kit にだけある
+   `disableBypassPermissionsMode: true`（トップレベル）が効くかどうか。
+   実物にはこのキー自体が存在しないため、実物の形（ラウンド4）では測りません
 
 ## 測る前に分かっていること
 
@@ -33,10 +38,37 @@ ROADMAP の 3 項目に答えます。
   測っている deny は壊れません
 - **答えは 3 値で記録します。** 落ちた / 通った / **聞かれた**。「聞かれた」は
   deny にマッチしなかった側に数えます
+- **モードの観測は2経路あります。** A＝対話TUI（本番経路、Shingoさんの手で
+  ステータスバーと `Shift+Tab` の循環を見る）／B＝`-p` 非対話（CC単独で実行でき、
+  transcript の `auto_mode` レコードと `permissionMode` を機械的に読める）。
+  B だけだと「キーが効かない」のか「`-p` では見えないだけ」なのかを切り分けられ
+  ないので、bypass の判定は両方使います
+- **`~/.claude/projects/<slug>/<session-id>.jsonl` の先頭付近に機械可読の
+  `auto_mode` レコードがあります**（`{"type":"auto_mode","bashFirst":...,"bypass":...}`）。
+  目視より確実ですが、**auto のときだけ出る可能性がある**ので「レコードが無い＝
+  autoでない」とは書けません
 
 ---
 
 ## 準備
+
+### 0. ラウンド0は実施済みです（再実行不要）
+
+**2026-09-09に別セッションで測定済み**（作業ディレクトリは `C:\Dev\_measure2`。
+今回の手順とはフィクスチャの置き場所が違いますが、モードの基準線としてはそのまま使えます）。
+
+- Claude Code **2.1.266**、`defaultMode` も `disableAutoMode` も無い状態
+- **循環は4モード**: `auto mode on` → `manual mode on` → `accept edits on` →
+  `plan mode on` → 戻る。**`bypass permissions` は循環に出ません**
+- transcript の `auto_mode` レコード: `bashFirst:true` / `bashFirstSteer:"strict"` /
+  `steerOnly:true` / `bypass:false`
+- 経路B（`-p` 非対話）で `claude --permission-mode bypassPermissions` を実行:
+  **終了コード0で通り**、子セッションの transcript に
+  `"permissionMode":"bypassPermissions"` と `auto_mode` の `"bypass":true` を確認済み
+  （フラグが受理されただけでなく実際に適用されている証拠）
+
+**このバージョン・この結果を基準線としてラウンド1〜4を比較します。** バージョンが
+変わっていたら（`claude --version` で確認）、ラウンド0からやり直してください。
 
 ### 1. バックアップ
 
@@ -76,25 +108,6 @@ powershell -NoProfile -Command 'Set-Location C:\Users\kuron; New-Item -ItemType 
 
 ---
 
-## ラウンド 0 — 組み込みの既定を知る
-
-`permissions` から **`defaultMode` の行を消し**、トップレベルの
-`disableAutoMode` の行も**消します**。他は触りません。
-
-完全に終了して起動し直し、**ステータスバーの表示**を記録します。
-
-> `⏸ manual mode on`（= `default`）/ `⏵⏵ accept edits on` /
-> `⏸ plan mode on` / `⏵⏵ auto mode on` / `⏵⏵ don't ask on` /
-> `⏵⏵ bypass permissions on` のどれか
-
-あわせて **`Shift+Tab` を 1 周させて、循環に出てくるモードを全部**書き出します。
-
-これが基準線です。**Pro / Max / Team のターミナルでは組み込みの既定が `auto`**
-と公式にあるので、ここが `auto` なら以降の比較がよく効きます。`default` だった
-場合は、モード名では差が出ないので**循環の中身**が判定材料になります。
-
----
-
 ## ラウンド 1 — `defaultMode: "ask"`（無効値）
 
 `permissions` に `"defaultMode": "ask"` **だけ**を戻します。
@@ -105,6 +118,11 @@ powershell -NoProfile -Command 'Set-Location C:\Users\kuron; New-Item -ItemType 
 - 起動しない / エラーが出る → それが答えです
 - 起動して **ラウンド 0 と同じ** → **黙殺されて組み込みの既定に落ちている**
 - 起動して **ラウンド 0 と違う** → 何かに解釈されている（何にかを書く）
+
+**この結果はラウンド3・4の読み方を決めるオラクルです。** 無効値が黙殺される
+なら「ラウンド3・4で変化が無い＝値が無効」と読め、無効値で起動が止まるなら
+「ラウンド3・4が起動した＝値は受理されている」と読めます。**ラウンド1の結果を
+見てからラウンド3・4を解釈してください。**
 
 ---
 
@@ -187,24 +205,86 @@ ROADMAP の答えそのものです。
 
 ---
 
-## ラウンド 3 — `disableAutoMode: true`
+## ラウンド 3 — kit の形（`disableAutoMode: true` ＋ `disableBypassPermissionsMode: true`）
 
 `permissions` から `defaultMode` を消し、`allow` / `deny` も測定用の行を消して、
-トップレベルに `"disableAutoMode": true` だけを置きます。
+**トップレベル**に次の2行だけを置きます（kit が実際に出している形）。
+
+```json
+{
+  "disableAutoMode": true,
+  "disableBypassPermissionsMode": true
+}
+```
+
+**2つとも kit がトップレベルに置いているキーなので、同じラウンドに相乗りできます。**
+`disableAutoMode` は auto の可否、`disableBypassPermissionsMode` は bypass の可否と
+別の観測（片方は循環の中身、片方は起動フラグの成否）なので帰属は混ざりません。
+
+### 3-A. 循環の観測（TUI、`disableAutoMode` の判定）
 
 起動し直して、**モード**と **`Shift+Tab` の循環**を記録します。
 **`auto` が循環から消えているか**が見るところです。
 
+### 3-B. bypass の観測（`disableBypassPermissionsMode` の判定）
+
+**経路B（`-p` 非対話、機械可読）:**
+
+```
+claude --permission-mode bypassPermissions -p "echo ok"
+```
+
+- ラウンド0では終了コード0・transcriptに`"permissionMode":"bypassPermissions"`と
+  `auto_mode`の`"bypass":true`があることを確認済みです（基準線＝通る）
+- **このラウンドで拒否される（非ゼロ終了、または`permissionMode`がbypassPermissions
+  になっていない）なら、`disableBypassPermissionsMode: true` は効いています**
+- ラウンド0と同じく通るなら、**このキーは効いていない**（か、`-p`経路では見えない
+  だけの可能性が残ります。可能なら経路Aでも一度確認してください）
+
+**経路A（対話TUI、任意）:** `/permission-mode` やそれに類する操作で bypass に
+入ろうとして拒否されるかを見ます。手が空いていれば行いますが、経路Bだけでも
+「効く／効かない」の一次判定はできます。
+
 ---
 
-## ラウンド 4 — `disableAutoMode: "disable"`
+## ラウンド 4 — 実物の形（`permissions.disableAutoMode: "disable"`）
 
-同じ状態で値だけ `"disable"` に変えます。起動し直して、モードと循環を記録します。
+`permissions` を次のようにします。**`disableAutoMode` は実物と同じく
+`permissions` の中に置き、値は `"disable"` です。** `disableBypassPermissionsMode`
+は**置きません**（実物にこのキー自体が存在しないため。2026-09-09の実測で
+`permissions` 直下は allow / deny / ask / defaultMode / disableAutoMode /
+additionalDirectories の6キーのみと確認済みです）。
 
-- ラウンド 3 と 4 で**循環が同じ** → どちらの値でも効く（か、どちらも効かない。
-  ラウンド 0 の循環と比べて判定）
-- **違う** → 効く方が正しい値です。`kit` の `true` が効かない側なら、
-  **公開予定の kit は auto を止められていない**ことになります
+```json
+{
+  "permissions": {
+    "disableAutoMode": "disable"
+  }
+}
+```
+
+**トップレベルには何も置きません。** ラウンド3との違いは「置き場所」と「値」の
+両方です — トップレベル+`true`（ラウンド3・kitの形） vs `permissions`の中+`"disable"`
+（ラウンド4・実物の形）。
+
+### 4-A. 循環の観測
+
+起動し直して、**モード**と **`Shift+Tab` の循環**を記録します。
+
+- ラウンド 3 と 4 で **循環が同じ**（どちらも auto が消える、またはどちらも
+  消えない）→ 置き場所によらずどちらの形でも効く（か、どちらも効かない。
+  ラウンド 0 の循環と比べて判定してください）
+- **違う** → 効く方が正しい置き場所・値です。ラウンド3（kitの形）が効かない側
+  なら、**公開予定の kit は auto を止められていない**ことになります
+
+### 4-B. bypass の観測（対照としてもう一度）
+
+`disableBypassPermissionsMode` を置いていないこのラウンドで
+`claude --permission-mode bypassPermissions -p "echo ok"` を実行し、
+**ラウンド0と同じく通ることを確認します。** これは「キー無し」の2回目の観測に
+すぎず、bypass軸の帰属はラウンド0とラウンド3の対比だけで成立します
+（このラウンドで通らなかった場合は、別の要因が混ざっているので先に切り分けて
+ください）。
 
 ---
 

@@ -29,11 +29,13 @@
 - [x] GitHub Actions が実際にステップを実行して成功する。2026-09-15、課金停止が解消し、
   main への push で test.yml の Ubuntu / Windows / macOS 全ジョブが Success を確認した
   （Windows は約10分かかるが正常。以前の「18ジョブ全部 steps:0」という課金エラーとは別物）。
+- [x] Windows PowerShell 5.1 / PowerShell 7 で統合版を実行する。
+  2026-09-10 に Windows PowerShell 5.1 で基本6スイート成功。2026-09-15 に PowerShell 7.6.6
+  （Node v24.13.0）を導入し、同じ基本6スイート（installed-approval / installers / pull-all /
+  guard-secrets / guard-sql / sql-boundaries）が全て合格。origin/main の一時 worktree から実行した。
 
 ## v0.1 までに終わらせること
 
-- [ ] PowerShell 7 / Windows PowerShell 5.1 で統合版を実行する。
-  Windows PowerShell 5.1 は 2026-09-10 に実行し、基本6スイート成功。PowerShell 7 は未導入のため未検証。
 - [ ] Windows / macOS の Node で統合版を実行する。
   Windows は 2026-09-10 に実行。`node --import` に Windows 絶対パスを渡していた不具合を直して全11スイート成功。macOS は未実行。
 - [x] Windows で「承認は一度限り」が破れる問題を直した。`guard-sql.mjs` の `isApproved()` は
@@ -69,5 +71,9 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   （`Set-Content` 等）が Edit / Write ツールの deny を迂回できるかの検証も未着手。
 - `actions/checkout@v4` / `actions/setup-node@v4` が Node.js 20 廃止に伴い Node 24 に
   強制されている旨の warning が CI に出ている（実害なし）。手が空いたときにバージョンを上げる。
+- ローカルの `C:\Dev\ai-workforce` チェックアウトの整理。開発は GitHub（main）が正本になり
+  ローカルでは行わなくなったため、古いブランチ（`feat/pitfall-records` 上の未push2コミット、
+  うち1つは意図しないマージコミット）と、残存する検証用 worktree（`ai-workforce-cg-verify` /
+  `ai-workforce-pr18-verify` / `ai-workforce-verification`）の要否を確認して片付ける。
 
 機能追加そのものや記事の量産を目的にしません。確認していない動作や残る制約は明記します。

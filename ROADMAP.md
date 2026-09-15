@@ -39,6 +39,12 @@
   専用のステップとして追加し（PR #21、main push・PR では動かずコストを増やさない）、
   2026-09-15 に手動実行で Ubuntu / Windows / macOS 全ジョブ Success、macOS のこのステップは
   43秒で完了した。
+- [x] 別ユーザーの素の環境で、新規導入を確認した。2026-09-15、同一PCに新規ローカルユーザー
+  （`~/.claude` が存在しない状態）を作成し、そこにリポジトリをコピーして
+  `node kit/scripts/install.mjs` を実行。`CLAUDE.md` / `hooks/guard-sql.mjs` /
+  `hooks/guard-secrets.mjs` / `scripts/approve-ddl.mjs` / `settings.json` が正しく書き込まれ、
+  `doctor.mjs` は `static-pass`、`test-guard-sql.mjs` 44/44、`test-guard-secrets.mjs` 65/65
+  で合格。VM は使わず新規ローカルユーザーで代用した。承認・復元の確認は未実施のまま残っている。
 
 ## v0.1 までに終わらせること
 
@@ -47,8 +53,11 @@
   承認を通過していた。排他生成ロックで取得を絞り、120 ラウンドで異常 0 件。
   PowerShell 版は経路が異なり 90 ラウンドで異常なしのため未変更。
   詳細は [統合状況](docs/17-integration-status.md)。
-- [ ] 別ユーザーまたは VM の素の環境で、新規導入・承認・復元を確認する。
+- [ ] 新規導入した素の環境（`aiwftest` ユーザー、`C:\Users\Public\ai-workforce-test`）で、
+  実際にDDL承認フロー（`approve-ddl`）と設定の復元手順を確認する。新規導入自体は確認済み。
 - [ ] Claude Code 本体でのフック接続・優先順位を確認する（設定の受理とモードは実測第2回で確定済み）。
+  素の環境（上記）を使って、`select 1; drop table nothing;` と `cat .env` を Claude Code に
+  実行させ、フックが実際に発火するかを見るとよい。
 - [ ] 対象プロジェクトを確定し、`agent-readonly-role.sql` の検証5項目を実 DB で確認する。まだ実行していない。
 - [ ] 上記結果をレビューし、統合 PR のマージとリリースを行う。
 
@@ -79,5 +88,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   ローカルでは行わなくなったため、古いブランチ（`feat/pitfall-records` 上の未push2コミット、
   うち1つは意図しないマージコミット）と、残存する検証用 worktree（`ai-workforce-cg-verify` /
   `ai-workforce-pr18-verify` / `ai-workforce-verification`）の要否を確認して片付ける。
+- 検証用に作成したもの: ローカルユーザー `aiwftest`（パスワード変更のため `net user aiwftest`
+  で unlock 済み）と `C:\Users\Public\ai-workforce-test`。承認・復元の確認が終わったら、
+  `net user aiwftest /delete` と対象フォルダの削除で片付ける。
 
 機能追加そのものや記事の量産を目的にしません。確認していない動作や残る制約は明記します。

@@ -26,6 +26,9 @@
   **allow / deny / ask を含む settings.json 全体がスキップされる**。現在の
   `kit/claude/settings.json` は PR #10（2026-09-14）で既に正しい形（`permissions` の中に
   `"disable"`）になっており、今回の実測はその修正が実機で正しく動くことの確認になった。
+- [x] GitHub Actions が実際にステップを実行して成功する。2026-09-15、課金停止が解消し、
+  main への push で test.yml の Ubuntu / Windows / macOS 全ジョブが Success を確認した
+  （Windows は約10分かかるが正常。以前の「18ジョブ全部 steps:0」という課金エラーとは別物）。
 
 ## v0.1 までに終わらせること
 
@@ -41,7 +44,6 @@
 - [ ] 別ユーザーまたは VM の素の環境で、新規導入・承認・復元を確認する。
 - [ ] Claude Code 本体でのフック接続・優先順位を確認する（設定の受理とモードは実測第2回で確定済み）。
 - [ ] 対象プロジェクトを確定し、`agent-readonly-role.sql` の検証5項目を実 DB で確認する。まだ実行していない。
-- [ ] GitHub Actions が実際にステップを実行して成功する。課金は解消済みだが未確認。PR の macOS 除外と main の macOS 実行も確認する。
 - [ ] 上記結果をレビューし、統合 PR のマージとリリースを行う。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
@@ -65,5 +67,7 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - サブディレクトリ・dot ディレクトリの「通るはず」対照の再設計（実測第2回で対照がディレクトリ全体を
   覆う別の deny 行の中に置かれてしまい機能しなかった）。PowerShell ツール経由の書き込み
   （`Set-Content` 等）が Edit / Write ツールの deny を迂回できるかの検証も未着手。
+- `actions/checkout@v4` / `actions/setup-node@v4` が Node.js 20 廃止に伴い Node 24 に
+  強制されている旨の warning が CI に出ている（実害なし）。手が空いたときにバージョンを上げる。
 
 機能追加そのものや記事の量産を目的にしません。確認していない動作や残る制約は明記します。

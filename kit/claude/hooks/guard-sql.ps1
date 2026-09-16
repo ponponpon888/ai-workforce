@@ -340,7 +340,14 @@ try {
     # matcher should already do this, but a matcher is one edit away from being
     # widened, and a `query` field on some unrelated MCP tool must not be read
     # as SQL. Defence in depth, and it costs nothing.
-    if ($toolName -notmatch '^(Bash|PowerShell|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)') {
+    #
+    # The MCP alternatives are NOT anchored to a fixed prefix (unlike
+    # Bash/PowerShell, which are exact tool names): a connector can prepend its
+    # own name ahead of the product name, e.g.
+    # "mcp__claude_ai_Supabase__list_projects", and a "mcp__[Ss]upabase__"
+    # prefix match misses it entirely. Match "supabase" (etc) anywhere in the
+    # tool name instead. See data/pitfalls/hook-004.json.
+    if ($toolName -notmatch '^(Bash|PowerShell)$|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale') {
         exit 0
     }
 
@@ -384,8 +391,16 @@ try {
     # Checking inside the loop consumed the single-use token on the first DDL
     # statement, so an approved migration containing two of them always failed
     # on the second. Migrations routinely contain several statements.
+    #
+    # The displayed statement is $sql, the exact text Test-Approved fingerprints
+    # -- not $firstDdl, which is only the first ';'-delimited segment and, for
+    # shell grammar, does not include the client wrapper or trailing characters
+    # (e.g. the closing quote and semicolon of 'psql -c "alter table t add c;"').
+    # Showing $firstDdl looked like the approval target but was not: a human who
+    # copied it verbatim into approve-ddl.ps1 got a different fingerprint and the
+    # retry stayed blocked with no indication why. See data/pitfalls/hook-005.json.
     if ($null -ne $firstDdl -and -not (Test-Approved $sql)) {
-        Deny 'DDL requires a human approval token that is missing or expired.' $firstDdl
+        Deny 'DDL requires a human approval token that is missing or expired.' $sql
     }
 
     exit 0

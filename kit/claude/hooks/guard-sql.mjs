@@ -358,8 +358,16 @@ try {
   // Checking inside the loop consumed the single-use token on the first DDL
   // statement, so an approved migration containing two of them always failed
   // on the second. Migrations routinely contain several statements.
+  //
+  // The displayed statement is `sql`, the exact text isApproved() fingerprints
+  // -- not `firstDdl`, which is only the first `;`-delimited segment and, for
+  // shell grammar, does not include the client wrapper or trailing characters
+  // (e.g. the closing quote and semicolon of `psql -c "alter table t add c;"`).
+  // Showing firstDdl looked like the approval target but was not: a human who
+  // copied it verbatim into approve-ddl.mjs got a different fingerprint and the
+  // retry stayed blocked with no indication why. See data/pitfalls/hook-005.json.
   if (firstDdl !== null && !isApproved(sql)) {
-    deny('DDL requires a human approval token that is missing or expired.', firstDdl);
+    deny('DDL requires a human approval token that is missing or expired.', sql);
   }
 
   process.exit(0);

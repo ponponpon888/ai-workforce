@@ -1,0 +1,36 @@
+{
+  "id": "hook-004",
+  "title": "guard-sqlのSupabase MCPマッチャがmcp__[Ss]upabase__.*固定で、実際のツール名に一致しなかった",
+  "summary": "kit/claude/settings.jsonのhooks.PreToolUse matcherはmcp__[Ss]upabase__.*としていたが、実機のSupabase MCPツール名はmcp__claude_ai_Supabase__list_projectsの形で、接頭辞にコネクタ名(claude_ai_)が挟まる。このためguard-sqlがSupabase MCP経由の呼び出しに一切発火しなかった。以前から本番で使われてきた~/.claude/settings.jsonはmcp__.*[Ss]upabase(任意の文字列を挟んで\"supabase\"を含めば一致)という緩いパターンを使っており、こちらは実際のツール名に一致する。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-16",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "PowerShell",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "kit/scripts/install.mjs --skip-claude-md でsettings.jsonを導入し、hooks.PreToolUseのmatcherがmcp__[Ss]upabase__.*になっていることを確認した",
+    "同一セッションで実際にSupabase MCPツールを呼ぶと、ツール名はmcp__claude_ai_Supabase__list_projectsの形だった",
+    "mcp__[Ss]upabase__.*はこの文字列に一致しない(接頭辞にclaude_ai_が挟まるため)",
+    "従来から使っていた~/.claude/settings.jsonはmcp__.*[Ss]upabaseという緩いパターンで、同じツール名に一致していた"
+  ],
+  "status": "closed",
+  "fix": "matcherをBash|PowerShell|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscaleに変更した。接頭辞を固定せず、ツール名のどこかに製品名の文字列が含まれれば一致する形にした。doctor.mjsが検査する代表ツール名(mcp__supabase__execute_sql等)にも一致することを確認済み。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/settings.json",
+    "pattern": "mcp__.*[Ss]upabase",
+    "expect": "present",
+    "message": "matcherが固定接頭辞のmcp__[Ss]upabase__.*に戻ると、実際のSupabase MCPツール名に一致しなくなる。"
+  },
+  "related": ["hook-005"],
+  "tags": ["guard-sql", "matcher", "supabase", "mcp"]
+}

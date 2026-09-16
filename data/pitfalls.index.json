@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 12,
+    "total": 14,
     "by_set": {
-      "pitfalls": 12
+      "pitfalls": 14
     },
     "by_confidence": {
-      "measured": 8,
+      "measured": 10,
       "inferred": 2,
       "documented": 1,
       "unverified": 1
     },
     "by_status": {
-      "closed": 6,
+      "closed": 8,
       "open_recorded": 1,
       "untouched": 2,
       "none": 3
     },
     "by_kind": {
-      "trap": 7,
+      "trap": 9,
       "limitation": 2,
       "behaviour": 3
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 4,
+      "hook": 6,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 6,
+      "unknown_version": 8,
       "ok": 2,
       "not_applicable": 4
     },
-    "without_prose": 4,
-    "checkable": 5
+    "without_prose": 6,
+    "checkable": 6
   },
   "checks": [
     {
@@ -68,6 +68,15 @@
       "pattern": "@(Get-FileRouteCandidate",
       "expect": "present",
       "message": "@() を外すと候補1件のときに .Count が落ち、フックは fail open で素通りする。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-004",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "mcp__.*[Ss]upabase",
+      "expect": "present",
+      "message": "matcherが固定接頭辞のmcp__[Ss]upabase__.*に戻ると、実際のSupabase MCPツール名に一致しなくなる。",
       "severity": "high"
     },
     {
@@ -101,17 +110,11 @@
       "confidence": "measured",
       "status": "closed",
       "stale_risk": "ok",
-      "origin": "docs/02-guardrails.md#macos-のジョブが無料枠を食い潰していました",
+      "origin": "docs/02-guardrails.md#macos-のジョブが無料枠を食いつぶしていました",
       "has_prose": true,
       "checkable": false,
       "related": [],
-      "tags": [
-        "github-actions",
-        "runner",
-        "billing",
-        "cost-per-minute",
-        "not-our-code"
-      ]
+      "tags": ["github-actions", "runner", "billing", "cost-per-minute", "not-our-code"]
     },
     {
       "id": "hook-001",
@@ -128,11 +131,7 @@
       "has_prose": true,
       "checkable": true,
       "related": [],
-      "tags": [
-        "guard-sql",
-        "false-negative",
-        "grammar"
-      ]
+      "tags": ["guard-sql", "false-negative", "grammar"]
     },
     {
       "id": "hook-002",
@@ -148,15 +147,8 @@
       "origin": "record",
       "has_prose": false,
       "checkable": true,
-      "related": [
-        "hook-001",
-        "hook-003"
-      ],
-      "tags": [
-        "guard-sql",
-        "false-negative",
-        "file-route"
-      ]
+      "related": ["hook-001", "hook-003"],
+      "tags": ["guard-sql", "false-negative", "file-route"]
     },
     {
       "id": "hook-003",
@@ -172,15 +164,42 @@
       "origin": "record",
       "has_prose": false,
       "checkable": true,
-      "related": [
-        "hook-002"
-      ],
-      "tags": [
-        "guard-sql",
-        "powershell",
-        "fail-open",
-        "strict-mode"
-      ]
+      "related": ["hook-002"],
+      "tags": ["guard-sql", "powershell", "fail-open", "strict-mode"]
+    },
+    {
+      "id": "hook-004",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-004.json",
+      "title": "guard-sqlのSupabase MCPマッチャがmcp__[Ss]upabase__.*固定で、実際のツール名に一致しなかった",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": ["hook-005"],
+      "tags": ["guard-sql", "matcher", "supabase", "mcp"]
+    },
+    {
+      "id": "hook-005",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-005.json",
+      "title": "guard-sqlのBLOCKメッセージのStatement表示が、承認に必要な完全な文字列より短く切れていた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": ["hook-004"],
+      "tags": ["guard-sql", "approve-ddl", "display", "fingerprint"]
     },
     {
       "id": "install-001",
@@ -197,11 +216,7 @@
       "has_prose": false,
       "checkable": true,
       "related": [],
-      "tags": [
-        "install",
-        "approve-ddl",
-        "usability"
-      ]
+      "tags": ["install", "approve-ddl", "usability"]
     },
     {
       "id": "mcp-001",
@@ -218,12 +233,7 @@
       "has_prose": true,
       "checkable": false,
       "related": [],
-      "tags": [
-        "supabase",
-        "mcp",
-        "read-only",
-        "plausible-but-useless"
-      ]
+      "tags": ["supabase", "mcp", "read-only", "plausible-but-useless"]
     },
     {
       "id": "perm-001",
@@ -239,17 +249,8 @@
       "origin": "docs/02-guardrails.md#測り方",
       "has_prose": true,
       "checkable": false,
-      "related": [
-        "perm-002",
-        "perm-003",
-        "perm-004",
-        "perm-005"
-      ],
-      "tags": [
-        "deny",
-        "prefix-match",
-        "notation"
-      ]
+      "related": ["perm-002", "perm-003", "perm-004", "perm-005"],
+      "tags": ["deny", "prefix-match", "notation"]
     },
     {
       "id": "perm-002",
@@ -265,14 +266,8 @@
       "origin": "docs/02-guardrails.md#powershell-のエイリアスは心配しなくてよかった",
       "has_prose": true,
       "checkable": false,
-      "related": [
-        "perm-001"
-      ],
-      "tags": [
-        "deny",
-        "allow",
-        "precedence"
-      ]
+      "related": ["perm-001"],
+      "tags": ["deny", "allow", "precedence"]
     },
     {
       "id": "perm-003",
@@ -288,14 +283,8 @@
       "origin": "ROADMAP.md#v01-までに終わらせること",
       "has_prose": true,
       "checkable": false,
-      "related": [
-        "perm-001"
-      ],
-      "tags": [
-        "deny",
-        "glob",
-        "path"
-      ]
+      "related": ["perm-001"],
+      "tags": ["deny", "glob", "path"]
     },
     {
       "id": "perm-004",
@@ -311,17 +300,8 @@
       "origin": "ROADMAP.md#v01-までに終わらせること",
       "has_prose": true,
       "checkable": true,
-      "related": [
-        "perm-001",
-        "perm-002",
-        "perm-005"
-      ],
-      "tags": [
-        "deny",
-        "prefix-match",
-        "alias",
-        "windows"
-      ]
+      "related": ["perm-001", "perm-002", "perm-005"],
+      "tags": ["deny", "prefix-match", "alias", "windows"]
     },
     {
       "id": "perm-005",
@@ -337,15 +317,8 @@
       "origin": "docs/02-guardrails.md#ただし両方に同じ穴があります",
       "has_prose": true,
       "checkable": false,
-      "related": [
-        "perm-001",
-        "perm-004"
-      ],
-      "tags": [
-        "deny",
-        "prefix-match",
-        "rm"
-      ]
+      "related": ["perm-001", "perm-004"],
+      "tags": ["deny", "prefix-match", "rm"]
     },
     {
       "id": "shell-001",
@@ -362,11 +335,7 @@
       "has_prose": false,
       "checkable": false,
       "related": [],
-      "tags": [
-        "powershell",
-        "quoting",
-        "instructions"
-      ]
+      "tags": ["powershell", "quoting", "instructions"]
     }
   ]
 }

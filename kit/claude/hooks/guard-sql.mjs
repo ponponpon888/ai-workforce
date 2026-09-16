@@ -53,8 +53,18 @@ const APPROVAL_TTL_MINUTES = 15;
 const APPROVAL_DIR =
   process.env.AIWF_APPROVAL_DIR || join(homedir(), '.claude', 'approvals');
 
-/** Tools whose input we inspect. Anything else is none of our business. */
-const SQL_TOOL_RE = /^(Bash|PowerShell|mcp__[Ss]upabase__|mcp__postgres|mcp__neon|mcp__planetscale)/;
+/**
+ * Tools whose input we inspect. Anything else is none of our business.
+ *
+ * This is defence in depth against the settings.json matcher: a matcher is one
+ * edit away from being widened, so the hook re-checks the tool name itself.
+ * The MCP alternatives are NOT anchored to a fixed prefix (unlike Bash/PowerShell,
+ * which are exact tool names) -- a connector can prepend its own name ahead of
+ * the product name, e.g. `mcp__claude_ai_Supabase__list_projects`, and a
+ * `mcp__[Ss]upabase__` prefix match misses it entirely. Match "supabase" (etc)
+ * anywhere in the tool name instead. See data/pitfalls/hook-004.json.
+ */
+const SQL_TOOL_RE = /^(Bash|PowerShell)$|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale/;
 
 /** Tools that hand us a shell command line rather than a SQL statement. */
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;

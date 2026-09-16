@@ -55,6 +55,27 @@
   ブロックすることがある（false positive、実害なし）。Supabase の `postgres` ロールは
   完全なスーパーユーザーではなく、他ロールの `REASSIGN`/`DROP OWNED` には事前に
   `GRANT <role> TO postgres` が必要と判明、ファイルの削除手順に追記した。
+- [x] DDL 承認フローと Claude Code 本体でのフック接続を実機で確認した。2026-09-16、
+  事前に作った `aiwftest` ユーザーではなく、本体アカウントで
+  バックアップ→`install.mjs --skip-claude-md` で一時的に kit を上書き→確認→復元、という
+  実測第1回・第2回と同じパターンで行った（対話認証が要る2つ目の Claude Code セッションを
+  用意せずに済むため）。Claude Code に実際に `psql -c "select 1;"` / `psql -c "drop table
+  nothing;"` / `cat .env` / DDL（ALTER、承認あり・なし・使い切り）を実行させ、
+  select は通過・DROP は拒否・`cat .env` は `guard-secrets` で拒否・承認済み ALTER は
+  1回だけ通過し2回目は再拒否、をすべて確認した。この過程で実際のバグを2件発見し、
+  [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) で修正した
+  （マージ・CI・`build-pitfall-index.mjs` の再生成確認は未完了、レビュー待ち）。
+  - **hook-004**: `settings.json` の Supabase/Postgres/Neon/PlanetScale matcher が
+    固定接頭辞（`mcp__[Ss]upabase__.*` 等）で、実機のツール名
+    `mcp__claude_ai_Supabase__list_projects`（コネクタ名が接頭辞に挟まる）に一致しなかった。
+    さらに `guard-sql.mjs`/`guard-sql.ps1` 自身が持つ内部の防御的二重チェックにも
+    同じ固定接頭辞パターンがあり、settings.json 側だけ直しても発火しなかった。両方を
+    「ツール名のどこかに製品名を含めば一致」という緩い形に統一した。
+  - **hook-005**: DDL 承認が必要なときの BLOCK メッセージが表示する「Statement:」が、
+    実際に承認対象となる完全な文字列（tool_input の生の値）ではなく `;` で分割した先頭断片
+    だったため、シェル経由の呼び出しでは末尾の閉じ引用符やセミコロンが表示から欠け、
+    その表示をそのまま承認しても別のハッシュになり通らなかった。表示を承認対象そのものに
+    直した（mjs / ps1 両方。ps1 側は Windows 実機での再検証はしていない）。
 
 ## v0.1 までに終わらせること
 
@@ -63,13 +84,18 @@
   承認を通過していた。排他生成ロックで取得を絞り、120 ラウンドで異常 0 件。
   PowerShell 版は経路が異なり 90 ラウンドで異常なしのため未変更。
   詳細は [統合状況](docs/17-integration-status.md)。
-- [ ] 新規導入した素の環境（`aiwftest` ユーザー、`C:\Users\Public\ai-workforce-test`）で、
-  実際にDDL承認フロー（`approve-ddl`）と設定の復元手順を確認する。新規導入自体は確認済み。
-- [ ] Claude Code 本体でのフック接続の実地確認（設定の受理・モード・agent-readonly の実効権限は
-  実測第2回と今回の Supabase 検証で確定済み）。`aiwftest` 環境でオンボーディングの都合により
-  保留にした — `select 1; drop table nothing;` と `cat .env` を Claude Code に実行させて
-  フックが実際に発火するかを見る。テストスイート（44/44・65/65）は合格済みなので優先度は低い。
-- [ ] 上記結果をレビューし、統合 PR のマージとリリースを行う。
+- [x] 新規導入した素の環境で、実際にDDL承認フロー（`approve-ddl`）と設定の復元手順を確認した。
+  上記のとおり 2026-09-16、本体アカウントでのバックアップ／一時上書き／復元で確認済み
+  （新規導入自体は `aiwftest` で確認済みだったものと合わせて、両方とも完了）。
+- [x] Claude Code 本体でのフック接続の実地確認を行った。上記のとおり 2026-09-16、
+  `select 1;` / `drop table nothing;` / `cat .env` / DDL 承認フローのすべてを
+  実際に Claude Code に実行させて確認し、2件の不具合（hook-004, hook-005）を発見・修正した。
+- [ ] [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) をレビューし、
+  マージしてリリースを行う。このPRはネットワーク制約のあるサンドボックスで作成しており、
+  `test-guard-sql.mjs` / `test-guard-sql.ps1` / `test-doctor.mjs` / `lint-pitfalls.mjs` の
+  実行と、`node kit/scripts/build-pitfall-index.mjs` を実行して
+  `data/pitfalls.index.json` の再生成差分が無いことの確認がまだ済んでいない
+  （index は手で `build-pitfall-index.mjs` のロジックを辿って更新したもの）。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 
@@ -82,6 +108,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - 秘密ファイルガードはシェル言語全体を解析しない。内部エラー時の許可も含め、敵対的な回避を完全に防ぐ境界ではない。
 - 自動更新には全体のタイムアウトや排他ロックがない。任意の認証ヘルパーの停止や同時操作まで保証しない。
 - 設定の静的検査は Claude Code 本体の動作証明ではない。現在のテンプレート値と実機測定を区別する。
+- MCP ツール名の接頭辞はコネクタごとに変わりうる（実測: `mcp__claude_ai_Supabase__list_projects`）。
+  matcher やフック内部のツール名チェックを書くときは、固定接頭辞ではなく部分一致で書くこと（hook-004）。
 
 ## 基本版以降
 

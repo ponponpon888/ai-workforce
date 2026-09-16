@@ -152,6 +152,13 @@ node kit/scripts/approve-ddl.mjs "alter table bookings add column memo text"
 文が 1 文字でも違えばハッシュが変わるので、
 承認したのと違う SQL が滑り込むことはありません。
 
+**BLOCK 時に表示する「Statement:」は、承認対象そのものと一致させています。** 承認の判定は
+tool_input に渡された文字列全体のハッシュで行うため、表示だけが `;` で分割した先頭断片
+だと、シェル経由の呼び出し（`psql -c "alter table t add c;"` など）では末尾の閉じ引用符や
+セミコロンが表示から欠け、その表示をそのまま承認しても別のハッシュになって通らない、
+という事故が実地確認で見つかりました（[`data/pitfalls/hook-005.json`](../data/pitfalls/hook-005.json)）。
+表示は承認対象の文字列そのものに直しています。
+
 ### フックが壊れたら、通す
 
 ```js
@@ -709,7 +716,7 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 44 ケース（落とす 20 / 通す 16 / 承認トークン 8）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。
+合計 45 ケース（落とす 20 / 通す 16 / 承認トークン関連 9）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。
 
 ```
 guard-sql test suite (node)
@@ -733,12 +740,13 @@ must allow:
   (抜粋。must allow は 16 件)
 
 approval token:
+  PASS  BLOCKED Statement: shows the exact text isApproved() fingerprints
   PASS  approved DDL passes
   PASS  token is single use
   PASS  approved blind file route passes
-  (抜粋。approval token は 8 件)
+  (抜粋。承認トークン関連は 9 件)
 
-pass: 44   fail: 0
+pass: 45   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。
@@ -771,6 +779,11 @@ supabase で `select 1; drop table nothing;` を実行して
 
 `[guard-sql] BLOCKED: DROP is never allowed from an agent.` が出れば正常。
 何も起きずに実行されたら、フックが配線されていません。
+
+**Supabase MCP を実際に使う場合は、matcher が実際のツール名と一致することも必ず確認してください。**
+接続するコネクタによってツール名の接頭辞が変わることがあり（例: `mcp__claude_ai_Supabase__list_projects`）、
+固定接頭辞の matcher だと一致せず、フックが発火しないまま気づかないことがあります
+（[hook-004](../data/pitfalls/hook-004.json)）。
 
 ## Windows 形式の秘密ファイルパス
 

@@ -35,6 +35,26 @@ confidence: inferred — 実際に自己承認を再現してはいない。appr
 `test-installed-approval.mjs`・`test-verify-installers.mjs`・`doctor.mjs --template` を
 Windows実機で確認してからマージした。
 
+**続けて、[PR #27](https://github.com/ponponpon888/ai-workforce/pull/27) で `ConfigChange` 層を追加・マージ済み。**
+Claude Code公式の`ConfigChange`イベント（設定ファイルが変わったら`exit 2`で変更そのものを
+拒否できる。matcherは`user_settings`等の設定ソース単位）にguard-config.mjsを追加登録し、
+settings.jsonについてはPreToolUseが想定していない書き込み経路も含めて拒否できるようにした。
+2026-09-17、Windows実機（Claude Code 2.1.274）で`--debug`ログを使って実際に発火することを
+確認: セッション実行中に外部からsettings.jsonを直接書き換えると、フックが発火し
+「ConfigChange hook blocked change to ...settings.json」と記録され、そのセッションには
+反映されなかった。
+
+**この過程で新しい仕様上の制約が判明した（[`hook-007`](https://github.com/ponponpon888/ai-workforce/blob/main/data/pitfalls/hook-007.json)、confidence: measured）**:
+ConfigChangeのブロックは「今動いているセッションへの反映」を止めるだけで、**ディスク上の
+ファイル自体は書き換わったまま残る**。さらに、**Claude Codeが起動していない間**に同じ
+書き換えを行うと、次回起動時にはそれが「最初からの設定」として読み込まれ、ConfigChangeの
+検知対象にすらならない（起動ログで確認済み）。guard-config.mjsのヘッダーコメントにこの
+限界を明記した。
+
+副次的に、`test-lint-pitfalls.mjs`の「チェック可能な件数」の決め打ちが`hook-004`追加時点
+（5→6にすべきところ）から直っておらず古いままだったことも見つかり、今回`hook-006`/`hook-007`
+分と合わせて正しい値（7・9）に直した。
+
 **今回見送ったもの（follow-up扱い）**:
 - `doctor.mjs` の `guards` 配列への guard-config 追加。手計算で触ると壊すリスクの方が
   大きいと判断したため、`test-doctor.mjs` 通過を確認できてから別PRで対応する
@@ -138,7 +158,8 @@ Windows実機で確認してからマージした。
   テストケース数の古い表記（44→45）の修正を済ませてから切り替えた。
 - [x] main 上での CI（test.yml）の成功確認。public化後、`ci/restore-macos-on-public`
   （PR #25）でmacOSをpush/PR対象に戻し、mainで3OS実行を確認する運用に戻した。
-- [x] guard-config（上記参照）のレビューとマージ。[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26)。
+- [x] guard-config（上記参照）のレビューとマージ。[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26)・
+  [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)。
 - [ ] README・CHANGELOG の最終確認・タグ付け。guard-config追加に伴い、README/README.enの
   「4本柱」や「5分で入れる」の記述をguard-config込みに更新するかも合わせて判断する
   （今回のPRでは触っていない）。
@@ -158,6 +179,9 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   matcher やフック内部のツール名チェックを書くときは、固定接頭辞ではなく部分一致で書くこと（hook-004）。
 - guard-config はパス名の文字列一致であり、`git checkout` での古いコミットへの巻き戻しや
   パッケージスクリプト、エディタ拡張機能経由の書き換えはカバーしない（hook-006）。
+- guard-config の `ConfigChange` 層は「実行中セッションへの反映」を止めるだけで、ディスク上の
+  ファイルは元に戻らない。Claude Code が起動していない間の書き換えは検知できず、次回起動時に
+  そのまま「起動時の設定」として読み込まれる（hook-007）。
 
 ## 基本版以降
 
@@ -181,9 +205,13 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   を塞ぐか、既知の制約として残すかを検討する。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
-- `guard-config.ps1`（PowerShell版）の実装と、`doctor.mjs` の `guards` 配列への追加。
+- `guard-config.ps1`（PowerShell版）の実装と、`doctor.mjs` の `guards` 配列への追加（PreToolUse・
+  ConfigChangeの両方）。
 - 競合調査で見つかったもう一つの穴: `permissions.deny` は前方一致なので、
   `cd /tmp && rm -rf x` / `timeout 30 rm -rf x` / サブシェル / パイプ経由の `rm -rf` 等が
   すり抜ける（`perm-005` の「フラグ変種」よりさらに広い話）。guard-sql と同じ
   「コマンド全体をセグメント分割して正規表現で走査する」設計を、deny リストの主要な
   危険パターン（`rm -rf`、`git push --force`、`git reset --hard` 等）にも広げるかを検討する。
+- guard-configのConfigChange層の限界（hook-007）を補うため、`SessionStart`フックで
+  settings.jsonのハッシュ（またはpermissions/hooksの内容）を既知の値と照合し、Claude Code
+  が起動していない間に書き換えられていた場合は警告する仕組みを検討する。

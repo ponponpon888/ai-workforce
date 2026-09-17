@@ -26,7 +26,8 @@
   "detection": {
     "checkable": false,
     "kind": "manual",
-    "note": "Claude Code自体の実行時挙動であり、ファイル内容の静的検査では確かめられない。",
+    "note": "Claude Code自体の実行時挙動であり、ファイル内容の静的検査では確かめられない。"
+  },
   "related": ["hook-006"],
   "tags": ["guard-config", "configchange", "settings-json", "restart"]
 }

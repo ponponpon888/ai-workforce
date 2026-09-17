@@ -13,15 +13,15 @@
     "guard-config.mjs導入前の~/.claude/settings.jsonには、settings.json自身やhooks/、approvals/へのEdit/Write/Bash/PowerShell経由の書き込みを拒否する仕組みが何もなかった（実際に自己承認を試してはいない）"
   ],
   "status": "closed",
-  "fix": "guard-config.mjsを新規にPreToolUseフックとして追加し、Edit/Write/MultiEdit/NotebookEditツールはfile_pathを、Bash/PowerShellはコマンド行を、settings.json・CLAUDE.md・hooks/・scripts/・approvals/のいずれかを名指しする書き込み・削除・リネーム形なら拒否するようにした。approve-ddlを実行するという意図的な人間の手順だけは引き続き通る（人間自身の端末からの実行はClaude Codeのツール呼び出しを通らないため）。",
+  "fix": "guard-config.mjsを新規にPreToolUseフックとして追加し、Edit/Write/MultiEdit/NotebookEditツールはfile_pathを、Bash/PowerShellはコマンド行を、settings.json・CLAUDE.md・hooks/・scripts/・approvals/のいずれかを名指しする書き込み・削除・リネーム形なら拒否するようにした。さらにsettings.json（user_settings）については、Claude Code公式のConfigChangeフックイベント（設定ファイルの変更そのものをexit 2でブロックできる、matcherは設定ソース単位）にも同じguard-config.mjsを登録し、PreToolUse側が想定していない書き込み経路であってもsettings.jsonの変更自体を止められるようにした（CLAUDE.md・hooks/・scripts/・approvals/にはConfigChangeに相当するblockableなイベントが無いため、これらは引き続きPreToolUse層のみで守られる）。approve-ddlを実行するという意図的な人間の手順だけは引き続き通る（人間自身の端末からの実行はClaude Codeのツール呼び出しを通らないため）。",
   "detection": {
     "checkable": true,
     "kind": "file-content",
     "target": "kit/claude/settings.json",
     "pattern": "GUARD_CONFIG_COMMAND",
     "expect": "present",
-    "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。"
+    "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。ConfigChange側の登録が消えると、settings.jsonについてはPreToolUseが想定していない経路での変更を止められなくなる。"
   },
   "related": [],
-  "tags": ["guard-config", "approve-ddl", "self-tamper", "self-approval"]
+  "tags": ["guard-config", "approve-ddl", "self-tamper", "self-approval", "configchange"]
 }

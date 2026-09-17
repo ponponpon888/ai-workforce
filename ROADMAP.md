@@ -71,7 +71,7 @@ PreToolUse側は既存のguard-sql/secrets向けの認識・カバレッジ・�
 guard-configはこれでNode版・PowerShell版・PreToolUse・ConfigChange・doctorによる静的検査、
 すべて揃った。
 
-## guard-destructive（deny をすり抜ける形の破壊系コマンド）— 実装・レビュー待ち（PR #30）
+## guard-destructive（deny をすり抜ける形の破壊系コマンド）— 実装・Windows 実機確認済み（PR #30）
 
 **2026-09-17、「基本版以降」にあった「`permissions.deny` は前方一致なので `cd /tmp && rm -rf x` /
 `timeout 30 rm -rf x` / サブシェル / パイプ経由ですり抜ける」という項目に着手し、前提が半分古かった
@@ -101,14 +101,31 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 `test-install-backups` / `test-lint-pitfalls` を更新。docs/02（日英）に「deny をすり抜ける形の、
 半分はもう古い話でした」の節を追加。
 
+`.github/workflows/test.yml` にも `test-guard-destructive.mjs` の実行と、インストール先ファイルの確認を
+足した（チャット側の GitHub 連携は workflow ファイルを書けないため、bundle で渡して手元から push した）。
+
+**Windows 実機での確認で、テストが通っていたのにすり抜ける原因が 2 つ見つかり、同じ PR で直した。**
+
+- [`hook-008`](data/pitfalls/hook-008.json): フックに「直接起動されたときだけ動く」判定を入れていたため、
+  リンクを含むパスに置くと何も見ずに exit 0 していた。PR の CI では macOS だけが落ちた。判定を削除し、
+  リンク（Windows ではジャンクション）経由で起動するテストを追加。
+- [`hook-009`](data/pitfalls/hook-009.json): settings.json に matcher `Bash|PowerShell` のエントリを 2 つ
+  （guard-secrets / guard-destructive）書いていたところ、`/hooks` では 1 hook しか登録されず、
+  guard-destructive が呼ばれていなかった。1 エントリに 2 フックをまとめる形に直し、doctor に
+  `hooks.duplicate-matcher` を追加。
+
+直したあとの 2026-09-17 の実機確認（Windows、PowerShell ツール。settings.json は一時的にキットのものに
+入れ替え、確認後に元へ戻す手順）: `/hooks` で `Bash|PowerShell` が 2 hooks、
+`cmd /c rd /s /q <存在しないフォルダ>`・`powershell -Command "Remove-Item -Recurse <同>"`・
+`git -C <worktree> push --force nowhere` の 3 つは `[guard-destructive] BLOCKED`、
+`Write-Output "rm -rf is blocked"` はそのまま実行された。docs/02 に「実機では、2回すり抜けました」を追加。
+
 **残り（このPRの外）:**
 
-- `.github/workflows/test.yml` に `test-guard-destructive.mjs` の実行とインストール先ファイルの確認を
-  足す（チャット側の GitHub 連携は workflow ファイルを書けないため、手元で入れる）。
 - `guard-destructive.ps1`（PowerShell 版）。`test-guard-destructive.mjs --target ps` で同じケースを
   当てられるようにしてある。
-- Windows 実機で、Claude Code 本体から実際に発火することの確認（guard-config のときと同じ手順）。
 - README / README.en の「4本柱」「5分で入れる」の記述をどうするか（guard-config と合わせて判断）。
+- 実機確認で使った `C:\Dev\ai-workforce-pr30`（worktree）と `settings.json.pre-pr30` の片付け。
 
 ## 基本開発で完了したこと
 
@@ -214,7 +231,8 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 - [ ] README・CHANGELOG の最終確認・タグ付け。guard-config・guard-destructive追加に伴い、README/README.enの
   「4本柱」や「5分で入れる」の記述をこの2つ込みに更新するかも合わせて判断する
   （guard-config・guard-destructive の各PRでは触っていない）。
-- [ ] guard-destructive（PR #30）のレビュー・Windows 実機確認・マージと、test.yml への追加。
+- [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008 / hook-009 を発見・修正した。
+- [ ] guard-destructive（PR #30）のマージ。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 

@@ -1,7 +1,7 @@
 {
   "id": "hook-008",
   "title": "「直接起動されたときだけ動く」判定のせいで、シンボリックリンク経由だとフックが何もせず exit 0 した",
-  "summary": "guard-destructive.mjs の最初の版は、テストから import できるように process.argv[1] と import.meta.url を比べ、一致したときだけ本体を動かしていた。Node はエントリのモジュールのシンボリックリンクを解決するので、リンクを含むパスで起動すると両者の綴りが食い違い、フックは入力を読まずに exit 0 した。止めるべきコマンドがすべて通る。単体テスト（206 件）はチェックアウト内の実パスで起動していたため全部緑で、PR の CI では一時ディレクトリが /var -> /private/var のリンクである macOS のジョブだけが落ちた。同じ日、Windows 実機でも Claude Code から 3 つのコマンドがフックに止められずに実行された（こちらの原因がこれかどうかは切り分け中）。",
+  "summary": "guard-destructive.mjs の最初の版は、テストから import できるように process.argv[1] と import.meta.url を比べ、一致したときだけ本体を動かしていた。Node はエントリのモジュールのシンボリックリンクを解決するので、リンクを含むパスで起動すると両者の綴りが食い違い、フックは入力を読まずに exit 0 した。止めるべきコマンドがすべて通る。単体テスト（206 件）はチェックアウト内の実パスで起動していたため全部緑で、PR の CI では一時ディレクトリが /var -> /private/var のリンクである macOS のジョブだけが落ちた。同じ日に Windows 実機でも Claude Code から 3 つのコマンドがフックに止められずに実行されたが、修正前のフックに同じペイロードを直接渡すと exit 2 で止まった。Windows 側の原因はこれではなく、hook-009 だった。",
   "layer": "hook",
   "kind": "trap",
   "severity": "high",
@@ -30,6 +30,6 @@
     "expect": "absent",
     "message": "フック本体に「自分が直接起動されたか」の判定を戻すと、リンクを含むパスに置かれたときに黙って無効になる。"
   },
-  "related": ["perm-006"],
+  "related": ["perm-006", "hook-009"],
   "tags": ["guard-destructive", "symlink", "entry-module", "silent-allow", "macos"]
 }

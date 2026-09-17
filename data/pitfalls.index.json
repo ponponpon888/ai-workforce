@@ -6,35 +6,35 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 18,
+    "total": 19,
     "by_set": {
-      "pitfalls": 18
+      "pitfalls": 19
     },
     "by_confidence": {
-      "measured": 12,
+      "measured": 13,
       "inferred": 3,
       "documented": 2,
       "unverified": 1
     },
     "by_status": {
-      "closed": 12,
+      "closed": 13,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 11,
+      "trap": 12,
       "limitation": 3,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 9,
+      "hook": 10,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 9,
+      "unknown_version": 10,
       "ok": 3,
       "not_applicable": 6
     },
@@ -327,7 +327,8 @@
       "has_prose": false,
       "checkable": true,
       "related": [
-        "perm-006"
+        "perm-006",
+        "hook-009"
       ],
       "tags": [
         "guard-destructive",
@@ -335,6 +336,32 @@
         "entry-module",
         "silent-allow",
         "macos"
+      ]
+    },
+    {
+      "id": "hook-009",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-009.json",
+      "title": "同じ matcher の PreToolUse エントリを 2 つ書くと、/hooks には 1 件しか登録されず、片方のフックが動かなかった",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#実機では2回すり抜けました",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "hook-008",
+        "perm-006"
+      ],
+      "tags": [
+        "guard-destructive",
+        "matcher",
+        "settings-json",
+        "silent-allow",
+        "windows"
       ]
     },
     {
@@ -519,7 +546,9 @@
       "checkable": true,
       "related": [
         "perm-001",
-        "perm-005"
+        "perm-005",
+        "hook-008",
+        "hook-009"
       ],
       "tags": [
         "deny",

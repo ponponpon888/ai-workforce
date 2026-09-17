@@ -24,6 +24,6 @@
     "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。"
   },
 
-  "related": ["perm-001", "perm-005"],
+  "related": ["perm-001", "perm-005", "hook-008", "hook-009"],
   "tags": ["deny", "prefix-match", "guard-destructive", "bash-c", "wrapper", "rm", "git-push"]
 }

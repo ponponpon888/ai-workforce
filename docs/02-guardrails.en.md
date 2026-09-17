@@ -735,6 +735,30 @@ bodies.
 `python3 -c "print('shutil.rmtree is dangerous')"` did fail the first test run. The hook now
 blanks string contents before looking for the call.
 
+### It got through twice on the real machine
+
+Every test passed. Asked to run `cmd /c rd /s /q <a folder that does not exist>`,
+Claude Code on Windows still ran it. There were two separate causes.
+
+**The first was the hook's own entry check** ([hook-008](../data/pitfalls/hook-008.json)).
+So that a test could import it, the hook only ran when it had been launched directly.
+Node resolves symlinks before loading the entry file, so placed under a path that
+contains a link, the check failed and the hook exited 0 without reading anything. Only
+the macOS CI job failed — its temp directory is the link `/var` -> `/private/var` —
+and that is how it surfaced. The check is gone, and a test now launches the hook
+through a link.
+
+**The second was how settings.json was written** ([hook-009](../data/pitfalls/hook-009.json)).
+guard-secrets and guard-destructive sat in **two separate entries** with the same matcher,
+`Bash|PowerShell`. `/hooks` showed that matcher with **1 hook**. Piping the same input to
+the hook directly did block, so the hook itself worked. With both hooks in one entry and
+the kit reinstalled, `/hooks` showed **2 hooks** and all three commands were stopped.
+doctor now reports two entries that share a matcher as an error.
+
+Neither was visible to the unit tests: the first is about where the hook is installed,
+the second about how Claude Code reads the file. **Opening `/hooks` on the real machine
+and counting** was the cheapest check there was.
+
 ### What is still open
 
 - the inside of a script file, an `npm run` script, a Makefile, a git alias defined earlier;

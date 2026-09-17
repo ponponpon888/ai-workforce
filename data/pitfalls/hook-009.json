@@ -1,0 +1,35 @@
+{
+  "id": "hook-009",
+  "title": "同じ matcher の PreToolUse エントリを 2 つ書くと、/hooks には 1 件しか登録されず、片方のフックが動かなかった",
+  "summary": "kit/claude/settings.json に、matcher が同じ Bash|PowerShell のエントリを 2 つ（guard-secrets 用と guard-destructive 用）並べて書いていた。Windows 実機の Claude Code で /hooks を開くと PreToolUse は 3 件で、[User] Bash|PowerShell の下は 1 hook だった。この状態で cmd /c rd /s、powershell -Command \"Remove-Item -Recurse ...\"、git -C ... push --force を PowerShell ツールで実行させると、3 つともフックに止められずに実行された（対象は存在しないフォルダと存在しないリモートで、何も消えていない）。同じフックファイルに同じペイロードを直接パイプで渡すと exit 2 で止まったので、フック本体は動いていた。2 つのフックを 1 つのエントリの hooks 配列にまとめて入れ直し、Claude Code を起動し直すと、/hooks の Bash|PowerShell は 2 hooks になり、同じ 3 コマンドは PreToolUse の段階で [guard-destructive] BLOCKED になった。なお、1 回目の観測の直前にセッションを起動し直したかどうかは記録していない。入れ替え前の settings.json の中身も控えていないので、古い設定が残っていた可能性は完全には外せていない。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#実機では2回すり抜けました",
+  "measured_on": "2026-09-17",
+  "environment": {
+    "os": "Windows",
+    "shell": "PowerShell",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "PR #30 の 2 コミット目までの kit を install.mjs --skip-claude-md で入れた。settings.json の PreToolUse は 4 エントリで、そのうち 2 つが matcher Bash|PowerShell（guard-secrets / guard-destructive）",
+    "Claude Code の /hooks で PreToolUse (3)、matcher 一覧で [User] Bash|PowerShell が 1 hook と表示された",
+    "PowerShell ツールで cmd /c rd /s /q <存在しないフォルダ>、powershell -Command \"Remove-Item -Recurse <同>\"、git -C <worktree> push --force nowhere を 1 つずつ実行させると、3 つとも実行された（エラーは対象が無いことによるもの）",
+    "インストール済みの guard-destructive.mjs に tool_name PowerShell・同じ cmd /c rd /s のペイロードをパイプで直接渡すと、[guard-destructive] BLOCKED と exit 2 が返った",
+    "settings.json テンプレートを、Bash|PowerShell の 1 エントリに guard-secrets と guard-destructive の 2 フックを並べる形に直して入れ直し、/exit のあと claude を起動し直した",
+    "/hooks の [User] Bash|PowerShell が 2 hooks になり、同じ 3 コマンドは PreToolUse:PowerShell hook error ... [guard-destructive] BLOCKED で止まった。Write-Output \"rm -rf is blocked\" はそのまま実行された"
+  ],
+  "status": "closed",
+  "fix": "テンプレートを 1 matcher 1 エントリにした（Bash|PowerShell のエントリに guard-secrets と guard-destructive を並べる）。doctor.mjs に、PreToolUse のエントリ同士で matcher の文字列が重複していたらエラーにする hooks.duplicate-matcher を追加し、test-doctor にテンプレートが 1 matcher 1 エントリであることを見るテストを足した。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "部分文字列の有無では表せないため、この linter の対象外。静的には doctor.mjs の hooks.duplicate-matcher が検出する。Claude Code 側の挙動そのものは /hooks で件数を見るしかない。"
+  },
+  "related": ["hook-008", "perm-006"],
+  "tags": ["guard-destructive", "matcher", "settings-json", "silent-allow", "windows"]
+}

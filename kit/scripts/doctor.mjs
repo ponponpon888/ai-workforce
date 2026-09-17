@@ -13,6 +13,7 @@ const modes = ['default', 'manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'b
 const guards = [
   { name: 'guard-sql', token: '{{GUARD_SQL_COMMAND}}', tools: ['Bash', 'PowerShell', 'mcp__supabase__execute_sql', 'mcp__postgres__query', 'mcp__neon__query', 'mcp__planetscale__query'] },
   { name: 'guard-secrets', token: '{{GUARD_SECRETS_COMMAND}}', tools: ['Bash', 'PowerShell'] },
+  { name: 'guard-config', token: '{{GUARD_CONFIG_COMMAND}}', tools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell'] },
 ];
 
 export function inspectSettings(settings, { template = false, claudeHome = join(homedir(), '.claude') } = {}) {
@@ -88,6 +89,46 @@ export function inspectSettings(settings, { template = false, claudeHome = join(
     if (!recognized) add('unknown', `${guard.name}.registration`, 'No standard kit registration found; missing or custom commands need manual verification.');
     else if (guard.tools.some(tool => !covered.has(tool))) add('error', `${guard.name}.coverage`, 'The guard matcher does not cover all representative kit tool names.');
   }
+
+  // ConfigChange: only guard-config registers on this event, since only
+  // settings.json (a "user_settings" configuration source) has a native
+  // change event Claude Code can block on. Checked separately from the
+  // PreToolUse guards above because the entry shape differs (matcher is a
+  // configuration source, not a tool name) and only one guard uses it.
+  // See data/pitfalls/hook-007.json for what this layer does and does not
+  // cover; this check only confirms the registration exists, the same way
+  // the PreToolUse checks above do not confirm a hook actually fires.
+  const configChangeEntries = settings.hooks?.ConfigChange;
+  if (configChangeEntries !== undefined && !Array.isArray(configChangeEntries)) {
+    add('error', 'hooks.configchange.shape', 'ConfigChange must be an array of matcher entries.');
+  } else {
+    let recognized = false;
+    for (const entry of configChangeEntries ?? []) {
+      if (!object(entry) || typeof entry.matcher !== 'string' || !Array.isArray(entry.hooks)) {
+        add('error', 'hooks.configchange.shape', 'Each ConfigChange entry needs a matcher string and hooks array.');
+        continue;
+      }
+      if (entry.matcher !== 'user_settings') continue;
+      for (const hook of entry.hooks) {
+        if (!object(hook)) { add('error', 'hooks.configchange.shape', 'Hook definitions must be objects.'); continue; }
+        if (!template && typeof hook.command === 'string' && /\{\{[^}]+\}\}/.test(hook.command)) {
+          add('error', 'hooks.placeholder', 'Installed ConfigChange hook command contains an unexpanded placeholder.');
+        }
+        if (hook.type !== 'command' || typeof hook.command !== 'string') continue;
+        let matches = template && hook.command === '{{GUARD_CONFIG_COMMAND}}';
+        if (!template) for (const extension of ['mjs', 'ps1']) {
+          const path = join(resolve(claudeHome), 'hooks', `guard-config.${extension}`);
+          const forms = [path, path.replaceAll('\\', '/')];
+          const expected = forms.flatMap(f => extension === 'mjs' ? [`node "${f}"`] :
+            ['powershell.exe', 'pwsh'].map(exe => `${exe} -NoProfile -ExecutionPolicy Bypass -File "${f}"`));
+          if (expected.includes(hook.command)) matches = true;
+        }
+        if (matches) recognized = true;
+      }
+    }
+    if (!recognized) add('unknown', 'guard-config.configchange.registration', 'No standard guard-config ConfigChange registration found on user_settings; missing or custom commands need manual verification.');
+  }
+
   add('info', 'host.unverified', 'Only one settings file was checked. Interpreter availability, file contents, host version, effective settings precedence, and actual hook execution remain unverified. No configured command was executed.');
   return result();
 }

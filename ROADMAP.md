@@ -13,31 +13,33 @@
 ため、`ci/restore-macos-on-public`（PR #25）でmacOSジョブをpush/PR両方に戻した
 （docsのみpathsのスキップは課金と無関係の判断なので維持）。
 
-## 開発中: guard-config（自己改ざん防止）
+## guard-config（自己改ざん防止）— 実装・マージ済み
 
-**2026-09-17、外部の競合調査をきっかけに着手。** `karanb192/claude-code-hooks` が
-「エージェント自身にガードレールを書き換えさせない」専用フック（config-guard）を持っている
-ことを知り、AI Workforce にはこれが無いと気づいた。さらにコードを読み返した結果、
-**guard-sql の DDL 承認ゲートには、人間を介さない自己承認という具体的な抜け道があった**
-（`hook-006`、confidence: inferred — 実際に自己承認を再現してはいない。approve-ddl の
-フィンガープリント計算式が本リポジトリに公開されているため、エージェントが
-`~/.claude/approvals/` に直接ファイルを書けば同じ値を計算して自己承認できてしまう）。
+**2026-09-17、外部の競合調査をきっかけに着手し、[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26) でマージ済み。**
+`karanb192/claude-code-hooks` が「エージェント自身にガードレールを書き換えさせない」専用
+フック（config-guard）を持っていることを知り、AI Workforce にはこれが無いと気づいた。
+さらにコードを読み返した結果、**guard-sql の DDL 承認ゲートには、人間を介さない自己承認
+という具体的な抜け道があった**（[`hook-006`](https://github.com/ponponpon888/ai-workforce/blob/main/data/pitfalls/hook-006.json)、
+confidence: inferred — 実際に自己承認を再現してはいない。approve-ddl のフィンガープリント
+計算式が本リポジトリに公開されているため、エージェントが `~/.claude/approvals/` に直接
+ファイルを書けば同じ値を計算して自己承認できてしまう）。
 
 `kit/claude/hooks/guard-config.mjs` を新設。`settings.json`・`CLAUDE.md`・`hooks/`・
 `scripts/`・`approvals/` のいずれかを、Edit/Write/MultiEdit/NotebookEdit ツールの
 `file_path` で、または Bash/PowerShell のコマンド行（`&&`/`||`/`;`/`$(` で分割した
-セグメントごと）で名指しする書き込み・削除・リネームを拒否する。`install.mjs` と
-`kit/claude/settings.json` のテンプレートに配線済み、`test-guard-config.mjs`（20件）を追加。
+セグメントごと）で名指しする書き込み・削除・リネームを拒否する。`install.mjs` /
+`install.ps1` / `kit/claude/settings.json` のテンプレートに配線済み。`test-guard-config.mjs`
+（24件）を追加し、`test-guard-sql.mjs`（45/45）・`test-guard-secrets.mjs`（65/65）・
+`test-doctor.mjs`（28/28、3つ目のPreToolUseエントリを前提にしていなかった箇所を修正）・
+`test-install-backups.mjs`（フック数の決め打ちとファイル一覧の不足を修正）・
+`test-installed-approval.mjs`・`test-verify-installers.mjs`・`doctor.mjs --template` を
+Windows実機で確認してからマージした。
 
-**未完了（レビュー前に必要）**:
-- [ ] `test-guard-config.mjs` を実際に実行して20件通ることを確認する（このPRを作った
-  サンドボックスはネットワーク制約で実行できていない）
-- [ ] `.github/workflows/test.yml` に `test-guard-config.mjs` の呼び出しを追加する
-  （チャット側は `.github/workflows/` を書けないため、手元での反映が必要）
-- [ ] `doctor.mjs` の `guards` 配列への追加は今回のPRでは見送った。手計算で `guards` を
-  触ると壊れるリスクの方が大きいと判断したため、動作確認が済んでから別PRで対応する
-- [ ] `guard-config.ps1`（PowerShell版）は未着手。guard-sql/guard-secretsと違い、
-  今回は Node 版のみ
+**今回見送ったもの（follow-up扱い）**:
+- `doctor.mjs` の `guards` 配列への guard-config 追加。手計算で触ると壊すリスクの方が
+  大きいと判断したため、`test-doctor.mjs` 通過を確認できてから別PRで対応する
+- `guard-config.ps1`（PowerShell版）。`install.ps1` は `-Hook powershell` でも guard-config
+  だけは Node 版を登録する
 
 ## 基本開発で完了したこと
 
@@ -136,8 +138,10 @@
   テストケース数の古い表記（44→45）の修正を済ませてから切り替えた。
 - [x] main 上での CI（test.yml）の成功確認。public化後、`ci/restore-macos-on-public`
   （PR #25）でmacOSをpush/PR対象に戻し、mainで3OS実行を確認する運用に戻した。
-- [ ] guard-config（上記「開発中」参照）のレビューとマージ。
-- [ ] README・CHANGELOG の最終確認・タグ付け。
+- [x] guard-config（上記参照）のレビューとマージ。[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26)。
+- [ ] README・CHANGELOG の最終確認・タグ付け。guard-config追加に伴い、README/README.enの
+  「4本柱」や「5分で入れる」の記述をguard-config込みに更新するかも合わせて判断する
+  （今回のPRでは触っていない）。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 

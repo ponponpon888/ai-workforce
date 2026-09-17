@@ -112,6 +112,9 @@ install(readFileSync(join(srcClaude, 'hooks', 'guard-sql.mjs'), 'utf8'), sqlDest
 const secretsDest = join(claudeHome, 'hooks', 'guard-secrets.mjs');
 install(readFileSync(join(srcClaude, 'hooks', 'guard-secrets.mjs'), 'utf8'), secretsDest);
 
+const configDest = join(claudeHome, 'hooks', 'guard-config.mjs');
+install(readFileSync(join(srcClaude, 'hooks', 'guard-config.mjs'), 'utf8'), configDest);
+
 // JSON escaping and shell quoting are separate layers. Inside POSIX double
 // quotes these four characters still have shell meaning.
 const quoteHookPath = (path) => '"' + (process.platform === 'win32'
@@ -119,6 +122,7 @@ const quoteHookPath = (path) => '"' + (process.platform === 'win32'
   : path.replace(/[\\"$`]/g, character => '\\' + character)) + '"';
 const hookCommand = `node ${quoteHookPath(sqlDest)}`;
 const secretsCommand = `node ${quoteHookPath(secretsDest)}`;
+const configCommand = `node ${quoteHookPath(configDest)}`;
 
 // --- 2b. approval script ----------------------------------------------------
 //
@@ -142,15 +146,17 @@ if (skipSettings) {
   console.log('  skipped (--skip-settings). Add these PreToolUse hooks to your own settings.json:');
   console.log(`    ${hookCommand}`);
   console.log(`    ${secretsCommand}`);
+  console.log(`    ${configCommand}`);
 } else {
   const replacements = {
     CLAUDE_HOME: claudeHome.replaceAll('\\', '/'),
     GUARD_SQL_COMMAND: hookCommand,
     GUARD_SECRETS_COMMAND: secretsCommand,
+    GUARD_CONFIG_COMMAND: configCommand,
   };
   // One pass; replacement values are literal data, never replacement syntax.
   const settings = readFileSync(join(srcClaude, 'settings.json'), 'utf8')
-    .replace(/\{\{(CLAUDE_HOME|GUARD_SQL_COMMAND|GUARD_SECRETS_COMMAND)\}\}/g,
+    .replace(/\{\{(CLAUDE_HOME|GUARD_SQL_COMMAND|GUARD_SECRETS_COMMAND|GUARD_CONFIG_COMMAND)\}\}/g,
       (_, key) => forJson(replacements[key]));
 
   // One deny rule is Windows-only. On Windows it is live, and wider than the
@@ -192,15 +198,18 @@ for (const entry of pending) writeInstalledFile(entry.content, entry.destination
 console.log('');
 console.log('Done. Two things are deliberately left to you:');
 console.log('');
-console.log('  a) Verify both hooks fire. In Claude Code, ask it to run:');
+console.log('  a) Verify all three hooks fire. In Claude Code, ask it to run:');
 console.log('       select 1; drop table nothing;      -> [guard-sql] must block it');
 console.log('       cat .env                           -> [guard-secrets] must block it');
-console.log('     If either goes through, that hook is not wired up and you are');
+console.log('     Then ask it to edit or delete your own settings.json or CLAUDE.md:');
+console.log('       -> [guard-config] must block it');
+console.log('     If any of these goes through, that hook is not wired up and you are');
 console.log('     unprotected on that side.');
 console.log('');
 console.log('     The test suites cover behaviour, not wiring:');
 console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-sql.mjs')}`);
 console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-secrets.mjs')}`);
+console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-config.mjs')}`);
 console.log('');
 console.log('  b) Register pull-all if you want it. It brings every repo under a root');
 console.log('     up to date at login without ever touching work in progress.');

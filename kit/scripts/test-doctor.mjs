@@ -32,18 +32,20 @@ try {
   test('custom command is incomplete, never falsely passed', () => { const s = clone(); s.hooks.PreToolUse[0].hooks[0].command = 'custom-check'; assert.equal(inspectSettings(s, { template: true }).status, 'incomplete'); });
   test('null document rejected', () => assert.equal(inspectSettings(null).status, 'error'));
   mkdirSync(join(temp, 'hooks'));
-  for (const n of ['guard-sql', 'guard-secrets']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
+  for (const n of ['guard-sql', 'guard-secrets', 'guard-config']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
   const installed = clone();
-  for (const [i, n] of ['guard-sql', 'guard-secrets'].entries()) installed.hooks.PreToolUse[i].hooks[0].command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
+  for (const [i, n] of ['guard-sql', 'guard-secrets', 'guard-config'].entries()) installed.hooks.PreToolUse[i].hooks[0].command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
   test('standard installed commands with spaces recognized', () => assert.equal(inspectSettings(installed, { claudeHome: temp }).status, 'static-pass'));
   test('installed placeholders rejected', () => assert(inspectSettings(clone(), { claudeHome: temp }).findings.some(f => f.id === 'hooks.placeholder')));
   test('missing registered file rejected', () => { rmSync(join(temp, 'hooks', 'guard-sql.mjs')); assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-sql.file')); writeFileSync(join(temp, 'hooks', 'guard-sql.mjs'), '// stub'); });
-  test('PowerShell installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets'].entries()) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; } assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
-  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets'].entries()) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; } assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
+  // guard-config has no .ps1 port yet, so the PowerShell installer still registers it with node.
+  test('PowerShell installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets','guard-config'].entries()) { if (n === 'guard-config') { s.hooks.PreToolUse[i].hooks[0].command = installed.hooks.PreToolUse[i].hooks[0].command; continue; } writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; } assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
+  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets','guard-config'].entries()) { if (n === 'guard-config') { s.hooks.PreToolUse[i].hooks[0].command = installed.hooks.PreToolUse[i].hooks[0].command; continue; } writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; } assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
   test('CLI never executes malicious configured command or changes settings', () => {
     const s = clone(); const sentinel = join(temp, 'executed');
     s.hooks.PreToolUse[0].hooks[0].command = `node -e "require('fs').writeFileSync('${sentinel.replaceAll('\\','/')}','bad')"`;
     s.hooks.PreToolUse[1].hooks[0].command = installed.hooks.PreToolUse[1].hooks[0].command;
+    s.hooks.PreToolUse[2].hooks[0].command = installed.hooks.PreToolUse[2].hooks[0].command;
     const bytes = JSON.stringify(s); writeFileSync(join(temp, 'settings.json'), bytes);
     const r = cli(['--claude-home', temp, '--json']); assert.equal(r.status, 2); assert.equal(JSON.parse(r.stdout).hostVerification, 'not-performed'); assert(!existsSync(sentinel)); assert.equal(readFileSync(join(temp,'settings.json'),'utf8'),bytes);
   });

@@ -6,30 +6,30 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 14,
+    "total": 15,
     "by_set": {
-      "pitfalls": 14
+      "pitfalls": 15
     },
     "by_confidence": {
       "measured": 10,
-      "inferred": 2,
+      "inferred": 3,
       "documented": 1,
       "unverified": 1
     },
     "by_status": {
-      "closed": 8,
+      "closed": 9,
       "open_recorded": 1,
       "untouched": 2,
       "none": 3
     },
     "by_kind": {
-      "trap": 9,
+      "trap": 10,
       "limitation": 2,
       "behaviour": 3
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 6,
+      "hook": 7,
       "runtime": 1,
       "ci": 1,
       "external": 1
@@ -37,10 +37,10 @@
     "by_stale_risk": {
       "unknown_version": 8,
       "ok": 2,
-      "not_applicable": 4
+      "not_applicable": 5
     },
-    "without_prose": 6,
-    "checkable": 6
+    "without_prose": 7,
+    "checkable": 7
   },
   "checks": [
     {
@@ -77,6 +77,15 @@
       "pattern": "mcp__.*[Ss]upabase",
       "expect": "present",
       "message": "matcherが固定接頭辞のmcp__[Ss]upabase__.*に戻ると、実際のSupabase MCPツール名に一致しなくなる。guard-sql.mjs/guard-sql.ps1内部のSQL_TOOL_RE/toolNameチェックも同じパターンを使っているため、合わせて確認すること。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-006",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "GUARD_CONFIG_COMMAND",
+      "expect": "present",
+      "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。",
       "severity": "high"
     },
     {
@@ -237,6 +246,28 @@
         "approve-ddl",
         "display",
         "fingerprint"
+      ]
+    },
+    {
+      "id": "hook-006",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-006.json",
+      "title": "自分自身のapprovalsファイルを直接書けば、エージェントはDDL承認ゲートを人間抜きで自己承認できた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [],
+      "tags": [
+        "guard-config",
+        "approve-ddl",
+        "self-tamper",
+        "self-approval"
       ]
     },
     {

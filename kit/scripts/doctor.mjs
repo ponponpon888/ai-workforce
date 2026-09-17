@@ -48,17 +48,10 @@ export function inspectSettings(settings, { template = false, claudeHome = join(
   const entries = settings.hooks?.PreToolUse;
   if (!Array.isArray(entries)) { add('error', 'hooks.missing', 'PreToolUse must be an array containing both guards.'); return result(); }
   const validEntries = [];
-  const seenMatchers = new Set();
   for (const entry of entries) {
     if (!object(entry) || typeof entry.matcher !== 'string' || !Array.isArray(entry.hooks)) {
       add('error', 'hooks.shape', 'Each PreToolUse entry needs a matcher string and hooks array.'); continue;
     }
-    // Two entries with the same matcher string: Claude Code's /hooks listed the
-    // matcher once, with one hook, and the other entry's hook never ran.
-    if (seenMatchers.has(entry.matcher)) {
-      add('error', 'hooks.duplicate-matcher', 'Two PreToolUse entries use the same matcher string; only one was registered in a live check. Put their hooks in one entry.');
-    }
-    seenMatchers.add(entry.matcher);
     try { validEntries.push({ ...entry, regex: new RegExp(entry.matcher) }); }
     catch { add('error', 'hooks.matcher', 'A PreToolUse matcher is not a valid regular expression.'); }
     for (const hook of entry.hooks) {

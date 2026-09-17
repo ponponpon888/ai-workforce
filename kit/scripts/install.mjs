@@ -208,7 +208,13 @@ for (const entry of pending) writeInstalledFile(entry.content, entry.destination
 console.log('');
 console.log('Done. Two things are deliberately left to you:');
 console.log('');
-console.log('  a) Verify all four hooks fire. In Claude Code, ask it to run:');
+console.log('  a) Quit Claude Code (/exit) and start it again. A running session keeps the');
+console.log('     hooks it started with, and guard-config refuses live changes to');
+console.log('     settings.json on purpose. Then open /hooks: PreToolUse must show');
+console.log('     Bash|PowerShell with 2 hooks. If it shows 1, you are still testing the');
+console.log('     old settings, and every result below is meaningless.');
+console.log('');
+console.log('     Verify all four hooks fire. In Claude Code, ask it to run:');
 console.log('       select 1; drop table nothing;      -> [guard-sql] must block it');
 console.log('       cat .env                           -> [guard-secrets] must block it');
 console.log("       bash -c 'rm -rfv ./aiwf-nothing'   -> [guard-destructive] must block it");

@@ -33,10 +33,9 @@ try {
   test('invalid matcher rejected', () => finding(s => s.hooks.PreToolUse[0].matcher = '[', 'hooks.matcher'));
   test('SQL matcher missing PowerShell is caught', () => finding(s => s.hooks.PreToolUse[0].matcher = '^Bash$', 'guard-sql.coverage'));
   test('every guard placeholder is present in the template', () => assert.deepEqual(Object.keys(POS).sort(), Object.values(TOKENS).sort()));
+  test('two entries with the same matcher are accepted', () => { const s = clone(); const [i, j] = POS['guard-destructive']; const h = s.hooks.PreToolUse[i].hooks.splice(j, 1)[0]; s.hooks.PreToolUse.push({ matcher: s.hooks.PreToolUse[i].matcher, hooks: [h] }); assert.equal(inspectSettings(s, { template: true }).status, 'static-pass'); });
   test('destructive matcher missing PowerShell is caught', () => finding(s => s.hooks.PreToolUse[POS['guard-destructive'][0]].matcher = '^Bash$', 'guard-destructive.coverage'));
   test('missing destructive guard is not silently passed', () => finding(s => s.hooks.PreToolUse[POS['guard-destructive'][0]].hooks.splice(POS['guard-destructive'][1], 1), 'guard-destructive.registration'));
-  test('duplicate PreToolUse matcher rejected', () => finding(s => s.hooks.PreToolUse.push({ matcher: s.hooks.PreToolUse[POS['guard-destructive'][0]].matcher, hooks: [] }), 'hooks.duplicate-matcher'));
-  test('template has one entry per matcher', () => { const m = source.hooks.PreToolUse.map(e => e.matcher); assert.equal(new Set(m).size, m.length); });
   test('async guard cannot count as a verified gate', () => finding(s => s.hooks.PreToolUse[0].hooks[0].async = true, 'guard-sql.execution'));
   test('zero timeout rejected', () => finding(s => s.hooks.PreToolUse[0].hooks[0].timeout = 0, 'guard-sql.timeout'));
   test('custom command is incomplete, never falsely passed', () => { const s = clone(); s.hooks.PreToolUse[0].hooks[0].command = 'custom-check'; assert.equal(inspectSettings(s, { template: true }).status, 'incomplete'); });

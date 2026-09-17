@@ -109,12 +109,14 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 - [`hook-008`](data/pitfalls/hook-008.json): フックに「直接起動されたときだけ動く」判定を入れていたため、
   リンクを含むパスに置くと何も見ずに exit 0 していた。PR の CI では macOS だけが落ちた。判定を削除し、
   リンク（Windows ではジャンクション）経由で起動するテストを追加。
-- [`hook-009`](data/pitfalls/hook-009.json): settings.json に matcher `Bash|PowerShell` のエントリを 2 つ
-  （guard-secrets / guard-destructive）書いていたところ、`/hooks` では 1 hook しか登録されず、
-  guard-destructive が呼ばれていなかった。1 エントリに 2 フックをまとめる形に直し、doctor に
-  `hooks.duplicate-matcher` を追加。
+- [`hook-009`](data/pitfalls/hook-009.json): 実機の確認が、入れ替え前の設定のまま動いていたセッションで
+  行われていた（`/hooks` の件数が入れ替え前のファイルと同じだった）。いったん「同じ matcher のエントリが
+  2 つあると片方しか登録されない」と取り違えて doctor にエラーを足したが、バックアップの時刻から
+  分けた版のままでも 2 hooks で動いていたと分かり、取り消した。テンプレートは 1 エントリに
+  まとめた形のまま（どちらでも動く）。インストーラの最後に「起動し直して `/hooks` で 2 hooks を
+  確認してから試す」を追加。
 
-直したあとの 2026-09-17 の実機確認（Windows、PowerShell ツール。settings.json は一時的にキットのものに
+起動し直したあとの 2026-09-17 の実機確認（Windows、PowerShell ツール。settings.json は一時的にキットのものに
 入れ替え、確認後に元へ戻す手順）: `/hooks` で `Bash|PowerShell` が 2 hooks、
 `cmd /c rd /s /q <存在しないフォルダ>`・`powershell -Command "Remove-Item -Recurse <同>"`・
 `git -C <worktree> push --force nowhere` の 3 つは `[guard-destructive] BLOCKED`、
@@ -125,7 +127,6 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 - `guard-destructive.ps1`（PowerShell 版）。`test-guard-destructive.mjs --target ps` で同じケースを
   当てられるようにしてある。
 - README / README.en の「4本柱」「5分で入れる」の記述をどうするか（guard-config と合わせて判断）。
-- 実機確認で使った `C:\Dev\ai-workforce-pr30`（worktree）と `settings.json.pre-pr30` の片付け。
 
 ## 基本開発で完了したこと
 
@@ -231,7 +232,7 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 - [ ] README・CHANGELOG の最終確認・タグ付け。guard-config・guard-destructive追加に伴い、README/README.enの
   「4本柱」や「5分で入れる」の記述をこの2つ込みに更新するかも合わせて判断する
   （guard-config・guard-destructive の各PRでは触っていない）。
-- [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008 / hook-009 を発見・修正した。
+- [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008（フックの不具合）と hook-009（確認手順の落とし穴）を発見・対処した。
 - [ ] guard-destructive（PR #30）のマージ。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。

@@ -241,7 +241,13 @@ foreach ($entry in $pending) {
 Write-Host ''
 Write-Host 'Done. Two things are deliberately left to you:' -ForegroundColor Green
 Write-Host ''
-Write-Host '  a) Verify all four hooks fire. In Claude Code, ask it to run:' -ForegroundColor White
+Write-Host '  a) Quit Claude Code (/exit) and start it again. A running session keeps the' -ForegroundColor White
+Write-Host '     hooks it started with, and guard-config refuses live changes to'
+Write-Host '     settings.json on purpose. Then open /hooks: PreToolUse must show'
+Write-Host '     Bash|PowerShell with 2 hooks. If it shows 1, you are still testing the'
+Write-Host '     old settings, and every result below is meaningless.'
+Write-Host ''
+Write-Host '     Verify all four hooks fire. In Claude Code, ask it to run:'
 Write-Host '       select 1; drop table nothing;      -> [guard-sql] must block it'
 Write-Host '       Get-Content .env                   -> [guard-secrets] must block it'
 Write-Host "       cmd /c rd /s /q .\aiwf-nothing     -> [guard-destructive] must block it"

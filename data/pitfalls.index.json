@@ -342,7 +342,7 @@
       "id": "hook-009",
       "set": "pitfalls",
       "file": "data/pitfalls/hook-009.json",
-      "title": "同じ matcher の PreToolUse エントリを 2 つ書くと、/hooks には 1 件しか登録されず、片方のフックが動かなかった",
+      "title": "設定を入れ替えても、起動中のセッションは前のフック構成のまま動いていた（/hooks の件数で見分けられた）",
       "layer": "hook",
       "kind": "trap",
       "severity": "high",
@@ -353,14 +353,16 @@
       "has_prose": true,
       "checkable": false,
       "related": [
+        "hook-007",
         "hook-008",
         "perm-006"
       ],
       "tags": [
         "guard-destructive",
-        "matcher",
+        "stale-session",
+        "restart",
+        "configchange",
         "settings-json",
-        "silent-allow",
         "windows"
       ]
     },

@@ -748,16 +748,33 @@ the macOS CI job failed — its temp directory is the link `/var` -> `/private/v
 and that is how it surfaced. The check is gone, and a test now launches the hook
 through a link.
 
-**The second was how settings.json was written** ([hook-009](../data/pitfalls/hook-009.json)).
-guard-secrets and guard-destructive sat in **two separate entries** with the same matcher,
-`Bash|PowerShell`. `/hooks` showed that matcher with **1 hook**. Piping the same input to
-the hook directly did block, so the hook itself worked. With both hooks in one entry and
-the kit reinstalled, `/hooks` showed **2 hooks** and all three commands were stopped.
-doctor now reports two entries that share a matcher as an error.
+**The second was that I was testing old settings** ([hook-009](../data/pitfalls/hook-009.json)).
+`/hooks` showed `Bash|PowerShell` with **1 hook**. Piping the same input to the hook directly
+did block, so the hook itself worked.
 
-Neither was visible to the unit tests: the first is about where the hook is installed,
-the second about how Claude Code reads the file. **Opening `/hooks` on the real machine
-and counting** was the cheapest check there was.
+My first reading was that guard-secrets and guard-destructive, written as two separate entries
+with the same matcher, had collapsed into one. I merged them into one entry and added a doctor
+check for it. **That was wrong.**
+
+The installer's backup files carry a timestamp. The merged version went in at 17:23; the check
+where all three commands were stopped had finished at 17:19. At that moment the file on disk
+still had the two separate entries. After a restart, `/hooks` showed **2 hooks**, and both ran.
+And while it was failing, `/hooks` had shown exactly the three matchers of the settings file
+from before the install.
+
+So **the running session was still using the settings it started with.** Those earlier settings
+were an older install of this kit, guard-config included. That version refuses to let a running
+session pick up a change to settings.json ([hook-007](../data/pitfalls/hook-007.json); whether
+its ConfigChange entry was present was not recorded). Most likely, my own guard kept my own
+check on the old configuration. The doctor check is gone, and the installer now ends with "restart, open
+`/hooks`, and see 2 hooks before you test".
+
+It is the same shape of mistake as "Two spellings, and both of them worked": **I compared
+without first checking what I was comparing.**
+
+Neither was visible to the unit tests: the first is about where the hook is installed, the
+second about which settings the session is actually running. **Before testing, open `/hooks`
+and check that the counts match the file** — the cheapest check there was.
 
 ### What is still open
 

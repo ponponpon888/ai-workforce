@@ -121,6 +121,20 @@
           }
         ]
       }
+    ],
+    "ConfigChange": [
+      {
+        "//": "Refuses any change to this installed settings.json outright, no matter how it was made. Complements the PreToolUse entry above, which only recognizes the write shapes it was written to pattern-match; this one is Claude Code's own file-change detection and has no such gap for settings.json specifically. Scoped to user_settings only -- it does not reach CLAUDE.md, hooks/, scripts/, or approvals/, which stay on the PreToolUse layer.",
+        "matcher": "user_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{GUARD_CONFIG_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-config: checking settings.json change"
+          }
+        ]
+      }
     ]
   }
 }

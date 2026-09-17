@@ -1,0 +1,33 @@
+{
+  "id": "hook-007",
+  "title": "ConfigChangeのblockは実行中セッションへの反映を止めるだけで、ディスク上のsettings.jsonは書き換わったまま残る",
+  "summary": "guard-config.mjsをConfigChangeイベント(user_settings)に登録し、Claude Code実行中に別の端末からsettings.jsonを直接書き換えて実測した。フックはexit 2で正しく発火し、--debugのログにも「ConfigChange hook blocked change to ...settings.json」と記録され、そのセッションのpermissions.allowには追加した行が反映されなかった（直後に同じルールに該当するコマンドをBashツールで試すと、通常の確認フローに落ちた）。しかしファイル自体を読み直すと、追加した行はディスク上にそのまま残っていた。さらに、Claude Codeを起動する前（セッションが無い間）に同じ書き換えを行った場合は、次回起動時にその内容がそのまま「起動時の設定」として読み込まれ、ConfigChangeの対象にすらならなかった（起動ログに書き換え後の17件のallowルールがそのまま載っていた）。",
+  "layer": "hook",
+  "kind": "behaviour",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-17",
+  "environment": {
+    "os": "Windows",
+    "shell": "PowerShell",
+    "shell_version": "unrecorded",
+    "claude_code_version": "2.1.274",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "kit/scripts/install.mjs --skip-claude-md でguard-configを含むkitを導入し、Claude Codeを再起動してhooks.ConfigChange(user_settings)の登録を反映させた（/hooksメニューでConfigChange (1)を確認）",
+    "Claude Code起動中に、別のPowerShellウィンドウからsettings.jsonのpermissions.allow配列に新しいルールを直接追記して保存した",
+    "--debugログにDetected change to settings.json→guard-config.mjsが{\"decision\":\"block\",...}を返す→ConfigChange hook blocked change to ...settings.json、と記録されたことを確認した",
+    "直後に、追加したルールに該当するコマンドをBashツールで実行させたところ、自動許可されず通常の確認フローに落ちた（そのセッションには反映されていない）",
+    "しかしsettings.jsonをClaude CodeにReadツールで読み直させたところ、追記したルールはファイル上にそのまま残っていた",
+    "別途、Claude Codeを終了した状態で同じ書き換えを行い再起動したところ、起動直後の--debugログには、その行を含んだallowルール17件が「Adding 17 allow rule(s)」としてそのまま読み込まれており、ConfigChangeとしての検知は一切発生していなかった"
+  ],
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "Claude Code自体の実行時挙動であり、ファイル内容の静的検査では確かめられない。"
+  },
+  "related": ["hook-006"],
+  "tags": ["guard-config", "configchange", "settings-json", "restart"]
+}

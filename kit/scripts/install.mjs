@@ -5,8 +5,10 @@
  * The macOS / Linux installer. Windows has install.ps1, which does the same
  * thing and additionally offers the PowerShell hook.
  *
- * Copies the shared CLAUDE.md, settings.json and the guard-sql hook into
+ * Copies the shared CLAUDE.md, settings.json and the guard hooks into
  * ~/.claude, backing up anything already there. Nothing is deleted.
+ * The hooks are guard-sql, guard-secrets and guard-config (self-tamper
+ * protection for these settings, CLAUDE.md and the hooks themselves).
  *
  *   node kit/scripts/install.mjs --dry-run     # show what would happen
  *   node kit/scripts/install.mjs

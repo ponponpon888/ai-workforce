@@ -4,8 +4,10 @@
     Install the AI Workforce kit into your Claude Code home directory.
 
 .DESCRIPTION
-    Copies the shared CLAUDE.md, settings.json and the guard-sql hook into
+    Copies the shared CLAUDE.md, settings.json and the guard hooks into
     ~/.claude, backing up anything already there. Nothing is deleted.
+    The hooks are guard-sql, guard-secrets and guard-config (self-tamper
+    protection for these settings, CLAUDE.md and the hooks themselves).
 
     Run with -WhatIf first to see exactly what would happen.
 
@@ -144,9 +146,14 @@ if ($Hook -eq 'node') {
     $secretsCommand = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
 }
 
+# guard-config is always the Node version, even with -Hook powershell:
+# there is no guard-config.ps1 port yet.
+$configFile    = 'guard-config.mjs'
+$configCommand = "node `"$homeSlash/hooks/guard-config.mjs`""
+
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would
 # assign file content to the $Hook parameter and trip its ValidateSet.
-foreach ($hookFile in @($sqlFile, $secretsFile)) {
+foreach ($hookFile in @($sqlFile, $secretsFile, $configFile)) {
     $hookContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\$hookFile") -Raw -Encoding UTF8
     Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
 }
@@ -169,12 +176,14 @@ if ($SkipSettings) {
     Write-Step 'skipped (-SkipSettings). Add these PreToolUse hooks to your own settings.json:'
     Write-Step "  $hookCommand"
     Write-Step "  $secretsCommand"
+    Write-Step "  $configCommand"
 } else {
     $settings = Get-Content -LiteralPath (Join-Path $srcClaude 'settings.json') -Raw -Encoding UTF8
     $settings = $settings.Replace('{{CLAUDE_HOME}}', $homeSlash)
     # JSON string value: backslashes and quotes must be escaped.
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     $settings = $settings.Replace('{{GUARD_SECRETS_COMMAND}}', ($secretsCommand -replace '\\', '\\\\' -replace '"', '\"'))
+    $settings = $settings.Replace('{{GUARD_CONFIG_COMMAND}}', ($configCommand -replace '\\', '\\\\' -replace '"', '\"'))
     # Validate JSON before any destination is changed.
     $parsed = ConvertFrom-Json -InputObject $settings -ErrorAction Stop
     if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) {
@@ -224,10 +233,12 @@ foreach ($entry in $pending) {
 Write-Host ''
 Write-Host 'Done. Two things are deliberately left to you:' -ForegroundColor Green
 Write-Host ''
-Write-Host '  a) Verify both hooks fire. In Claude Code, ask it to run:' -ForegroundColor White
+Write-Host '  a) Verify all three hooks fire. In Claude Code, ask it to run:' -ForegroundColor White
 Write-Host '       select 1; drop table nothing;      -> [guard-sql] must block it'
 Write-Host '       Get-Content .env                   -> [guard-secrets] must block it'
-Write-Host '     If either goes through, that hook is not wired up and you are'
+Write-Host '     Then ask it to edit or delete your own settings.json or CLAUDE.md:'
+Write-Host '       -> [guard-config] must block it'
+Write-Host '     If any of these goes through, that hook is not wired up and you are'
 Write-Host '     unprotected on that side.'
 Write-Host ''
 Write-Host '     The test suites cover behaviour, not wiring. All must pass:' -ForegroundColor Gray
@@ -235,6 +246,7 @@ Write-Host "       node `"$kitRoot\scripts\test-guard-sql.mjs`""
 Write-Host "       & `"$kitRoot\scripts\test-guard-sql.ps1`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`" --target ps"
+Write-Host "       node `"$kitRoot\scripts\test-guard-config.mjs`""
 Write-Host ''
 Write-Host '  b) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
 Write-Host '       $a = New-ScheduledTaskAction -Execute "powershell.exe" ``'

@@ -75,9 +75,6 @@
  * toolchain. The same choice guard-secrets and guard-config make.
  */
 
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 const MAX_DEPTH = 8;
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
 
@@ -1315,7 +1312,7 @@ function scan(src, g, depth, ctx, via) {
   return null;
 }
 
-export function inspect(toolName, command) {
+function inspect(toolName, command) {
   if (!SHELL_TOOL_RE.test(toolName) || typeof command !== 'string' || !command.trim()) return null;
   return scan(command, toolName === 'PowerShell' ? 'ps' : 'posix', 0, { vars: new Map() }, []);
 }
@@ -1352,20 +1349,22 @@ function readStdin() {
   });
 }
 
-const isMain = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-
-if (isMain) {
-  try {
-    const raw = await readStdin();
-    if (!raw.trim()) process.exit(0);
-    const payload = JSON.parse(raw);
-    const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
-    const command = payload.tool_input && typeof payload.tool_input.command === 'string' ? payload.tool_input.command : '';
-    const hit = inspect(toolName, command);
-    if (hit) deny(hit, command);
-    process.exit(0);
-  } catch (error) {
-    process.stderr.write(`[guard-destructive] internal error, allowing: ${error && error.message ? error.message : error}\n`);
-    process.exit(0);
-  }
+// Always runs. An earlier version ran only when process.argv[1] matched
+// import.meta.url, to allow importing this file. Node resolves symlinks for
+// the entry module, so launched through a linked directory (macOS's
+// /var -> /private/var, a junction on Windows) the two spellings differed
+// and the hook exited 0 without looking at anything. A guard that can be
+// switched off by the path it was installed under is not a guard.
+try {
+  const raw = await readStdin();
+  if (!raw.trim()) process.exit(0);
+  const payload = JSON.parse(raw);
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
+  const command = payload.tool_input && typeof payload.tool_input.command === 'string' ? payload.tool_input.command : '';
+  const hit = inspect(toolName, command);
+  if (hit) deny(hit, command);
+  process.exit(0);
+} catch (error) {
+  process.stderr.write(`[guard-destructive] internal error, allowing: ${error && error.message ? error.message : error}\n`);
+  process.exit(0);
 }

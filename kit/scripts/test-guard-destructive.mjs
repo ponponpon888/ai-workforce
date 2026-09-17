@@ -25,8 +25,9 @@
 
 import { readTestTargetOptions } from './parse-test-target-options.mjs';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -311,6 +312,35 @@ psAllows('cmd /c del build\\app.js', 'cmd del without /s');
 console.log('\nmust allow — not this hook\'s business:');
 check(ALLOW, 'Read', 'rm -rf build', 'Read tool with a command-looking field');
 check(ALLOW, 'mcp__GitHub__search_code', 'git push --force', 'unrelated MCP tool');
+
+if (targetArg !== 'ps') {
+  console.log('\nmust still block when launched through a linked directory:');
+  // macOS's temp directory is /var -> /private/var, and a Windows home can sit
+  // behind a junction. An earlier version compared its own path spellings to
+  // decide whether it was the entry module, and silently exited 0 here. The
+  // hook is copied first so the link never points into this checkout.
+  const root = mkdtempSync(join(tmpdir(), 'aiwf-destructive-link-'));
+  try {
+    const real = join(root, 'real');
+    const linked = join(root, 'linked');
+    mkdirSync(real);
+    copyFileSync(HOOK_MJS, join(real, 'guard-destructive.mjs'));
+    symlinkSync(real, linked, process.platform === 'win32' ? 'junction' : 'dir');
+    const r = spawnSync(process.execPath, [join(linked, 'guard-destructive.mjs')], {
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: "bash -c 'rm -rfv build'" } }),
+      encoding: 'utf8',
+    });
+    if (r.status === BLOCK) {
+      console.log('  PASS  hook file reached through a symlink / junction');
+      pass++;
+    } else {
+      console.log(`  FAIL  hook file reached through a symlink / junction (expected ${BLOCK}, got ${r.status})`);
+      fail++;
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 console.log(`\npass: ${pass}   fail: ${fail}\n`);
 process.exit(fail > 0 ? 1 : 0);

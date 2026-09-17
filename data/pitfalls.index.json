@@ -6,40 +6,40 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 17,
+    "total": 18,
     "by_set": {
-      "pitfalls": 17
+      "pitfalls": 18
     },
     "by_confidence": {
-      "measured": 11,
+      "measured": 12,
       "inferred": 3,
       "documented": 2,
       "unverified": 1
     },
     "by_status": {
-      "closed": 11,
+      "closed": 12,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 10,
+      "trap": 11,
       "limitation": 3,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 8,
+      "hook": 9,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 8,
+      "unknown_version": 9,
       "ok": 3,
       "not_applicable": 6
     },
-    "without_prose": 8,
-    "checkable": 8
+    "without_prose": 9,
+    "checkable": 9
   },
   "checks": [
     {
@@ -85,6 +85,15 @@
       "pattern": "GUARD_CONFIG_COMMAND",
       "expect": "present",
       "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。ConfigChange側の登録が消えると、settings.jsonについてはPreToolUseが想定していない経路での変更を止められなくなる。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-008",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-destructive.mjs",
+      "pattern": "fileURLToPath(import.meta.url)",
+      "expect": "absent",
+      "message": "フック本体に「自分が直接起動されたか」の判定を戻すと、リンクを含むパスに置かれたときに黙って無効になる。",
       "severity": "high"
     },
     {
@@ -301,6 +310,31 @@
         "configchange",
         "settings-json",
         "restart"
+      ]
+    },
+    {
+      "id": "hook-008",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-008.json",
+      "title": "「直接起動されたときだけ動く」判定のせいで、シンボリックリンク経由だとフックが何もせず exit 0 した",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "perm-006"
+      ],
+      "tags": [
+        "guard-destructive",
+        "symlink",
+        "entry-module",
+        "silent-allow",
+        "macos"
       ]
     },
     {

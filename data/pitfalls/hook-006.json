@@ -1,0 +1,27 @@
+{
+  "id": "hook-006",
+  "title": "自分自身のapprovalsファイルを直接書けば、エージェントはDDL承認ゲートを人間抜きで自己承認できた",
+  "summary": "guard-sqlのDDL承認は、~/.claude/approvals/に対象SQLと一致する内容のファイルがあるかをisApproved()で確認するだけで、そのファイルが人間がapprove-ddl.mjsを自分の端末で実行して作ったものかどうかを区別しない。フィンガープリントの計算式(SHA-256、'aiwf-exact-v2\u0000'+SQL)はこのリポジトリに公開されているので、エージェント自身がEdit/Write/Bash/PowerShellツールでそのファイルを直接作成できれば、人間に一度も見せないまま自分でDDLを承認できてしまう。同様に、settings.jsonやhooks/配下のフック自体、CLAUDE.mdをエージェントが直接書き換えることを止める仕組みも存在しなかった。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "record",
+  "inferred_from": [
+    "kit/claude/hooks/guard-sql.mjsのisApproved()はファイルの内容と日付だけを見ており、書き込んだ主体や経路を区別しない",
+    "kit/claude/scripts/approve-ddl.mjsのフィンガープリント計算式は同じリポジトリ内で公開されており、計算自体は誰でも再現できる",
+    "guard-config.mjs導入前の~/.claude/settings.jsonには、settings.json自身やhooks/、approvals/へのEdit/Write/Bash/PowerShell経由の書き込みを拒否する仕組みが何もなかった（実際に自己承認を試してはいない）"
+  ],
+  "status": "closed",
+  "fix": "guard-config.mjsを新規にPreToolUseフックとして追加し、Edit/Write/MultiEdit/NotebookEditツールはfile_pathを、Bash/PowerShellはコマンド行を、settings.json・CLAUDE.md・hooks/・scripts/・approvals/のいずれかを名指しする書き込み・削除・リネーム形なら拒否するようにした。approve-ddlを実行するという意図的な人間の手順だけは引き続き通る（人間自身の端末からの実行はClaude Codeのツール呼び出しを通らないため）。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/settings.json",
+    "pattern": "GUARD_CONFIG_COMMAND",
+    "expect": "present",
+    "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。"
+  },
+  "related": [],
+  "tags": ["guard-config", "approve-ddl", "self-tamper", "self-approval"]
+}

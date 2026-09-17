@@ -190,12 +190,14 @@ for (const conflict of ['parent-file', 'destination-directory']) {
 
 // Execute the installed settings commands, not the checkout's hook files.
 // tool_input is JSON data only; the psql/cat commands are never executed.
-for (const [name, command, expected] of [
-  ['destructive SQL', 'psql -c "drop table aiwf_test"', [2, 0, 0, 0]],
-  ['secret read', 'cat .env', [0, 2, 0, 0]],
-  ['destructive shell', "bash -c 'rm -rfv aiwf_test'", [0, 0, 0, 2]],
-  ['read-only SQL', 'psql -c "select 1"', [0, 0, 0, 0]],
-  ['ordinary file read', 'cat README.md', [0, 0, 0, 0]],
+// Expected exit code per hook, by hook name: entries can hold more than one hook,
+// so position in the settings file says nothing about which guard it is.
+for (const [name, command, blockedBy] of [
+  ['destructive SQL', 'psql -c "drop table aiwf_test"', 'guard-sql'],
+  ['secret read', 'cat .env', 'guard-secrets'],
+  ['destructive shell', "bash -c 'rm -rfv aiwf_test'", 'guard-destructive'],
+  ['read-only SQL', 'psql -c "select 1"', null],
+  ['ordinary file read', 'cat README.md', null],
 ]) test(`installed settings wire ${name} correctly`, () => fixture(({ root, run }) => {
   const home = join(root, 'home with spaces'); run(home);
   const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
@@ -204,6 +206,8 @@ for (const [name, command, expected] of [
     .flatMap(rule => rule.hooks);
   assert.equal(hooks.length, 4);
   const payload = JSON.stringify({ session_id: 'installation-test', hook_event_name: 'PreToolUse', cwd: root, tool_name: 'Bash', tool_input: { command } });
+  const guards = hooks.map(h => /guard-(?:sql|secrets|config|destructive)/.exec(h.command)?.[0]);
+  assert.deepEqual([...guards].sort(), ['guard-config', 'guard-destructive', 'guard-secrets', 'guard-sql']);
   for (let i = 0; i < hooks.length; i++) {
     assert.equal(hooks[i].type, 'command');
     const r = spawnSync(hooks[i].command, {
@@ -211,8 +215,9 @@ for (const [name, command, expected] of [
       env: { ...process.env, AIWF_APPROVAL_DIR: join(root, 'isolated-approvals') },
     });
     assert.equal(r.error, undefined);
-    assert.equal(r.status, expected[i], r.stderr);
-    if (expected[i] === 2) assert.match(r.stderr, [/\[guard-sql\]/, /\[guard-secrets\]/, /\[guard-config\]/, /\[guard-destructive\]/][i]);
+    const expected = guards[i] === blockedBy ? 2 : 0;
+    assert.equal(r.status, expected, `${guards[i]}: ${r.stderr}`);
+    if (expected === 2) assert.ok(r.stderr.includes(`[${guards[i]}]`), r.stderr);
   }
 }));
 

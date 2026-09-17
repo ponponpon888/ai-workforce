@@ -110,7 +110,7 @@ The tests matter more than the hook. **The false-positive half is the important 
 that fires on correct SQL gets switched off, and then you have no guard at all.
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 44   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 ```
 
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string

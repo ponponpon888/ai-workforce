@@ -13,7 +13,7 @@
 ため、`ci/restore-macos-on-public`（PR #25）でmacOSジョブをpush/PR両方に戻した
 （docsのみpathsのスキップは課金と無関係の判断なので維持）。
 
-## guard-config（自己改ざん防止）— 実装・マージ済み
+## guard-config（自己改ざん防止）— 実装・マージ済み（PR #26・#27・#28）
 
 **2026-09-17、外部の競合調査をきっかけに着手し、[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26) でマージ済み。**
 `karanb192/claude-code-hooks` が「エージェント自身にガードレールを書き換えさせない」専用
@@ -28,12 +28,7 @@ confidence: inferred — 実際に自己承認を再現してはいない。appr
 `scripts/`・`approvals/` のいずれかを、Edit/Write/MultiEdit/NotebookEdit ツールの
 `file_path` で、または Bash/PowerShell のコマンド行（`&&`/`||`/`;`/`$(` で分割した
 セグメントごと）で名指しする書き込み・削除・リネームを拒否する。`install.mjs` /
-`install.ps1` / `kit/claude/settings.json` のテンプレートに配線済み。`test-guard-config.mjs`
-（24件）を追加し、`test-guard-sql.mjs`（45/45）・`test-guard-secrets.mjs`（65/65）・
-`test-doctor.mjs`（28/28、3つ目のPreToolUseエントリを前提にしていなかった箇所を修正）・
-`test-install-backups.mjs`（フック数の決め打ちとファイル一覧の不足を修正）・
-`test-installed-approval.mjs`・`test-verify-installers.mjs`・`doctor.mjs --template` を
-Windows実機で確認してからマージした。
+`install.ps1` / `kit/claude/settings.json` のテンプレートに配線済み。
 
 **続けて、[PR #27](https://github.com/ponponpon888/ai-workforce/pull/27) で `ConfigChange` 層を追加・マージ済み。**
 Claude Code公式の`ConfigChange`イベント（設定ファイルが変わったら`exit 2`で変更そのものを
@@ -51,15 +46,21 @@ ConfigChangeのブロックは「今動いているセッションへの反映�
 検知対象にすらならない（起動ログで確認済み）。guard-config.mjsのヘッダーコメントにこの
 限界を明記した。
 
+**続けて、[PR #28](https://github.com/ponponpon888/ai-workforce/pull/28) で `guard-config.ps1`（PowerShell版）を追加・マージ済み。**
+guard-config.mjsと同じ保護対象・同じ2イベント（PreToolUse・ConfigChange）・同じセグメント
+分割設計をPowerShellに移植。`install.ps1`の既存の`$Hook`スイッチ（node/powershell）に
+guard-configも従うようにし、`test-guard-config.ps1`（29件）を追加。Windows実機で
+`test-guard-config.mjs`/`.ps1`ともに29/29、`install.ps1 -Hook powershell`実行後の
+`settings.json`にguard-config.ps1を指すコマンドが2箇所（PreToolUse・ConfigChange）
+正しく入っていることを確認してからマージした。
+
 副次的に、`test-lint-pitfalls.mjs`の「チェック可能な件数」の決め打ちが`hook-004`追加時点
-（5→6にすべきところ）から直っておらず古いままだったことも見つかり、今回`hook-006`/`hook-007`
+（5→6にすべきところ）から直っておらず古いままだったことも見つかり、`hook-006`/`hook-007`
 分と合わせて正しい値（7・9）に直した。
 
-**今回見送ったもの（follow-up扱い）**:
-- `doctor.mjs` の `guards` 配列への guard-config 追加。手計算で触ると壊すリスクの方が
-  大きいと判断したため、`test-doctor.mjs` 通過を確認できてから別PRで対応する
-- `guard-config.ps1`（PowerShell版）。`install.ps1` は `-Hook powershell` でも guard-config
-  だけは Node 版を登録する
+**今も見送っているもの（follow-up扱い）**:
+- `doctor.mjs` の `guards` 配列への guard-config 追加（PreToolUse・ConfigChangeの両方、
+  mjs・ps1の両方）。手計算で触ると壊すリスクの方が大きいと判断したため、単独のPRで対応する
 
 ## 基本開発で完了したこと
 
@@ -159,7 +160,8 @@ ConfigChangeのブロックは「今動いているセッションへの反映�
 - [x] main 上での CI（test.yml）の成功確認。public化後、`ci/restore-macos-on-public`
   （PR #25）でmacOSをpush/PR対象に戻し、mainで3OS実行を確認する運用に戻した。
 - [x] guard-config（上記参照）のレビューとマージ。[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26)・
-  [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)。
+  [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)・
+  [PR #28](https://github.com/ponponpon888/ai-workforce/pull/28)。
 - [ ] README・CHANGELOG の最終確認・タグ付け。guard-config追加に伴い、README/README.enの
   「4本柱」や「5分で入れる」の記述をguard-config込みに更新するかも合わせて判断する
   （今回のPRでは触っていない）。
@@ -205,8 +207,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   を塞ぐか、既知の制約として残すかを検討する。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
-- `guard-config.ps1`（PowerShell版）の実装と、`doctor.mjs` の `guards` 配列への追加（PreToolUse・
-  ConfigChangeの両方）。
+- `doctor.mjs` の `guards` 配列への guard-config 追加（PreToolUse・ConfigChangeの両方、
+  mjs・ps1の両方）。
 - 競合調査で見つかったもう一つの穴: `permissions.deny` は前方一致なので、
   `cd /tmp && rm -rf x` / `timeout 30 rm -rf x` / サブシェル / パイプ経由の `rm -rf` 等が
   すり抜ける（`perm-005` の「フラグ変種」よりさらに広い話）。guard-sql と同じ

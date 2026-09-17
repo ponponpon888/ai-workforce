@@ -6,12 +6,12 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 15,
+    "total": 16,
     "by_set": {
-      "pitfalls": 15
+      "pitfalls": 16
     },
     "by_confidence": {
-      "measured": 10,
+      "measured": 11,
       "inferred": 3,
       "documented": 1,
       "unverified": 1
@@ -20,26 +20,26 @@
       "closed": 9,
       "open_recorded": 1,
       "untouched": 2,
-      "none": 3
+      "none": 4
     },
     "by_kind": {
       "trap": 10,
       "limitation": 2,
-      "behaviour": 3
+      "behaviour": 4
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 7,
+      "hook": 8,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
       "unknown_version": 8,
-      "ok": 2,
+      "ok": 3,
       "not_applicable": 5
     },
-    "without_prose": 7,
+    "without_prose": 8,
     "checkable": 7
   },
   "checks": [
@@ -267,7 +267,32 @@
         "guard-config",
         "approve-ddl",
         "self-tamper",
-        "self-approval"
+        "self-approval",
+        "configchange"
+      ]
+    },
+    {
+      "id": "hook-007",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-007.json",
+      "title": "ConfigChangeのblockは実行中セッションへの反映を止めるだけで、ディスク上のsettings.jsonは書き換わったまま残る",
+      "layer": "hook",
+      "kind": "behaviour",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": null,
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "hook-006"
+      ],
+      "tags": [
+        "guard-config",
+        "configchange",
+        "settings-json",
+        "restart"
       ]
     },
     {

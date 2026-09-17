@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * guard-config.mjs — Claude Code PreToolUse hook. Stops the agent from
- * modifying or deleting this kit's own guardrails.
+ * guard-config.mjs — Claude Code hook. Stops the agent from modifying or
+ * deleting this kit's own guardrails, and refuses live edits to the
+ * installed settings.json outright.
  *
  * WHY THIS EXISTS
  * Nothing in guard-sql or guard-secrets stops Claude Code from editing
@@ -22,14 +23,33 @@
  * is a human running the script themselves, in their own terminal. See
  * data/pitfalls/hook-006.json.
  *
+ * TWO EVENTS, ONE FILE
+ * This script is registered under two different hook events, and branches on
+ * `hook_event_name` from its stdin payload:
+ *
+ *   - PreToolUse: pattern-matches Edit/Write/Bash/PowerShell calls against
+ *     the protected paths below. Necessary for CLAUDE.md, hooks/, scripts/,
+ *     and approvals/, none of which have a native "this file changed" event
+ *     Claude Code can block on.
+ *   - ConfigChange: Claude Code's own file watcher fires this whenever
+ *     ~/.claude/settings.json (a "user_settings" source) actually changes,
+ *     by any means at all -- not just the write shapes this file's
+ *     PreToolUse branch happens to recognize. It can block the change
+ *     outright (exit 2 or {"decision":"block"}), so for settings.json this
+ *     is the more authoritative layer; the PreToolUse branch still runs
+ *     first and usually catches the attempt earlier. ConfigChange's matcher
+ *     is a configuration *source*, not an arbitrary file, so it has no reach
+ *     into CLAUDE.md/hooks//scripts//approvals -- those stay on PreToolUse.
+ *
  * SCOPE
- * Path-name matching, the same approach as guard-secrets: it looks for the
- * installed claude home's path as a literal substring, not a resolved,
- * symlink-free path. It does not cover indirect rewrites — `git checkout` of
- * an old commit inside a version-controlled claude home, a package script, an
- * editor plugin. This stops the common case of the agent reaching for Edit,
- * Write, or a shell command; it is not a boundary against an adversary who
- * already controls the machine.
+ * The PreToolUse branch is path-name matching, the same approach as
+ * guard-secrets: it looks for the installed claude home's path as a literal
+ * substring, not a resolved, symlink-free path. Neither branch covers
+ * indirect rewrites — `git checkout` of an old commit inside a
+ * version-controlled claude home, a package script, an editor plugin. This
+ * stops the common case of the agent reaching for Edit, Write, or a shell
+ * command; it is not a boundary against an adversary who already controls
+ * the machine.
  *
  * A deliberate trade: a human who genuinely wants Claude Code to update their
  * CLAUDE.md or settings.json now has to do it by hand, or ask a session with
@@ -147,7 +167,7 @@ function writerHitIn(segment) {
   return null;
 }
 
-function deny(hit, detail) {
+function denyPreToolUse(hit, detail) {
   process.stderr.write(
     `[guard-config] BLOCKED: this call would modify or delete this kit's own guardrails.\n\n` +
       `Protected path : ${CLAUDE_HOME}/${hit.sub}\n` +
@@ -158,6 +178,26 @@ function deny(hit, detail) {
       `     edit the file directly, or run the script in your own terminal.\n` +
       `  2. Do not look for a different tool or command to reach the same file;\n` +
       `     this hook matches by path, not by which tool asked.\n`
+  );
+  process.exit(2);
+}
+
+/**
+ * ConfigChange has no message surfaced to Claude or the user on a block
+ * (Anthropic's own docs say so). Writing to stderr is still worth doing for
+ * anyone reading the debug log, and printing the JSON decision alongside
+ * exit 2 is belt-and-suspenders: exit 2 blocks "whether or not you print
+ * JSON", per the hooks reference, so this does not depend on the decision
+ * schema being exactly right.
+ */
+function denyConfigChange() {
+  process.stdout.write(JSON.stringify({
+    decision: 'block',
+    reason: "guard-config: this kit's settings.json is not editable from inside Claude Code.",
+  }) + '\n');
+  process.stderr.write(
+    '[guard-config] BLOCKED: a ConfigChange to the installed settings.json was refused.\n' +
+    'Edit it yourself, outside Claude Code, if this change is intentional.\n'
   );
   process.exit(2);
 }
@@ -177,6 +217,21 @@ try {
   if (!raw.trim()) process.exit(0);
 
   const payload = JSON.parse(raw);
+  const hookEventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : '';
+
+  if (hookEventName === 'ConfigChange') {
+    // settings.json's own hooks.ConfigChange matcher is already scoped to
+    // "user_settings", so this only ever fires for the installed
+    // ~/.claude/settings.json. The extra check here is defensive: if the
+    // payload does carry a source field and it names something else, skip
+    // rather than block, on the theory that an unrecognized source is more
+    // likely a Claude Code change we have not accounted for than a reason to
+    // widen this hook's blast radius by accident.
+    const source = typeof payload.source === 'string' ? payload.source : null;
+    if (!source || source === 'user_settings') denyConfigChange();
+    process.exit(0);
+  }
+
   const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
   const toolInput = payload.tool_input;
 
@@ -184,7 +239,7 @@ try {
     const filePath = toolInput && typeof toolInput.file_path === 'string' ? toolInput.file_path : '';
     if (filePath) {
       const sub = protectedSubpathIn(filePath);
-      if (sub) deny({ sub, via: `${toolName} tool` }, filePath);
+      if (sub) denyPreToolUse({ sub, via: `${toolName} tool` }, filePath);
     }
   } else if (SHELL_TOOL_RE.test(toolName)) {
     const command = toolInput && typeof toolInput.command === 'string' ? toolInput.command : '';
@@ -192,7 +247,7 @@ try {
       for (const segment of segmentsOf(command)) {
         if (!segment.trim()) continue;
         const hit = writerHitIn(segment);
-        if (hit) deny(hit, segment.trim());
+        if (hit) denyPreToolUse(hit, segment.trim());
       }
     }
   }

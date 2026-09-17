@@ -36,10 +36,21 @@
  *     by any means at all -- not just the write shapes this file's
  *     PreToolUse branch happens to recognize. It can block the change
  *     outright (exit 2 or {"decision":"block"}), so for settings.json this
- *     is the more authoritative layer; the PreToolUse branch still runs
- *     first and usually catches the attempt earlier. ConfigChange's matcher
- *     is a configuration *source*, not an arbitrary file, so it has no reach
- *     into CLAUDE.md/hooks//scripts//approvals -- those stay on PreToolUse.
+ *     is a second, more authoritative layer; the PreToolUse branch still
+ *     runs first and usually catches the attempt earlier. ConfigChange's
+ *     matcher is a configuration *source*, not an arbitrary file, so it has
+ *     no reach into CLAUDE.md/hooks//scripts//approvals -- those stay on
+ *     PreToolUse only.
+ *
+ *     Confirmed live on Claude Code 2.1.274 (Windows): editing settings.json
+ *     from outside Claude Code while a session is running does fire this
+ *     hook and does keep that session from adopting the change. It does NOT
+ *     revert the file on disk, and a change made while no session is running
+ *     becomes the new baseline on next launch, invisible to this hook --
+ *     ConfigChange only ever sees a change against what a running session
+ *     already loaded. See data/pitfalls/hook-007.json. Treat this layer as
+ *     "the running session keeps using known-good permissions", not as
+ *     "the file is tamper-evident across restarts".
  *
  * SCOPE
  * The PreToolUse branch is path-name matching, the same approach as

@@ -63,8 +63,7 @@
   nothing;"` / `cat .env` / DDL（ALTER、承認あり・なし・使い切り）を実行させ、
   select は通過・DROP は拒否・`cat .env` は `guard-secrets` で拒否・承認済み ALTER は
   1回だけ通過し2回目は再拒否、をすべて確認した。この過程で実際のバグを2件発見し、
-  [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) で修正した
-  （マージ・CI・`build-pitfall-index.mjs` の再生成確認は未完了、レビュー待ち）。
+  [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) で修正・マージ済み。
   - **hook-004**: `settings.json` の Supabase/Postgres/Neon/PlanetScale matcher が
     固定接頭辞（`mcp__[Ss]upabase__.*` 等）で、実機のツール名
     `mcp__claude_ai_Supabase__list_projects`（コネクタ名が接頭辞に挟まる）に一致しなかった。
@@ -75,7 +74,7 @@
     実際に承認対象となる完全な文字列（tool_input の生の値）ではなく `;` で分割した先頭断片
     だったため、シェル経由の呼び出しでは末尾の閉じ引用符やセミコロンが表示から欠け、
     その表示をそのまま承認しても別のハッシュになり通らなかった。表示を承認対象そのものに
-    直した（mjs / ps1 両方。ps1 側は Windows 実機での再検証はしていない）。
+    直した（mjs / ps1 両方。2026-09-16、Windows 実機で両方とも `test-guard-sql` 45/45 を確認）。
 
 ## v0.1 までに終わらせること
 
@@ -90,12 +89,13 @@
 - [x] Claude Code 本体でのフック接続の実地確認を行った。上記のとおり 2026-09-16、
   `select 1;` / `drop table nothing;` / `cat .env` / DDL 承認フローのすべてを
   実際に Claude Code に実行させて確認し、2件の不具合（hook-004, hook-005）を発見・修正した。
-- [ ] [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) をレビューし、
-  マージしてリリースを行う。このPRはネットワーク制約のあるサンドボックスで作成しており、
-  `test-guard-sql.mjs` / `test-guard-sql.ps1` / `test-doctor.mjs` / `lint-pitfalls.mjs` の
-  実行と、`node kit/scripts/build-pitfall-index.mjs` を実行して
-  `data/pitfalls.index.json` の再生成差分が無いことの確認がまだ済んでいない
-  （index は手で `build-pitfall-index.mjs` のロジックを辿って更新したもの）。
+- [x] [PR #23](https://github.com/ponponpon888/ai-workforce/pull/23) をレビューし、マージした。
+  2026-09-16〜17、`test-guard-sql.mjs`（45/45）・`test-guard-sql.ps1`（45/45、Windows 実機）・
+  `test-doctor.mjs`（28/28）・`lint-pitfalls.mjs`（6 pass / 0 violation）をすべて確認してから
+  squash マージ。`data/pitfalls.index.json` はサンドボックス側の手計算版に2箇所のズレ
+  （detection.message の追記漏れ、ci-001 の origin 見出し表記の既存の古さ）があり、
+  実際に `build-pitfall-index.mjs` を実行して正しい版に置き換えてから確定した。
+  残るは main 上での CI（test.yml）の成功確認と、README・CHANGELOG の確認・タグ付けのみ。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 
@@ -131,3 +131,5 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   `net user aiwftest /delete` と対象フォルダの削除で片付ける。
 - guard-sql の false positive（シェル経由コマンドで文字列リテラル内の DDL キーワードに反応する）
   を塞ぐか、既知の制約として残すかを検討する。
+- 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
+  ここは純粋にレコードのシード追加のみ）。

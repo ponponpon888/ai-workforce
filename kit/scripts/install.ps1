@@ -133,23 +133,22 @@ $homeSlash = $ClaudeHome -replace '\\', '/'
 if ($Hook -eq 'node') {
     $sqlFile        = 'guard-sql.mjs'
     $secretsFile    = 'guard-secrets.mjs'
+    $configFile     = 'guard-config.mjs'
     $hookCommand    = "node `"$homeSlash/hooks/guard-sql.mjs`""
     $secretsCommand = "node `"$homeSlash/hooks/guard-secrets.mjs`""
+    $configCommand  = "node `"$homeSlash/hooks/guard-config.mjs`""
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         Write-Step 'WARNING: node was not found on PATH. Install Node, or re-run with -Hook powershell.'
     }
 } else {
     $sqlFile        = 'guard-sql.ps1'
     $secretsFile    = 'guard-secrets.ps1'
+    $configFile     = 'guard-config.ps1'
     $hookExecutable = if ($PSVersionTable.PSVersion.Major -ge 7) { 'pwsh' } else { 'powershell.exe' }
     $hookCommand    = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-sql.ps1`""
     $secretsCommand = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-secrets.ps1`""
+    $configCommand  = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-config.ps1`""
 }
-
-# guard-config is always the Node version, even with -Hook powershell:
-# there is no guard-config.ps1 port yet.
-$configFile    = 'guard-config.mjs'
-$configCommand = "node `"$homeSlash/hooks/guard-config.mjs`""
 
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would
 # assign file content to the $Hook parameter and trip its ValidateSet.
@@ -247,6 +246,7 @@ Write-Host "       & `"$kitRoot\scripts\test-guard-sql.ps1`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`" --target ps"
 Write-Host "       node `"$kitRoot\scripts\test-guard-config.mjs`""
+Write-Host "       & `"$kitRoot\scripts\test-guard-config.ps1`""
 Write-Host ''
 Write-Host '  b) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
 Write-Host '       $a = New-ScheduledTaskAction -Execute "powershell.exe" ``'

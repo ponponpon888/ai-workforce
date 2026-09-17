@@ -85,7 +85,7 @@
       "target": "kit/claude/settings.json",
       "pattern": "GUARD_CONFIG_COMMAND",
       "expect": "present",
-      "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。",
+      "message": "guard-configのPreToolUse登録が消えると、approvals/やsettings.jsonへの直接書き込みを止めるものが何もなくなる。ConfigChange側の登録が消えると、settings.jsonについてはPreToolUseが想定していない経路での変更を止められなくなる。",
       "severity": "high"
     },
     {

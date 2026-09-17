@@ -87,6 +87,8 @@ jobs:
         run: |
           ./kit/scripts/test-guard-sql.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./kit/scripts/test-guard-config.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-sql-boundaries.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-guard-secrets.mjs --target ps
@@ -119,7 +121,7 @@ jobs:
           pwsh -NoProfile -File ./kit/scripts/install.ps1 -ClaudeHome "$RUNNER_TEMP/fake-claude-ps" -Hook powershell
           pwsh -NoProfile -Command "Get-Content '$RUNNER_TEMP/fake-claude-ps/settings.json' -Raw | ConvertFrom-Json | Out-Null"
           node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude-ps"
-          for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 scripts/approve-ddl.ps1; do
+          for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 hooks/guard-config.ps1 scripts/approve-ddl.ps1; do
             test -f "$RUNNER_TEMP/fake-claude-ps/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
 
@@ -196,6 +198,8 @@ jobs:
         run: |
           ./kit/scripts/test-guard-sql.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./kit/scripts/test-guard-config.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-sql-boundaries.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-guard-secrets.mjs --target ps
@@ -212,6 +216,8 @@ jobs:
           node kit/scripts/test-installed-approval.mjs --target ps --pwsh powershell.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./kit/scripts/test-guard-sql.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./kit/scripts/test-guard-config.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-sql-boundaries.mjs --target ps --pwsh powershell.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -232,6 +238,7 @@ jobs:
           $wrapper = Join-Path $probe 'wrapper.ps1'
           $cases = @(
             './kit/scripts/test-guard-sql.ps1',
+            './kit/scripts/test-guard-config.ps1',
             "./kit/scripts/pull-all.ps1 -Root '$probe' -Repos repo -DryRun",
             "./kit/scripts/install.ps1 -ClaudeHome '$probe/fake-claude' -Hook powershell",
             "./kit/scripts/approve-ddl.ps1 -Sql 'create table probe_t (id int)' -ApprovalDir '$probe/approvals' -Force"
@@ -282,7 +289,7 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'scripts/approve-ddl.ps1') {
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'hooks/guard-config.ps1', 'scripts/approve-ddl.ps1') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) { throw "installer did not write $f" }
           }
 

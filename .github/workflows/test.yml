@@ -3,7 +3,17 @@ name: test
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
   workflow_dispatch:
 
 # A new commit makes older results obsolete. Cancel the superseded run instead
@@ -22,10 +32,19 @@ permissions:
 # the same coverage into one job per OS removes that repeated overhead without
 # removing the tests.
 #
-# Pull requests run Ubuntu and Windows. macOS is intentionally limited to main
-# pushes and manual runs because its hosted-runner rate is much higher. Windows
-# PowerShell 5.1 stays in the Windows job because it is a distinct runtime and
-# has caught real failures that pwsh 7 did not.
+# COST CONTROL (2026-09-17)
+#
+# This repository is private, so every minute past the free allowance is
+# billed, with Windows at 2x and macOS at 10x the Linux rate. September 2026
+# hit 75% of the Actions budget mostly from docs-only pushes to main that
+# still ran the full matrix. Two rules now apply:
+#
+# - Pushes and pull requests that only touch Markdown or docs/ do not run CI.
+# - macOS runs only from workflow_dispatch. Run it manually before a release.
+#
+# Pull requests and main pushes run Ubuntu and Windows. Windows PowerShell 5.1
+# stays in the Windows job because it is a distinct runtime and has caught real
+# failures that pwsh 7 did not.
 
 jobs:
   ubuntu:
@@ -267,7 +286,8 @@ jobs:
 
   macos:
     name: test (macOS)
-    if: github.event_name != 'pull_request'
+    # macOS minutes are billed at 10x. Manual only; run before tagging a release.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -282,7 +302,6 @@ jobs:
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target ps
-      - name: Run the core suite via verify-installers (manual only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Run the core suite via verify-installers
         shell: bash
         run: node kit/scripts/verify-installers.mjs --suite core --target node --json

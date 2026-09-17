@@ -32,19 +32,18 @@ permissions:
 # the same coverage into one job per OS removes that repeated overhead without
 # removing the tests.
 #
-# COST CONTROL (2026-09-17)
+# COST CONTROL (2026-09-17, superseded same day)
 #
-# This repository is private, so every minute past the free allowance is
-# billed, with Windows at 2x and macOS at 10x the Linux rate. September 2026
-# hit 75% of the Actions budget mostly from docs-only pushes to main that
-# still ran the full matrix. Two rules now apply:
+# This repository was private and every minute past the free allowance was
+# billed, Windows at 2x and macOS at 10x the Linux rate. That is why macOS was
+# briefly restricted to workflow_dispatch only. The repository went public
+# later the same day: GitHub-hosted runners are free and unlimited on a public
+# repository regardless of OS, so that restriction no longer applies and macOS
+# runs on every push and pull request again, same as Ubuntu and Windows.
 #
-# - Pushes and pull requests that only touch Markdown or docs/ do not run CI.
-# - macOS runs only from workflow_dispatch. Run it manually before a release.
-#
-# Pull requests and main pushes run Ubuntu and Windows. Windows PowerShell 5.1
-# stays in the Windows job because it is a distinct runtime and has caught real
-# failures that pwsh 7 did not.
+# The paths-ignore rule for docs-only changes stays. It was never purely a
+# cost measure -- a Markdown-only change does not need a ~10 minute CI run
+# before it can be reviewed, on a free plan or not.
 
 jobs:
   ubuntu:
@@ -286,8 +285,6 @@ jobs:
 
   macos:
     name: test (macOS)
-    # macOS minutes are billed at 10x. Manual only; run before tagging a release.
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

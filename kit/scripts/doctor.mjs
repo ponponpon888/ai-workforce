@@ -14,6 +14,7 @@ const guards = [
   { name: 'guard-sql', token: '{{GUARD_SQL_COMMAND}}', tools: ['Bash', 'PowerShell', 'mcp__supabase__execute_sql', 'mcp__postgres__query', 'mcp__neon__query', 'mcp__planetscale__query'] },
   { name: 'guard-secrets', token: '{{GUARD_SECRETS_COMMAND}}', tools: ['Bash', 'PowerShell'] },
   { name: 'guard-config', token: '{{GUARD_CONFIG_COMMAND}}', tools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell'] },
+  { name: 'guard-destructive', token: '{{GUARD_DESTRUCTIVE_COMMAND}}', tools: ['Bash', 'PowerShell'] },
 ];
 
 export function inspectSettings(settings, { template = false, claudeHome = join(homedir(), '.claude') } = {}) {

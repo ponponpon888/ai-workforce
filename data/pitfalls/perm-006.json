@@ -1,0 +1,29 @@
+{
+  "id": "perm-006",
+  "title": "deny はパス指定・bash -c・git -C などで呼ばれた同じコマンドに一致しない",
+  "summary": "Claude Code は && や ; でコマンドを分け、timeout や nice などのラッパーと先頭の変数代入を外してから deny を当てる。そのため cd /tmp && rm -rf x や timeout 30 rm -rf x は deny で止まる。一方で公式ドキュメントは、同じプログラムを別の形で呼んだものには一致しないと明記している（Bash(rm *) は /bin/rm -rf や bash -c 'rm -rf ...' を止めず、Bash(git push *) は git -C . push や git -c k=v push や git 'push' を止めない）。フラグ付きの xargs、npx・devbox run などの実行ツールも外されない。これに perm-005 のフラグ変種と、フラグを後ろに置いた git push origin main --force が加わる。deny はモデルが普段書く形を止めるもので、プログラムのまわりの境界ではない。",
+  "layer": "permissions",
+  "kind": "limitation",
+  "severity": "high",
+  "confidence": "documented",
+  "origin": "docs/02-guardrails.md#deny-をすり抜ける形の半分はもう古い話でした",
+
+  "sources": [
+    "https://code.claude.com/docs/en/permissions — Compound commands / Wrappers / What a Bash rule doesn't match（2026-09-17 参照）"
+  ],
+
+  "status": "closed",
+  "fix": "kit/claude/hooks/guard-destructive.mjs を PreToolUse（Bash|PowerShell）に追加した。コマンドを Bash は POSIX シェル、PowerShell は PowerShell、cmd /c の中は cmd の文法で読み、bash -c・eval・powershell -Command / -EncodedCommand・cmd /c・Invoke-Expression の中身、sudo・env・xargs・find -exec・npx などの実行ツールの先、git のグローバルオプションの後ろまで追ってから、deny と同じ破壊系コマンド（再帰の rm、Remove-Item、rd /s、rimraf、force push、git reset --hard、git clean -f、git branch -D、supabase db reset）を止める。コマンド文字列を読むだけなので、スクリプトファイルの中身や ssh / docker exec の先は見えない。境界が必要ならサンドボックスを使う。",
+
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/settings.json",
+    "pattern": "GUARD_DESTRUCTIVE_COMMAND",
+    "expect": "present",
+    "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。"
+  },
+
+  "related": ["perm-001", "perm-005"],
+  "tags": ["deny", "prefix-match", "guard-destructive", "bash-c", "wrapper", "rm", "git-push"]
+}

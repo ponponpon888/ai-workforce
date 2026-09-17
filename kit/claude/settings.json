@@ -120,6 +120,18 @@
             "statusMessage": "guard-config: checking for self-tamper"
           }
         ]
+      },
+      {
+        "//": "The destructive commands in deny above, in the shapes deny does not match: bash -c / eval / powershell -Command / cmd /c, /bin/rm, sudo / env / npx / find -exec, git -C, rm -rfv, git push origin main --force. Claude Code already splits && ; | and strips timeout/nice/xargs itself. See data/pitfalls/perm-006.json.",
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{GUARD_DESTRUCTIVE_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-destructive: checking for destructive commands"
+          }
+        ]
       }
     ],
     "ConfigChange": [

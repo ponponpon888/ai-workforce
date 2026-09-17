@@ -6,29 +6,28 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 16,
+    "total": 17,
     "by_set": {
-      "pitfalls": 16
+      "pitfalls": 17
     },
     "by_confidence": {
       "measured": 11,
       "inferred": 3,
-      "documented": 1,
+      "documented": 2,
       "unverified": 1
     },
     "by_status": {
-      "closed": 9,
-      "open_recorded": 1,
+      "closed": 11,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
       "trap": 10,
-      "limitation": 2,
+      "limitation": 3,
       "behaviour": 4
     },
     "by_layer": {
-      "permissions": 5,
+      "permissions": 6,
       "hook": 8,
       "runtime": 1,
       "ci": 1,
@@ -37,10 +36,10 @@
     "by_stale_risk": {
       "unknown_version": 8,
       "ok": 3,
-      "not_applicable": 5
+      "not_applicable": 6
     },
     "without_prose": 8,
-    "checkable": 7
+    "checkable": 8
   },
   "checks": [
     {
@@ -105,6 +104,15 @@
       "expect": "absent",
       "message": "sc は Set-Content の別名だが、前方一致で sc.exe を巻き込む。Set-Content と書くこと。",
       "severity": "medium"
+    },
+    {
+      "id": "perm-006",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "GUARD_DESTRUCTIVE_COMMAND",
+      "expect": "present",
+      "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。",
+      "severity": "high"
     }
   ],
   "records": [
@@ -445,19 +453,48 @@
       "kind": "trap",
       "severity": "high",
       "confidence": "inferred",
-      "status": "open_recorded",
+      "status": "closed",
       "stale_risk": "not_applicable",
       "origin": "docs/02-guardrails.md#ただし両方に同じ穴があります",
       "has_prose": true,
       "checkable": false,
       "related": [
         "perm-001",
-        "perm-004"
+        "perm-004",
+        "perm-006"
       ],
       "tags": [
         "deny",
         "prefix-match",
         "rm"
+      ]
+    },
+    {
+      "id": "perm-006",
+      "set": "pitfalls",
+      "file": "data/pitfalls/perm-006.json",
+      "title": "deny はパス指定・bash -c・git -C などで呼ばれた同じコマンドに一致しない",
+      "layer": "permissions",
+      "kind": "limitation",
+      "severity": "high",
+      "confidence": "documented",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/02-guardrails.md#deny-をすり抜ける形の半分はもう古い話でした",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "perm-001",
+        "perm-005"
+      ],
+      "tags": [
+        "deny",
+        "prefix-match",
+        "guard-destructive",
+        "bash-c",
+        "wrapper",
+        "rm",
+        "git-push"
       ]
     },
     {

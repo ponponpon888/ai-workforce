@@ -137,7 +137,7 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
     const home = join(root, name); run(home);
     const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
     const commands = settings.hooks.PreToolUse.flatMap(rule => rule.hooks.map(h => h.command));
-    assert.equal(commands.length, 3);
+    assert.equal(commands.length, 4);
     for (const command of commands) {
       const r = spawnSync(command, { shell: true, cwd: root, encoding: 'utf8', timeout: 10000,
         input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'pwd' }, cwd: root }) });
@@ -148,7 +148,7 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
 
 test('identical reinstall preserves timestamps and creates no backups', () => fixture(({ root, run }) => {
   const home = join(root, 'home'); run(home);
-  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'scripts/approve-ddl.mjs'];
+  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'scripts/approve-ddl.mjs'];
   const before = new Map();
   for (const file of files) {
     const path = join(home, file); utimesSync(path, 1000000000, 1000000000);
@@ -191,17 +191,18 @@ for (const conflict of ['parent-file', 'destination-directory']) {
 // Execute the installed settings commands, not the checkout's hook files.
 // tool_input is JSON data only; the psql/cat commands are never executed.
 for (const [name, command, expected] of [
-  ['destructive SQL', 'psql -c "drop table aiwf_test"', [2, 0, 0]],
-  ['secret read', 'cat .env', [0, 2, 0]],
-  ['read-only SQL', 'psql -c "select 1"', [0, 0, 0]],
-  ['ordinary file read', 'cat README.md', [0, 0, 0]],
+  ['destructive SQL', 'psql -c "drop table aiwf_test"', [2, 0, 0, 0]],
+  ['secret read', 'cat .env', [0, 2, 0, 0]],
+  ['destructive shell', "bash -c 'rm -rfv aiwf_test'", [0, 0, 0, 2]],
+  ['read-only SQL', 'psql -c "select 1"', [0, 0, 0, 0]],
+  ['ordinary file read', 'cat README.md', [0, 0, 0, 0]],
 ]) test(`installed settings wire ${name} correctly`, () => fixture(({ root, run }) => {
   const home = join(root, 'home with spaces'); run(home);
   const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
   const hooks = settings.hooks.PreToolUse
     .filter(rule => new RegExp(`^(?:${rule.matcher})$`).test('Bash'))
     .flatMap(rule => rule.hooks);
-  assert.equal(hooks.length, 3);
+  assert.equal(hooks.length, 4);
   const payload = JSON.stringify({ session_id: 'installation-test', hook_event_name: 'PreToolUse', cwd: root, tool_name: 'Bash', tool_input: { command } });
   for (let i = 0; i < hooks.length; i++) {
     assert.equal(hooks[i].type, 'command');
@@ -211,7 +212,7 @@ for (const [name, command, expected] of [
     });
     assert.equal(r.error, undefined);
     assert.equal(r.status, expected[i], r.stderr);
-    if (expected[i] === 2) assert.match(r.stderr, i === 0 ? /\[guard-sql\]/ : /\[guard-secrets\]/);
+    if (expected[i] === 2) assert.match(r.stderr, [/\[guard-sql\]/, /\[guard-secrets\]/, /\[guard-config\]/, /\[guard-destructive\]/][i]);
   }
 }));
 
@@ -221,7 +222,7 @@ if (!ps && process.platform !== 'win32') {
       const home = join(root, name); run(home);
       const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
       const commands = settings.hooks.PreToolUse.flatMap(rule => rule.hooks.map(h => h.command));
-      assert.equal(commands.length, 3);
+      assert.equal(commands.length, 4);
       for (const command of commands) {
         const r = spawnSync(command, {
           shell: true, cwd: root, encoding: 'utf8', timeout: 10000,

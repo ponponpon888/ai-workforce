@@ -82,7 +82,8 @@ English: [02-guardrails.en.md](02-guardrails.en.md)
 `rm -rfv /foo` はフラグが 1 文字伸びただけで抜けます（詳細は後述の「記法が 2 つあって、どちらも効いていました」）。
 
 つまり deny リストは**主要な事故パターンを塞ぐもの**であって、網羅ではありません。
-網羅できないことを前提に、層 3 を置いています。
+網羅できないことを前提に、層 3 を置いています。deny が一致しない書き方で来た
+破壊系のコマンドは、`guard-destructive` フックが拾います（後述の「deny をすり抜ける形の、半分はもう古い話でした」）。
 
 ---
 
@@ -530,10 +531,13 @@ Bash(rm -rf:*)  ->  rm -rf /foo    落ちる
 止めているのは「`rm -rf` という文字列」であって、「`rm` の危険な使い方」では
 ありません。
 
-塞いでいません。塞ぐには `rm` そのものを deny するしかなく、そうすると
-`rm -rf ./dist` のような日常の操作まで止まります。誤検知の多いルールは外される、
+deny の側では塞いでいません。塞ぐには `rm` そのものを deny するしかなく、そうすると
+`rm ./dist/app.js` のような日常の操作まで止まります。誤検知の多いルールは外される、
 というこのページの話がそのまま当てはまります。
-いまは、抜け方が分かったうえで残しています。
+
+代わりに、フックの側で塞ぎました（`guard-destructive`、後述）。フックならフラグを
+1 つずつ分解して見られるので、`-rfv` でも `-fr` でも `-r -f` でも「再帰の削除」として
+止められます。deny の穴そのものは、いまも空いたままです。
 
 ### この層にはテストが書けません
 
@@ -699,6 +703,106 @@ Read ツールで `src/lib/secrets/masker.ts` を開くと落ち、`cat` する�
 これは事故を止めるものであって、敵対者を止めるものではありません。`cat .env`
 に手が伸びたときに壁に当たる、というだけのものです。それでも、service_role
 キーがトランスクリプトに載って残るのを 1 回止められれば元は取れます。
+
+---
+
+## deny をすり抜ける形の、半分はもう古い話でした
+
+`permissions.deny` は前方一致だから、`cd /tmp && rm -rf x` や `timeout 30 rm -rf x`
+のように前に何か付けるだけで抜ける。外部のリポジトリを調べていてそう読み、
+ROADMAP にもそう書いていました。
+
+公式ドキュメント（[Configure permissions](https://code.claude.com/docs/en/permissions)、
+2026-09-17 に読み直したもの）には、**そこはもう塞がっている**と書いてありました。
+
+- `&&` `||` `;` `|` `&` と改行でコマンドを分けて、**deny はその 1 つずつに当てる。**
+  サブシェル、`$(...)`、`for` の中も同じ
+- `timeout` `time` `nice` `nohup` `stdbuf` `command` `builtin`、フラグなしの `xargs`、
+  先頭の `FOO=bar` は外してから照合する
+- PowerShell は構文木で分けて、エイリアスも解決する
+
+以前、`Set-Location ...; Remove-Item ...; git commit ...` を 1 行で渡したら、
+`Remove-Item` が 1 つ混ざっていただけで丸ごと拒否されたことがありました。
+あれはこの仕様どおりの動きでした。
+
+同じページには、**deny が一致しない形**もはっきり書いてあります。
+「プログラムのまわりのセキュリティ境界ではない」とまで書いてあります。
+
+| deny | 止まる | 止まらない |
+|---|---|---|
+| `Bash(rm *)` | `rm -rf build/` | `/bin/rm -rf build/`、`bash -c 'rm -rf build/'` |
+| `Bash(git push *)` | `git push origin main` | `git -C . push origin main`、`git -c k=v push origin main`、`git 'push' origin main` |
+
+ほかに、フラグ付きの `xargs -n1` と、`npx` や `devbox run` のような実行ツールも
+外されません。前に書いた `rm -rfv`（[perm-005](../data/pitfalls/perm-005.json)）と、
+フラグを後ろに置いた `git push origin main --force` も、前方一致では拾えません。
+まとめて [perm-006](../data/pitfalls/perm-006.json) に記録しています。
+
+### 本当に抜ける形だけを、フックで見ます
+
+[guard-destructive](../kit/claude/hooks/guard-destructive.mjs) は、deny に書いてある
+破壊系のコマンドが、**deny の一致しない形で来たとき**に止めます。禁止する中身は
+deny と同じで、新しく足してはいません。
+
+| 形 | 例 |
+|---|---|
+| シェルや評価器を挟む | `bash -c` `sh -c` `eval` `echo ... \| sh` `bash <<EOF` `powershell -Command` `-EncodedCommand`（base64 を戻して読む） `cmd /c` `Invoke-Expression` `wsl` |
+| パスや引用符で呼ぶ | `/bin/rm` `\rm` `'rm'` `git 'push'` |
+| 外されないラッパー・実行ツール | `sudo` `env` `xargs -n1` `find -exec` `npx` `pnpm dlx` `bunx` `devbox run` `direnv exec` `mise exec` `uv run` `busybox` `watch` `flock` |
+| git のグローバルオプション | `git -C .` `git -c k=v` `git --git-dir=...` |
+| 前方一致で列挙できないフラグ | `rm -rfv` `rm -fr` `rm -r -f` `rm --recursive` `git push origin main --force` `git push -uf` `git push origin +main` `--force-with-lease` `git clean -xdf` |
+| インタプリタの 1 行 | `node -e` の `rmSync(..., { recursive: true })`、`python -c` の `shutil.rmtree`、`os.system('rm -rf ...')` |
+
+Bash のコマンドは POSIX シェル、PowerShell のコマンドは PowerShell、`cmd /c` の中は
+cmd の文法で読みます。1 つの文法で全部読もうとしたのが、guard-sql で穴を作った
+原因でした（「3 つ目は、賢くしたせいで空きました」）。
+
+deny に合わせて広げたのは 2 か所です。`rm` は `-rf` だけでなく、再帰のフラグが
+付いたもの全部（`Bash(rm -r:*)` も書いてあるので、意図は同じです）。`git clean` は
+`-fd` だけでなく、`-n` の付かない `-f` 全部。PowerShell の `Remove-Item` は、deny と
+同じく再帰かどうかを問わず止めます。
+
+deny の対になるものがない判定も 2 つだけ足しました。`git -c alias.x=...`（その場で
+作った alias は何のコマンドにでもなれる）と、`git -c clean.requireForce=false`
+（`-f` なしで `git clean` を効かせる）です。どちらも上の禁止を隠すためにしか使い道がありません。
+
+### 通す側を多めに書きました
+
+テストは 206 件で、止める側が 135 件、通す側が 71 件です。通す側で一番多いのは、
+危ないコマンドの**名前が書いてあるだけ**の文字列です。
+
+```bash
+git commit -m "$(cat <<'EOF'
+feat: block rm -rf variants (and git push --force)
+
+Don't let bash -c 'rm -rf x' through.
+EOF
+)"
+```
+
+`$( )` の対応を取るときに、ヒアドキュメントの本文をコードとして数えると、`Don't` の
+`'` や `(and` の `(` で対応が崩れます。崩れると、本文の `git push --force` を
+コマンドとして読んでしまう。書いている途中でこれに気づいたので、`$( )` の対応を
+取る処理に、ヒアドキュメントの本文を読み飛ばす処理を足しました。
+
+`python3 -c "print('shutil.rmtree is dangerous')"` は、最初のテストで実際に落ちました。
+文字列の中身を空にしてから呼び出しの形を見るように直しています。
+
+### 塞いでいない穴
+
+- スクリプトファイルの中身、`npm run` の中身、Makefile、前もって定義した git の alias
+- `ssh host ...`、`docker exec ...`（別のマシンやコンテナの中の話）
+- `find . -delete`、`gh repo sync --force`、`git stash drop`、`git checkout -- .`。
+  deny にも書いていないので、今回は広げていません
+- 見えないところで代入された変数。`$CMD -rf x` の `$CMD` は、同じコマンドの中で
+  代入が見えたときだけ中身を追います
+- `Start-Process cmd -ArgumentList '/c rd /s /q x'` のような、引数の文字列に埋めた形
+- PowerShell 版（`guard-destructive.ps1`）はまだありません。`install.ps1 -Hook powershell`
+  でも、このフックだけは Node 版を登録します
+
+公式ドキュメントのとおり、コマンドの文字列に頼らずに止めたいならサンドボックスです。
+これは、deny に弾かれたモデルが「別の書き方」を試したときに、もう一度壁に当たる
+ようにするためのものです。
 
 ---
 

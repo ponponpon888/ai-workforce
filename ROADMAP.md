@@ -4,6 +4,13 @@
 現在の検証数・対象・取り込み元は [統合状況](docs/17-integration-status.md) を参照してください。
 過去の Windows 実測は現在の統合版の検証結果ではありません。変更の履歴は Git と measurements に保持しています。
 
+**2026-09-17、リポジトリをpublicにした。** GitHub Actionsの予算アラート（9月分 $7.51/$10）が
+きっかけ。privateだと無料枠超過分が課金される（Windows 2倍・macOS 10倍）ため、
+`ci/cut-actions-minutes`（docsのみのpush/PRをスキップ・macOSを`workflow_dispatch`専用に）を
+先に入れたうえで公開した。公開前に、コミット履歴を含めた秘密情報の簡易チェック（サービスロール
+キー・APIキー・秘密鍵等のパターン）を実施し、該当なしを確認済み。README / README.en の
+テストケース数（44→45）も公開前に修正した。
+
 ## 基本開発で完了したこと
 
 - [x] 設定テンプレートの形式修正と、読み取り専用の doctor。
@@ -95,7 +102,13 @@
   squash マージ。`data/pitfalls.index.json` はサンドボックス側の手計算版に2箇所のズレ
   （detection.message の追記漏れ、ci-001 の origin 見出し表記の既存の古さ）があり、
   実際に `build-pitfall-index.mjs` を実行して正しい版に置き換えてから確定した。
-  残るは main 上での CI（test.yml）の成功確認と、README・CHANGELOG の確認・タグ付けのみ。
+- [x] リポジトリをpublicにした。2026-09-17、事前に`ci/cut-actions-minutes`（PR #24、
+  docsのみのpush/PRをCI対象外に・macOSジョブを`workflow_dispatch`専用に）をマージし、
+  コミット履歴の簡易的な秘密情報チェック（該当なし）、README / README.en の
+  テストケース数の古い表記（44→45）の修正を済ませてから切り替えた。
+- [ ] main 上での CI（test.yml）の成功確認と、README・CHANGELOG の最終確認・タグ付け。
+  public化によりGitHub Actionsの無料枠は無制限になったため、`ci/cut-actions-minutes`で
+  入れた制約（docsのみpath-ignore・macOS手動化）を維持するか外すかも合わせて判断する。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 

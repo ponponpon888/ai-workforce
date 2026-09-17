@@ -1,0 +1,34 @@
+{
+  "id": "hook-005",
+  "title": "guard-sqlのBLOCKメッセージのStatement表示が、承認に必要な完全な文字列より短く切れていた",
+  "summary": "DDLをブロックした際のdeny()呼び出しは、承認要否の判定に使うsql(tool_inputに渡された完全な文字列)ではなく、;で分割した最初の断片firstDdlを表示していた。シェル経由の呼び出し(例: psql -c \"alter table t add column c;\")では、表示は末尾の;\"を欠いた形になる。isApproved()はfirstDdlではなくsqlの完全な文字列でフィンガープリントを取るため、表示された文字列をそのままapprove-ddl.mjsに渡すと別のハッシュになり、承認が機能しない。実際にツールへ渡ったcommand全文(末尾に;\"を含む)をそのまま承認したところ、想定どおり1回だけ通り、2回目は再びブロックされた。guard-sql.ps1(PowerShell版)のDeny呼び出しも同じ形($firstDdlを表示)だったため、mjs版と同じ修正を適用した(ただしこちらはWindows実機での再検証はしていない)。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-16",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "PowerShell",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "Claude CodeにPowerShell(psql -c \"alter table aiwf_probe add column memo text;\")を実行させ、承認トークン不足でブロックされることを確認した",
+    "BLOCKメッセージのStatement:欄はpsql -c \"alter table aiwf_probe add column memo textで終わり、末尾の;\"が欠落していた",
+    "Claude Codeに実際にtool_inputへ渡ったcommandの値を省略せず報告させると、末尾に;\"を含む完全な文字列だった",
+    "Statement:欄ではなく、その完全な文字列をファイル経由でapprove-ddl.mjsに渡して承認したところ、1回だけ通過し、同じ文字列での再送は再びブロックされた(使い切りも確認)",
+    "guard-sql.ps1を読むと、Deny呼び出しが同じく$firstDdlを表示しておりmjs版と同型の不一致を抱えていた(Windows実機では未検証)"
+  ],
+  "status": "closed",
+  "fix": "DDL承認が必要な場合のdeny()呼び出しで、表示する文字列をfirstDdlからsql(実際に承認対象となる完全な文字列)に変更した。guard-sql.ps1のDeny呼び出しも$firstDdlから$sqlに変更した。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "表示される文字列は実行時の入力に依存するため、固定パターンでの静的検査にはなじまない。"
+  },
+  "related": ["hook-004"],
+  "tags": ["guard-sql", "approve-ddl", "display", "fingerprint"]
+}

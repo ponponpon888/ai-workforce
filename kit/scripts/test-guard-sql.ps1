@@ -173,6 +173,24 @@ Assert-Result 'harmless here-document' $ALLOW (Invoke-Hook 'Bash' @{ command = $
 
 Write-Host ''
 Write-Host 'approval token:' -ForegroundColor White
+
+# hook-005: the "Statement:" text shown for an unapproved DDL call must be
+# byte-identical to the string Test-Approved fingerprints (the raw tool_input
+# value), or a human who copies the display into approve-ddl.ps1 gets a
+# different hash and the retry stays blocked with no clue why. For shell
+# grammar this display used to be the first ';'-split segment, which drops
+# the client wrapper's trailing characters (here, the closing '"' and ';').
+$displayCmd = 'psql -c "alter table aiwf_display_check add column c text;"'
+$displayResult = Invoke-Hook 'PowerShell' @{ command = $displayCmd }
+if ($displayResult.ExitCode -eq $BLOCK -and $displayResult.Output.Contains($displayCmd)) {
+    Write-Host '  PASS  BLOCKED Statement: shows the exact text Test-Approved fingerprints' -ForegroundColor Green
+    $script:pass++
+} else {
+    Write-Host ("  FAIL  BLOCKED Statement: shows the exact text Test-Approved fingerprints (exit {0})" -f $displayResult.ExitCode) -ForegroundColor Red
+    Write-Host ("        {0}" -f ($displayResult.Output -replace "`r?`n", ' ')) -ForegroundColor DarkGray
+    $script:fail++
+}
+
 $ddl = 'create table memo_test (id int)'
 & (Join-Path $scriptDir 'approve-ddl.ps1') -Sql $ddl -ApprovalDir $ApprovalDir -Force | Out-Null
 Assert-Result 'approved DDL passes'   $ALLOW (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = $ddl })

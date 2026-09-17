@@ -147,6 +147,28 @@ assert('harmless here-document', ALLOW,
   callHook('Bash', { command: "psql <<'EOF'\nselect 1;\nEOF" }));
 
 console.log('\napproval token:');
+
+// hook-005: the "Statement:" text shown for an unapproved DDL call must be
+// byte-identical to the string isApproved() fingerprints (the raw tool_input
+// value), or a human who copies the display into approve-ddl.mjs gets a
+// different hash and the retry stays blocked with no clue why. For shell
+// grammar this display used to be the first `;`-split segment, which drops
+// the client wrapper's trailing characters (here, the closing `"` and `;`).
+{
+  const cmd = 'psql -c "alter table aiwf_display_check add column c text;"';
+  const r = callHook('PowerShell', { command: cmd });
+  const ok = r.code === BLOCK && r.out.includes(cmd);
+  if (ok) {
+    console.log('  PASS  BLOCKED Statement: shows the exact text isApproved() fingerprints');
+    pass++;
+  } else {
+    console.log('  FAIL  BLOCKED Statement: shows the exact text isApproved() fingerprints ' +
+      `(code ${r.code})`);
+    console.log(`        ${r.out.replace(/\r?\n/g, ' ').slice(0, 300)}`);
+    fail++;
+  }
+}
+
 const DDL = 'create table memo_test (id int)';
 approve(DDL);
 assert('approved DDL passes', ALLOW, callHook(SB, { query: DDL }));

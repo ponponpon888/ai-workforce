@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 12,
+    "total": 14,
     "by_set": {
-      "pitfalls": 12
+      "pitfalls": 14
     },
     "by_confidence": {
-      "measured": 8,
+      "measured": 10,
       "inferred": 2,
       "documented": 1,
       "unverified": 1
     },
     "by_status": {
-      "closed": 6,
+      "closed": 8,
       "open_recorded": 1,
       "untouched": 2,
       "none": 3
     },
     "by_kind": {
-      "trap": 7,
+      "trap": 9,
       "limitation": 2,
       "behaviour": 3
     },
     "by_layer": {
       "permissions": 5,
-      "hook": 4,
+      "hook": 6,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 6,
+      "unknown_version": 8,
       "ok": 2,
       "not_applicable": 4
     },
-    "without_prose": 4,
-    "checkable": 5
+    "without_prose": 6,
+    "checkable": 6
   },
   "checks": [
     {
@@ -68,6 +68,15 @@
       "pattern": "@(Get-FileRouteCandidate",
       "expect": "present",
       "message": "@() を外すと候補1件のときに .Count が落ち、フックは fail open で素通りする。",
+      "severity": "high"
+    },
+    {
+      "id": "hook-004",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "mcp__.*[Ss]upabase",
+      "expect": "present",
+      "message": "matcherが固定接頭辞のmcp__[Ss]upabase__.*に戻ると、実際のSupabase MCPツール名に一致しなくなる。guard-sql.mjs/guard-sql.ps1内部のSQL_TOOL_RE/toolNameチェックも同じパターンを使っているため、合わせて確認すること。",
       "severity": "high"
     },
     {
@@ -180,6 +189,54 @@
         "powershell",
         "fail-open",
         "strict-mode"
+      ]
+    },
+    {
+      "id": "hook-004",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-004.json",
+      "title": "guard-sqlのSupabase MCPマッチャがmcp__[Ss]upabase__.*固定で、実際のツール名に一致しなかった",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "hook-005"
+      ],
+      "tags": [
+        "guard-sql",
+        "matcher",
+        "supabase",
+        "mcp"
+      ]
+    },
+    {
+      "id": "hook-005",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-005.json",
+      "title": "guard-sqlのBLOCKメッセージのStatement表示が、承認に必要な完全な文字列より短く切れていた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "hook-004"
+      ],
+      "tags": [
+        "guard-sql",
+        "approve-ddl",
+        "display",
+        "fingerprint"
       ]
     },
     {

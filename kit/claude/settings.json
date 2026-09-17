@@ -87,7 +87,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|mcp__[Ss]upabase__.*|mcp__postgres.*|mcp__neon.*|mcp__planetscale.*",
+        "matcher": "Bash|PowerShell|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale",
         "hooks": [
           {
             "type": "command",

@@ -2,9 +2,10 @@
 /**
  * test-guard-config.mjs — Test suite for guard-config.mjs. Run after any change.
  *
- * Feeds crafted PreToolUse payloads to the hook and asserts the exit code.
- * Exit 2 means blocked, exit 0 means allowed. AIWF_CLAUDE_HOME points the
- * hook at a throwaway directory so the test never touches a real ~/.claude.
+ * Feeds crafted PreToolUse and ConfigChange payloads to the hook and asserts
+ * the exit code. Exit 2 means blocked, exit 0 means allowed. AIWF_CLAUDE_HOME
+ * points the hook at a throwaway directory so the test never touches a real
+ * ~/.claude.
  *
  *   node kit/scripts/test-guard-config.mjs
  */
@@ -29,21 +30,29 @@ const ALLOW = 0;
 let pass = 0;
 let fail = 0;
 
+function runHook(payload) {
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8',
+    env: { ...process.env, AIWF_CLAUDE_HOME: CLAUDE_HOME },
+  });
+  return { code: r.status, out: (r.stderr || '') + (r.stdout || '') };
+}
+
 function callHook(toolName, toolInput) {
-  const payload = JSON.stringify({
+  return runHook({
     session_id: 'test',
     hook_event_name: 'PreToolUse',
     cwd: process.cwd(),
     tool_name: toolName,
     tool_input: toolInput,
   });
+}
 
-  const r = spawnSync(process.execPath, [HOOK], {
-    input: payload,
-    encoding: 'utf8',
-    env: { ...process.env, AIWF_CLAUDE_HOME: CLAUDE_HOME },
-  });
-  return { code: r.status, out: (r.stderr || '') + (r.stdout || '') };
+function callConfigChange(source) {
+  const payload = { session_id: 'test', hook_event_name: 'ConfigChange' };
+  if (source !== undefined) payload.source = source;
+  return runHook(payload);
 }
 
 function assert(name, expected, result) {
@@ -83,7 +92,7 @@ assert('PowerShell Remove-Item on an approval', BLOCK, callHook('PowerShell', { 
 assert('a wrapper in front does not hide it', BLOCK, callHook('Bash', { command: `cd /tmp && rm ${hookPath}` }));
 assert('a subshell-style chain does not hide it', BLOCK, callHook('Bash', { command: `echo hi; rm ${settingsPath}` }));
 
-console.log('\nmust allow:');
+console.log('\nmust allow — Edit/Write tools and shell commands:');
 assert('Edit an unrelated project file', ALLOW, callHook('Edit', { file_path: '/home/user/project/src/index.ts', old_string: 'x', new_string: 'y' }));
 assert('Write to a project scripts/ dir with the same name', ALLOW, callHook('Write', { file_path: '/home/user/project/scripts/build.mjs', content: 'x' }));
 assert('reading settings.json is fine', ALLOW, callHook('Bash', { command: `cat ${settingsPath}` }));
@@ -94,6 +103,13 @@ assert('non-write Bash command', ALLOW, callHook('Bash', { command: 'npm run bui
 assert('unrelated MCP tool', ALLOW, callHook('mcp__GitHub__search_code', { query: 'settings.json' }));
 assert('empty command', ALLOW, callHook('Bash', { command: '' }));
 assert('empty input', ALLOW, callHook('Bash', {}));
+
+console.log('\nConfigChange:');
+assert('user_settings change is blocked', BLOCK, callConfigChange('user_settings'));
+assert('user_settings change is blocked even with no source field', BLOCK, callConfigChange(undefined));
+assert('project_settings change is not this hook\'s concern', ALLOW, callConfigChange('project_settings'));
+assert('local_settings change is not this hook\'s concern', ALLOW, callConfigChange('local_settings'));
+assert('skills change is not this hook\'s concern', ALLOW, callConfigChange('skills'));
 
 rmSync(CLAUDE_HOME, { recursive: true, force: true });
 

@@ -108,6 +108,18 @@
             "statusMessage": "guard-secrets: checking for secret files"
           }
         ]
+      },
+      {
+        "//": "Stops the agent from modifying or deleting this kit's own guardrails: settings.json, CLAUDE.md, the hook scripts, and the DDL approval store. See data/pitfalls/hook-006.json for why approvals/ is in scope too.",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{GUARD_CONFIG_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-config: checking for self-tamper"
+          }
+        ]
       }
     ]
   }

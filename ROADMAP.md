@@ -13,7 +13,7 @@
 ため、`ci/restore-macos-on-public`（PR #25）でmacOSジョブをpush/PR両方に戻した
 （docsのみpathsのスキップは課金と無関係の判断なので維持）。
 
-## guard-config（自己改ざん防止）— 実装・マージ済み（PR #26・#27・#28）
+## guard-config（自己改ざん防止）— 実装・マージ済み（PR #26〜#29）
 
 **2026-09-17、外部の競合調査をきっかけに着手し、[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26) でマージ済み。**
 `karanb192/claude-code-hooks` が「エージェント自身にガードレールを書き換えさせない」専用
@@ -49,18 +49,27 @@ ConfigChangeのブロックは「今動いているセッションへの反映�
 **続けて、[PR #28](https://github.com/ponponpon888/ai-workforce/pull/28) で `guard-config.ps1`（PowerShell版）を追加・マージ済み。**
 guard-config.mjsと同じ保護対象・同じ2イベント（PreToolUse・ConfigChange）・同じセグメント
 分割設計をPowerShellに移植。`install.ps1`の既存の`$Hook`スイッチ（node/powershell）に
-guard-configも従うようにし、`test-guard-config.ps1`（29件）を追加。Windows実機で
-`test-guard-config.mjs`/`.ps1`ともに29/29、`install.ps1 -Hook powershell`実行後の
-`settings.json`にguard-config.ps1を指すコマンドが2箇所（PreToolUse・ConfigChange）
-正しく入っていることを確認してからマージした。
+guard-configも従うようにし、`test-guard-config.ps1`（29件）を追加。
+
+**続けて、[PR #29](https://github.com/ponponpon888/ai-workforce/pull/29) で `doctor.mjs` の `guards` 配列にguard-configを追加・マージ済み。**
+PreToolUse側は既存のguard-sql/secrets向けの認識・カバレッジ・ファイル存在チェックをそのまま
+再利用。ConfigChange側は形が異なる（matcherがツール名でなく設定ソース）ため、独立した
+別ブロックとして追加した（バグが混入しても既存のguard-sql/secretsチェックに影響しない設計）。
+この変更で`test-doctor.mjs`の「インストール済みを模した」フィクスチャがConfigChange側の
+プレースホルダを書き換えていなかったことが表面化し（想定通り）、該当4テストを修正。
+副次的に、PowerShellインストーラ向けの2テストがguard-config.ps1を「まだ存在しない」前提の
+古い特別扱いのままだったことも見つかり、PR #28で実際に存在するようになったことに合わせて
+修正した。Windows実機で`test-doctor.mjs`（28/28）・`doctor.mjs --template`（static-pass）・
+`test-guard-sql.mjs`/`.ps1`（45/45）・`test-guard-config.mjs`/`.ps1`（29/29）・
+`test-install-backups.mjs`（Node/ps両方）・`test-installed-approval.mjs`（Node/ps両方）・
+`test-verify-installers.mjs`（20/20）を確認してからマージした。
 
 副次的に、`test-lint-pitfalls.mjs`の「チェック可能な件数」の決め打ちが`hook-004`追加時点
 （5→6にすべきところ）から直っておらず古いままだったことも見つかり、`hook-006`/`hook-007`
-分と合わせて正しい値（7・9）に直した。
+分と合わせて正しい値（7・9）に直した（PR #27）。
 
-**今も見送っているもの（follow-up扱い）**:
-- `doctor.mjs` の `guards` 配列への guard-config 追加（PreToolUse・ConfigChangeの両方、
-  mjs・ps1の両方）。手計算で触ると壊すリスクの方が大きいと判断したため、単独のPRで対応する
+guard-configはこれでNode版・PowerShell版・PreToolUse・ConfigChange・doctorによる静的検査、
+すべて揃った。
 
 ## 基本開発で完了したこと
 
@@ -161,7 +170,8 @@ guard-configも従うようにし、`test-guard-config.ps1`（29件）を追加�
   （PR #25）でmacOSをpush/PR対象に戻し、mainで3OS実行を確認する運用に戻した。
 - [x] guard-config（上記参照）のレビューとマージ。[PR #26](https://github.com/ponponpon888/ai-workforce/pull/26)・
   [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)・
-  [PR #28](https://github.com/ponponpon888/ai-workforce/pull/28)。
+  [PR #28](https://github.com/ponponpon888/ai-workforce/pull/28)・
+  [PR #29](https://github.com/ponponpon888/ai-workforce/pull/29)。
 - [ ] README・CHANGELOG の最終確認・タグ付け。guard-config追加に伴い、README/README.enの
   「4本柱」や「5分で入れる」の記述をguard-config込みに更新するかも合わせて判断する
   （今回のPRでは触っていない）。
@@ -207,8 +217,6 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   を塞ぐか、既知の制約として残すかを検討する。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
-- `doctor.mjs` の `guards` 配列への guard-config 追加（PreToolUse・ConfigChangeの両方、
-  mjs・ps1の両方）。
 - 競合調査で見つかったもう一つの穴: `permissions.deny` は前方一致なので、
   `cd /tmp && rm -rf x` / `timeout 30 rm -rf x` / サブシェル / パイプ経由の `rm -rf` 等が
   すり抜ける（`perm-005` の「フラグ変種」よりさらに広い話）。guard-sql と同じ

@@ -9,7 +9,35 @@
 `ci/cut-actions-minutes`（docsのみのpush/PRをスキップ・macOSを`workflow_dispatch`専用に）を
 先に入れたうえで公開した。公開前に、コミット履歴を含めた秘密情報の簡易チェック（サービスロール
 キー・APIキー・秘密鍵等のパターン）を実施し、該当なしを確認済み。README / README.en の
-テストケース数（44→45）も公開前に修正した。
+テストケース数（44→45）も公開前に修正した。公開後、GitHub-hostedランナーが無料無制限になった
+ため、`ci/restore-macos-on-public`（PR #25）でmacOSジョブをpush/PR両方に戻した
+（docsのみpathsのスキップは課金と無関係の判断なので維持）。
+
+## 開発中: guard-config（自己改ざん防止）
+
+**2026-09-17、外部の競合調査をきっかけに着手。** `karanb192/claude-code-hooks` が
+「エージェント自身にガードレールを書き換えさせない」専用フック（config-guard）を持っている
+ことを知り、AI Workforce にはこれが無いと気づいた。さらにコードを読み返した結果、
+**guard-sql の DDL 承認ゲートには、人間を介さない自己承認という具体的な抜け道があった**
+（`hook-006`、confidence: inferred — 実際に自己承認を再現してはいない。approve-ddl の
+フィンガープリント計算式が本リポジトリに公開されているため、エージェントが
+`~/.claude/approvals/` に直接ファイルを書けば同じ値を計算して自己承認できてしまう）。
+
+`kit/claude/hooks/guard-config.mjs` を新設。`settings.json`・`CLAUDE.md`・`hooks/`・
+`scripts/`・`approvals/` のいずれかを、Edit/Write/MultiEdit/NotebookEdit ツールの
+`file_path` で、または Bash/PowerShell のコマンド行（`&&`/`||`/`;`/`$(` で分割した
+セグメントごと）で名指しする書き込み・削除・リネームを拒否する。`install.mjs` と
+`kit/claude/settings.json` のテンプレートに配線済み、`test-guard-config.mjs`（20件）を追加。
+
+**未完了（レビュー前に必要）**:
+- [ ] `test-guard-config.mjs` を実際に実行して20件通ることを確認する（このPRを作った
+  サンドボックスはネットワーク制約で実行できていない）
+- [ ] `.github/workflows/test.yml` に `test-guard-config.mjs` の呼び出しを追加する
+  （チャット側は `.github/workflows/` を書けないため、手元での反映が必要）
+- [ ] `doctor.mjs` の `guards` 配列への追加は今回のPRでは見送った。手計算で `guards` を
+  触ると壊れるリスクの方が大きいと判断したため、動作確認が済んでから別PRで対応する
+- [ ] `guard-config.ps1`（PowerShell版）は未着手。guard-sql/guard-secretsと違い、
+  今回は Node 版のみ
 
 ## 基本開発で完了したこと
 
@@ -106,9 +134,10 @@
   docsのみのpush/PRをCI対象外に・macOSジョブを`workflow_dispatch`専用に）をマージし、
   コミット履歴の簡易的な秘密情報チェック（該当なし）、README / README.en の
   テストケース数の古い表記（44→45）の修正を済ませてから切り替えた。
-- [ ] main 上での CI（test.yml）の成功確認と、README・CHANGELOG の最終確認・タグ付け。
-  public化によりGitHub Actionsの無料枠は無制限になったため、`ci/cut-actions-minutes`で
-  入れた制約（docsのみpath-ignore・macOS手動化）を維持するか外すかも合わせて判断する。
+- [x] main 上での CI（test.yml）の成功確認。public化後、`ci/restore-macos-on-public`
+  （PR #25）でmacOSをpush/PR対象に戻し、mainで3OS実行を確認する運用に戻した。
+- [ ] guard-config（上記「開発中」参照）のレビューとマージ。
+- [ ] README・CHANGELOG の最終確認・タグ付け。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 
@@ -123,6 +152,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - 設定の静的検査は Claude Code 本体の動作証明ではない。現在のテンプレート値と実機測定を区別する。
 - MCP ツール名の接頭辞はコネクタごとに変わりうる（実測: `mcp__claude_ai_Supabase__list_projects`）。
   matcher やフック内部のツール名チェックを書くときは、固定接頭辞ではなく部分一致で書くこと（hook-004）。
+- guard-config はパス名の文字列一致であり、`git checkout` での古いコミットへの巻き戻しや
+  パッケージスクリプト、エディタ拡張機能経由の書き換えはカバーしない（hook-006）。
 
 ## 基本版以降
 
@@ -146,3 +177,9 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   を塞ぐか、既知の制約として残すかを検討する。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
+- `guard-config.ps1`（PowerShell版）の実装と、`doctor.mjs` の `guards` 配列への追加。
+- 競合調査で見つかったもう一つの穴: `permissions.deny` は前方一致なので、
+  `cd /tmp && rm -rf x` / `timeout 30 rm -rf x` / サブシェル / パイプ経由の `rm -rf` 等が
+  すり抜ける（`perm-005` の「フラグ変種」よりさらに広い話）。guard-sql と同じ
+  「コマンド全体をセグメント分割して正規表現で走査する」設計を、deny リストの主要な
+  危険パターン（`rm -rf`、`git push --force`、`git reset --hard` 等）にも広げるかを検討する。

@@ -267,7 +267,8 @@
         "guard-config",
         "approve-ddl",
         "self-tamper",
-        "self-approval"
+        "self-approval",
+        "configchange"
       ]
     },
     {

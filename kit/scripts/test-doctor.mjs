@@ -48,14 +48,10 @@ try {
   test('standard installed commands with spaces recognized', () => assert.equal(inspectSettings(installed, { claudeHome: temp }).status, 'static-pass'));
   test('installed placeholders rejected', () => assert(inspectSettings(clone(), { claudeHome: temp }).findings.some(f => f.id === 'hooks.placeholder')));
   test('missing registered file rejected', () => { rmSync(join(temp, 'hooks', 'guard-sql.mjs')); assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-sql.file')); writeFileSync(join(temp, 'hooks', 'guard-sql.mjs'), '// stub'); });
-  test('PowerShell installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    // guard-destructive has no .ps1 port yet, so the PowerShell installer registers it with node.
-    hookOf(s, 'guard-destructive').command = hookOf(installed, 'guard-destructive').command;
+  test('PowerShell installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config','guard-destructive']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
     s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
-  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    // guard-destructive has no .ps1 port yet, so the PowerShell installer registers it with node.
-    hookOf(s, 'guard-destructive').command = hookOf(installed, 'guard-destructive').command;
+  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config','guard-destructive']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
     s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
   test('CLI never executes malicious configured command or changes settings', () => {

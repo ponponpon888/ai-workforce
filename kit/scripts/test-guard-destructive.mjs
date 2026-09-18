@@ -8,9 +8,9 @@
  *   node kit/scripts/test-guard-destructive.mjs
  *   node kit/scripts/test-guard-destructive.mjs --target ps [--pwsh powershell.exe]
  *
- * --target ps runs the same cases against guard-destructive.ps1. That port
- * does not exist yet; the option is here so the two cannot drift once it
- * does, the same arrangement as test-guard-secrets.mjs.
+ * --target ps runs the same cases against guard-destructive.ps1, the same
+ * arrangement as test-guard-secrets.mjs: one set of cases, two
+ * implementations, so they cannot drift.
  *
  * Three groups:
  *   - "deny already covers": forms Anthropic's permissions reference says

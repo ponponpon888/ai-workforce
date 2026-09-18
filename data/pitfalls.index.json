@@ -6,39 +6,39 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 19,
+    "total": 20,
     "by_set": {
-      "pitfalls": 19
+      "pitfalls": 20
     },
     "by_confidence": {
-      "measured": 13,
+      "measured": 14,
       "inferred": 3,
       "documented": 2,
       "unverified": 1
     },
     "by_status": {
-      "closed": 13,
+      "closed": 14,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 12,
+      "trap": 13,
       "limitation": 3,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
       "hook": 10,
-      "runtime": 1,
+      "runtime": 2,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
       "unknown_version": 10,
-      "ok": 3,
+      "ok": 4,
       "not_applicable": 6
     },
-    "without_prose": 9,
+    "without_prose": 10,
     "checkable": 9
   },
   "checks": [
@@ -581,6 +581,30 @@
         "powershell",
         "quoting",
         "instructions"
+      ]
+    },
+    {
+      "id": "shell-002",
+      "set": "pitfalls",
+      "file": "data/pitfalls/shell-002.json",
+      "title": "PowerShell の関数は 1 要素の配列をスカラーにして返す。, で包むと、今度は @() が二重にする",
+      "layer": "runtime",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "shell-001"
+      ],
+      "tags": [
+        "powershell",
+        "arrays",
+        "strictmode",
+        "guard-destructive"
       ]
     }
   ]

@@ -687,7 +687,9 @@ recorded as [perm-006](../data/pitfalls/perm-006.json).
 
 ### A hook for the shapes that really get through
 
-[guard-destructive](../kit/claude/hooks/guard-destructive.mjs) stops the destructive commands
+[guard-destructive](../kit/claude/hooks/guard-destructive.mjs) (and its PowerShell twin
+[guard-destructive.ps1](../kit/claude/hooks/guard-destructive.ps1); the same 206 cases run
+against both) stops the destructive commands
 already in deny **when they arrive in a shape deny does not match**. What it forbids is what
 deny forbids; nothing new.
 
@@ -785,8 +787,6 @@ and check that the counts match the file** — the cheapest check there was.
 - variables assigned out of sight. `$CMD` in `$CMD -rf x` is followed only when the
   assignment is visible in the same command;
 - a command buried in an argument string, like `Start-Process cmd -ArgumentList '/c rd /s /q x'`;
-- there is no PowerShell port (`guard-destructive.ps1`) yet. `install.ps1 -Hook powershell`
-  registers the Node version for this one hook.
 
 As Anthropic's page says, enforcement that does not depend on the command text is the
 sandbox's job. This hook makes sure a model that was refused by deny hits the wall again

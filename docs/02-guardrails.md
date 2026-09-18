@@ -740,7 +740,9 @@ ROADMAP にもそう書いていました。
 
 ### 本当に抜ける形だけを、フックで見ます
 
-[guard-destructive](../kit/claude/hooks/guard-destructive.mjs) は、deny に書いてある
+[guard-destructive](../kit/claude/hooks/guard-destructive.mjs)（PowerShell 版は
+[guard-destructive.ps1](../kit/claude/hooks/guard-destructive.ps1)。同じ 206 件のテストを
+両方に当てています）は、deny に書いてある
 破壊系のコマンドが、**deny の一致しない形で来たとき**に止めます。禁止する中身は
 deny と同じで、新しく足してはいません。
 
@@ -838,8 +840,6 @@ Node はシンボリックリンクを解決してからファイルを読むの
 - 見えないところで代入された変数。`$CMD -rf x` の `$CMD` は、同じコマンドの中で
   代入が見えたときだけ中身を追います
 - `Start-Process cmd -ArgumentList '/c rd /s /q x'` のような、引数の文字列に埋めた形
-- PowerShell 版（`guard-destructive.ps1`）はまだありません。`install.ps1 -Hook powershell`
-  でも、このフックだけは Node 版を登録します
 
 公式ドキュメントのとおり、コマンドの文字列に頼らずに止めたいならサンドボックスです。
 これは、deny に弾かれたモデルが「別の書き方」を試したときに、もう一度壁に当たる

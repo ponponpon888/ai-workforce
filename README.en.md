@@ -116,17 +116,36 @@ node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string
 `drop table` was being read as SQL and blocked.
 
-A second hook of the same shape, `guard-secrets`, stops a shell command from reading `.env` or a
-private key. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and
-`Get-Content .env` were walking straight past it. It refuses only when the command both names a
-secret file and is a shape that reads one (65 cases: 34 must block, 31 must allow).
+Three more hooks have the same shape. **All four are decided the same way, and tested the same way.**
+
+| Hook | What it refuses | Cases |
+|---|---|---|
+| `guard-sql` | `DROP`, `TRUNCATE`, `UPDATE`/`DELETE` without `WHERE`, DDL without an approval token | 45 |
+| `guard-secrets` | reading `.env` or a private key **through a shell**. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and `Get-Content .env` walked straight past it | 65 |
+| `guard-config` | the agent **rewriting its own guardrails**: `settings.json`, `CLAUDE.md`, `hooks/`, and the DDL approval store | 29 |
+| `guard-destructive` | the destructive commands already in `deny`, **in the shapes deny does not match**: `bash -c 'rm -rf x'`, `/bin/rm`, `sudo`, `npx rimraf`, `git -C . push --force`, `rm -rfv`, `cmd /c rd /s`, `node -e` with `rmSync` | 207 |
+
+`guard-config` covers `approvals/` because the agent could write a DDL approval file itself. The
+fingerprint algorithm is public, in this repository, so anything that can write that file can
+approve DDL a human never saw ([hook-006](data/pitfalls/hook-006.json)).
+
+`guard-destructive` exists because the limits of `deny` are documented. Anthropic's permissions
+reference says a Bash rule "isn't a security boundary around the program". Claude Code itself
+stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c`, `/bin/rm`, or
+`git -C` ([perm-006](data/pitfalls/perm-006.json)).
 
 ```bash
-node kit/scripts/test-guard-secrets.mjs   # pass: 65   fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 45    fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
+node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
+node kit/scripts/test-guard-destructive.mjs   # pass: 207   fail: 0
 ```
 
-→ [docs/02](docs/02-guardrails.md) · [guard-sql.mjs](kit/claude/hooks/guard-sql.mjs) ·
-[guard-secrets.mjs](kit/claude/hooks/guard-secrets.mjs)
+Every hook has a PowerShell twin with the same behaviour (`install.ps1 -Hook powershell`), held to
+the same cases with `--target ps`. CI runs the Node hooks on Ubuntu, macOS and Windows, and the
+PowerShell twins on Windows, Ubuntu, and Windows PowerShell 5.1.
+
+→ [docs/02](docs/02-guardrails.md) · [kit/claude/hooks/](kit/claude/hooks/)
 
 ### 3. Division of labor
 
@@ -210,9 +229,16 @@ node kit/scripts/install.mjs
 
 Nothing is deleted. Anything overwritten is copied to `.bak.<timestamp>` first.
 
-There are two hook implementations with identical behaviour: `guard-sql.mjs` runs everywhere
-(Claude Code already ships on Node, so there is nothing to install — no jq, no python), and
-`guard-sql.ps1` is there for Windows setups that would rather keep Node out of the hook path.
+**Then quit Claude Code (`/exit`) and start it again.** A running session keeps the hooks it
+started with, and guard-config refuses live changes to `settings.json` on purpose. After the
+restart, open `/hooks`: `PreToolUse` must show `Bash|PowerShell` with **2 hooks**. If it shows 1,
+you are still testing the settings from before the install
+([hook-009](data/pitfalls/hook-009.json)).
+
+Every hook has two implementations with identical behaviour: the `.mjs` files run everywhere
+(Claude Code already ships on Node, so there is nothing to install — no jq, no python), and the
+`.ps1` twins are there for Windows setups that would rather keep Node out of the hook path
+(`install.ps1 -Hook powershell`).
 
 CI runs the Node suites on Ubuntu, macOS and Windows, the PowerShell suites on all three, and
 both installers into a throwaway home.

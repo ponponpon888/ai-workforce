@@ -233,9 +233,12 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 - [x] README / README.en を4フック（guard-sql / guard-secrets / guard-config / guard-destructive）を
   並べる形に更新した。「5分で入れる」には、入れたあと Claude Code を起動し直して `/hooks` で
   件数を確認する手順を追加（hook-009）。
-- [ ] CHANGELOG の最終確認・タグ付け。
+- [x] [CHANGELOG.md](CHANGELOG.md) を追加した（v0.1.0 の中身・実測で確定したこと・既知の制約）。
+- [ ] v0.1.0 のタグ付けとリリース。
 - [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008（フックの不具合）と hook-009（確認手順の落とし穴）を発見・対処した。
-- [ ] guard-destructive（PR #30）のマージ。
+- [x] guard-destructive のマージ。[PR #30](https://github.com/ponponpon888/ai-workforce/pull/30)（本体）・
+  [PR #31](https://github.com/ponponpon888/ai-workforce/pull/31)（PowerShell 版、Windows PowerShell 5.1 の CI も通過）・
+  [PR #32](https://github.com/ponponpon888/ai-workforce/pull/32)（README）。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 

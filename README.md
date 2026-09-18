@@ -231,6 +231,8 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
+| [CHANGELOG](CHANGELOG.md) | 各版に何が入っているか。現在は v0.1.0 |
+| [ROADMAP](ROADMAP.md) | 何を判断して、何を残したか |
 
 ---
 

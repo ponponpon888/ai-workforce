@@ -264,6 +264,8 @@ usable as-is; translations are welcome.
 | [08 Pitfall records](docs/08-pitfall-records.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
 | [Case studies](docs/case-studies/) | Excerpts from products that are actually running |
 | [99 FAQ](docs/99-faq.md) | |
+| [CHANGELOG](CHANGELOG.md) | What is in each release. Currently v0.1.0 (Japanese) |
+| [ROADMAP](ROADMAP.md) | What was decided, and what is still open (Japanese) |
 
 ---
 

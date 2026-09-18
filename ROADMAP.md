@@ -126,7 +126,7 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 で同じ 206 件を当て、pwsh 7.4.6 で全件通過。`install.ps1 -Hook powershell` は 4 つとも `.ps1` を
 登録するようになった。実装中に踏んだ PowerShell の配列の癖は [`shell-002`](data/pitfalls/shell-002.json)。
 
-### deny に無いもののうち、4 つだけ足した
+### deny に無いもののうち、4 つだけ足した（PR #34）
 
 競合調査で名前が挙がっていた 4 つ（`find . -delete`、`gh repo sync --force`、`git stash drop`、
 `git checkout -- .`）は、どれも deny に対応する行が無い。PR #30 の時点では「deny に書いてあるものを
@@ -257,11 +257,13 @@ Node 版のファイルにしか当てられない）。フック本体は
   並べる形に更新した。「5分で入れる」には、入れたあと Claude Code を起動し直して `/hooks` で
   件数を確認する手順を追加（hook-009）。
 - [x] [CHANGELOG.md](CHANGELOG.md) を追加した（v0.1.0 の中身・実測で確定したこと・既知の制約）。
-- [ ] v0.1.0 のタグ付けとリリース。
+- [x] v0.1.0 のタグ付けとリリース。2026-09-18、この項目を閉じた PR をマージした時点の main に
+  `v0.1.0` を打ち、GitHub の Releases に [CHANGELOG](CHANGELOG.md) の v0.1.0 の中身を載せた。
 - [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008（フックの不具合）と hook-009（確認手順の落とし穴）を発見・対処した。
 - [x] guard-destructive のマージ。[PR #30](https://github.com/ponponpon888/ai-workforce/pull/30)（本体）・
   [PR #31](https://github.com/ponponpon888/ai-workforce/pull/31)（PowerShell 版、Windows PowerShell 5.1 の CI も通過）・
-  [PR #32](https://github.com/ponponpon888/ai-workforce/pull/32)（README）。
+  [PR #32](https://github.com/ponponpon888/ai-workforce/pull/32)（README）・
+  [PR #34](https://github.com/ponponpon888/ai-workforce/pull/34)（deny に対になる行がない 4 つ）。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 

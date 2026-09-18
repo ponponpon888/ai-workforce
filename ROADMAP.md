@@ -128,7 +128,6 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 
 **残り（このPRの外）:**
 
-- README / README.en の「4本柱」「5分で入れる」の記述をどうするか（guard-config と合わせて判断）。
 
 ## 基本開発で完了したこと
 
@@ -231,9 +230,10 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
   [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)・
   [PR #28](https://github.com/ponponpon888/ai-workforce/pull/28)・
   [PR #29](https://github.com/ponponpon888/ai-workforce/pull/29)。
-- [ ] README・CHANGELOG の最終確認・タグ付け。guard-config・guard-destructive追加に伴い、README/README.enの
-  「4本柱」や「5分で入れる」の記述をこの2つ込みに更新するかも合わせて判断する
-  （guard-config・guard-destructive の各PRでは触っていない）。
+- [x] README / README.en を4フック（guard-sql / guard-secrets / guard-config / guard-destructive）を
+  並べる形に更新した。「5分で入れる」には、入れたあと Claude Code を起動し直して `/hooks` で
+  件数を確認する手順を追加（hook-009）。
+- [ ] CHANGELOG の最終確認・タグ付け。
 - [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008（フックの不具合）と hook-009（確認手順の落とし穴）を発見・対処した。
 - [ ] guard-destructive（PR #30）のマージ。
 

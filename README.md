@@ -97,26 +97,42 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 ```
 
-同じ形のフックがもう 1 つあります。`guard-secrets` は、`.env` や秘密鍵を
-**シェル経由で読むのを止めます**。`deny` の `Read(./.env)` は Read ツールにしか
-効かないので、`cat .env` も `Get-Content .env` も素通りしていました。
-落とすのは「秘密ファイルのパス」と「読み出しの形」が両方あるときだけです
-（合計 65 ケース: 落とす 34 / 通す 31）。
+同じ形のフックが、あと 3 つあります。**4 つとも、止める理由も、テストの形も同じです。**
+
+| フック | 何を止めるか | テスト |
+|---|---|---|
+| `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 45 |
+| `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた | 65 |
+| `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象 | 29 |
+| `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など | 207 |
+
+`guard-config` が `approvals/` まで見るのは、DDL の承認ファイルを**エージェント自身が書けてしまった**からです。
+ハッシュの計算式はこのリポジトリに公開されているので、書ければ人間に見せずに自分で承認できました
+（[hook-006](data/pitfalls/hook-006.json)）。
+
+`guard-destructive` が要る理由は、`deny` の限界がはっきりしているからです。公式ドキュメントは、
+`deny` が「プログラムのまわりのセキュリティ境界ではない」と明記しています。`cd /tmp && rm -rf x` や
+`timeout 30 rm -rf x` は Claude Code 自身が止めますが、`bash -c` や `/bin/rm` や `git -C` は止めません
+（[perm-006](data/pitfalls/perm-006.json)）。
 
 ```bash
-node kit/scripts/test-guard-secrets.mjs   # pass: 65   fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 45    fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
+node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
+node kit/scripts/test-guard-destructive.mjs   # pass: 207   fail: 0
 ```
 
-フックは 2 種類あって、挙動は同じです。
+どのフックにも PowerShell 版があり、挙動は同じです。
 
 | | 動く場所 | 備考 |
 |---|---|---|
-| `guard-sql.mjs` | Windows / macOS / Linux | 既定。Claude Code が Node で動くので、追加インストールは不要 |
-| `guard-sql.ps1` | Windows | Node をフックの経路に入れたくない場合 |
+| `*.mjs` | Windows / macOS / Linux | 既定。Claude Code が Node で動くので、追加インストールは不要 |
+| `*.ps1` | Windows | Node をフックの経路に入れたくない場合。`install.ps1 -Hook powershell` |
 
-CI では Node 版を Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubuntu で回しています。
+PowerShell 版は同じテストを `--target ps` で当てて確かめています。CI では Node 版を
+Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubuntu と、Windows PowerShell 5.1 でも回しています。
 
-→ [docs/02-guardrails.md](docs/02-guardrails.md) / [kit/claude/hooks/guard-sql.mjs](kit/claude/hooks/guard-sql.mjs)
+→ [docs/02-guardrails.md](docs/02-guardrails.md) / [kit/claude/hooks/](kit/claude/hooks/)
 
 ### 3. 役割分担
 
@@ -174,10 +190,16 @@ node kit/scripts/install.mjs
 インストーラがやること:
 
 1. `~/.claude/CLAUDE.md` と `~/.claude/settings.json` を配置（既存は `.bak` にバックアップ）
-2. `~/.claude/hooks/` に guard-sql を配置し、`settings.json` の `PreToolUse` に登録
+2. `~/.claude/hooks/` に 4 つのフックと DDL の承認スクリプトを配置し、`settings.json` の `PreToolUse` に登録
 3. 残りの手作業（動作確認と `pull-all` の登録）を表示する
 
 **消しません。** 上書きするものは必ず `.bak.<日時>` に退避します。
+
+**入れたら、Claude Code を `/exit` で終了して起動し直してください。** 起動中のセッションは、
+起動したときの設定のまま動きます（guard-config は、起動中のセッションへの設定変更を意図的に拒否します）。
+起動し直したら `/hooks` を開いて、`PreToolUse` の `Bash|PowerShell` が **2 hooks** になっているかを
+確認してから試してください。1 件のままなら、入れ替え前の設定で試していることになります
+（[hook-009](data/pitfalls/hook-009.json)）。
 
 ---
 

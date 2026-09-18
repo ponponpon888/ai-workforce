@@ -1,0 +1,28 @@
+{
+  "id": "hook-011",
+  "title": "SessionStartはブロックできないので、hook-007の穴は「警告」までしか塞げない",
+  "summary": "hook-007に記録した通り、guard-configのConfigChangeはClaude Code実行中のライブな書き換えの取り込みを止めるだけで、ファイル自体は書き換わったまま残る。さらにClaude Codeを起動していない間の書き換えは、そもそもConfigChangeの対象にすらならない。SessionStartイベントは起動のたびに発火するため検知には使えるが、公式ドキュメント（https://code.claude.com/docs/en/hooks）によれば、SessionStartはexit code 2も`decision`/`permissionDecision`フィールドも無視され、何を返しても起動そのものを止められない。そこでguard-configに`known-good/settings.json`という基準ファイルを持たせ（`approvals/`と同じくPROTECTED_SUBPATHSでClaude Code経由の書き込みから保護）、SessionStart（startup/resume）のたびに現在のsettings.jsonと比較する実装を追加した。基準が無ければ現在の内容を基準として静かに採用し（informationalなnoteのみ）、一致すれば何もせず、一致しなければadditionalContext（Claude自身向け）とsystemMessage（人間向けUI）の両方にWARNINGを出す。ただし起動は止めず、不一致の内容を新しい基準として採用することもしない。基準の再記録は`kit/scripts/record-settings-baseline.mjs`/`.ps1`を人が手で実行する（approve-ddl.mjsと同じく、Claude Code自身の実行許可確認とスクリプト自身の対話的なy/N確認に頼る設計で、guard-configのPreToolUseはこのコマンド自体を特別扱いしない）。",
+  "layer": "hook",
+  "kind": "limitation",
+  "severity": "medium",
+  "confidence": "documented",
+  "origin": "docs/02-guardrails.md#sessionstart-で起動していない間の書き換えにも気づけるようにしました",
+  "sources": [
+    "https://code.claude.com/docs/en/hooks"
+  ],
+
+  "status": "open_recorded",
+  "why_not_closed": "SessionStartはプラットフォーム側の制約として起動そのものをブロックできない（公式ドキュメントに明記されている）。この実装が出せるのは起動後の警告までであり、警告を人が見逃せば次回以降の起動もそのまま通る。hook-007自体はkind:behaviourのためstatusを持てず（スキーマのR09）「直った」とは書けない。警告をブロックへ格上げする手段がプラットフォーム側に存在しない限り、この記録はopen_recordedのままにする。",
+
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-config.mjs",
+    "pattern": "function checkSessionStartBaseline()",
+    "expect": "present",
+    "message": "known-good/settings.jsonとの比較を行うSessionStartの検知本体。これが無くなると、Claude Codeを起動していない間のsettings.json書き換えに気づく手段が無くなる。"
+  },
+
+  "related": ["hook-007"],
+  "tags": ["guard-config", "sessionstart", "settings-json", "known-good", "cannot-block"]
+}

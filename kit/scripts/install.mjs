@@ -8,9 +8,12 @@
  * Copies the shared CLAUDE.md, settings.json and the guard hooks into
  * ~/.claude, backing up anything already there. Nothing is deleted.
  * The hooks are guard-sql, guard-secrets, guard-config (self-tamper
- * protection for these settings, CLAUDE.md and the hooks themselves) and
- * guard-destructive (the deny list's destructive commands, in the shapes
- * deny does not match).
+ * protection for these settings, CLAUDE.md and the hooks themselves, plus a
+ * SessionStart check that warns if settings.json changed while Claude Code
+ * was not running) and guard-destructive (the deny list's destructive
+ * commands, in the shapes deny does not match). Also records the
+ * known-good/ baseline guard-config's SessionStart check compares against;
+ * re-record it with record-settings-baseline.mjs after any later hand-edit.
  *
  *   node kit/scripts/install.mjs --dry-run     # show what would happen
  *   node kit/scripts/install.mjs
@@ -144,6 +147,20 @@ install(
   join(claudeHome, 'scripts', 'approve-ddl.mjs')
 );
 
+// --- 2c. settings baseline recorder -----------------------------------------
+//
+// guard-config's SessionStart check warns when settings.json no longer
+// matches the last recorded baseline. This is the script a human runs, by
+// hand, outside Claude Code, to re-record that baseline after a deliberate
+// edit. See the SessionStart notes in guard-config.mjs for why it has to be
+// a separate, human-run step rather than something this hook does itself.
+
+console.log('2c. settings baseline recorder');
+install(
+  readFileSync(join(kitRoot, 'scripts', 'record-settings-baseline.mjs'), 'utf8'),
+  join(claudeHome, 'scripts', 'record-settings-baseline.mjs')
+);
+
 // --- 3. settings.json -------------------------------------------------------
 
 console.log('3. settings.json');
@@ -156,6 +173,10 @@ if (skipSettings) {
   console.log(`    ${secretsCommand}`);
   console.log(`    ${configCommand}`);
   console.log(`    ${destructiveCommand}`);
+  console.log('  Also add a ConfigChange hook (matcher "user_settings") and a SessionStart');
+  console.log('  hook (matcher "startup|resume") both running this command:');
+  console.log(`    ${configCommand}`);
+  console.log('  Without the SessionStart entry, step 4 below records a baseline nobody checks.');
 } else {
   const replacements = {
     CLAUDE_HOME: claudeHome.replaceAll('\\', '/'),
@@ -203,16 +224,43 @@ for (const { destination } of pending) {
 // All selected sources and destination shapes are checked before the first write.
 for (const entry of pending) writeInstalledFile(entry.content, entry.destination);
 
-// --- 4. what is left to do by hand -----------------------------------------
+// --- 4. known-good baseline --------------------------------------------------
+//
+// Records the settings.json now on disk (whichever one: freshly written
+// above, or the pre-existing file if --skip-settings kept it) as the
+// trusted baseline guard-config's SessionStart check compares against.
+// Day one gets a baseline the same way every later hand-edit does --
+// through record-settings-baseline, not written ad hoc here.
+
+console.log('4. known-good baseline');
+const finalSettingsPath = join(claudeHome, 'settings.json');
+const knownGoodPath = join(claudeHome, 'known-good', 'settings.json');
+if (dryRun) {
+  console.log(`  would record -> ${knownGoodPath}`);
+} else if (!existsSync(finalSettingsPath)) {
+  console.log('  skipped: no settings.json on disk to record a baseline from.');
+} else {
+  const finalSettings = readFileSync(finalSettingsPath);
+  if (existsSync(knownGoodPath) && readFileSync(knownGoodPath).equals(finalSettings)) {
+    console.log(`  unchanged -> ${knownGoodPath}`);
+  } else {
+    mkdirSync(dirname(knownGoodPath), { recursive: true });
+    writeFileSync(knownGoodPath, finalSettings);
+    console.log(`  recorded  -> ${knownGoodPath}`);
+  }
+}
+
+// --- 5. what is left to do by hand -----------------------------------------
 
 console.log('');
-console.log('Done. Two things are deliberately left to you:');
+console.log('Done. Three things are deliberately left to you:');
 console.log('');
 console.log('  a) Quit Claude Code (/exit) and start it again. A running session keeps the');
 console.log('     hooks it started with, and guard-config refuses live changes to');
 console.log('     settings.json on purpose. Then open /hooks: PreToolUse must show');
-console.log('     Bash|PowerShell with 2 hooks. If it shows 1, you are still testing the');
-console.log('     old settings, and every result below is meaningless.');
+console.log('     Bash|PowerShell with 2 hooks, and SessionStart must show 1. If PreToolUse');
+console.log('     shows 1, you are still testing the old settings, and every result below is');
+console.log('     meaningless.');
 console.log('');
 console.log('     Verify all four hooks fire. In Claude Code, ask it to run:');
 console.log('       select 1; drop table nothing;      -> [guard-sql] must block it');
@@ -229,7 +277,12 @@ console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-secrets.mjs')}`)
 console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-config.mjs')}`);
 console.log(`       node ${join(kitRoot, 'scripts', 'test-guard-destructive.mjs')}`);
 console.log('');
-console.log('  b) Register pull-all if you want it. It brings every repo under a root');
+console.log('  b) After any deliberate hand-edit of settings.json, re-record its baseline');
+console.log('     yourself, outside Claude Code, or every session start will warn that it');
+console.log('     no longer matches what was last approved:');
+console.log(`       node ${join(claudeHome, 'scripts', 'record-settings-baseline.mjs')}`);
+console.log('');
+console.log('  c) Register pull-all if you want it. It brings every repo under a root');
 console.log('     up to date at login without ever touching work in progress.');
 console.log(`       node ${join(kitRoot, 'scripts', 'pull-all.mjs')} --root ~/Dev --quiet`);
 console.log('     Read it first, then add a cron line:');

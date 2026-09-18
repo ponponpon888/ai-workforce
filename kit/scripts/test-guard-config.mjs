@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,8 +51,21 @@ function callHook(toolName, toolInput) {
 
 function callConfigChange(source) {
   const payload = { session_id: 'test', hook_event_name: 'ConfigChange' };
-  if (source !== undefined) payload.source = source;
+  if (source !== undefined) payload.config_source = source;
   return runHook(payload);
+}
+
+function callSessionStart(startupType, { home = CLAUDE_HOME } = {}) {
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({
+      session_id: 'test',
+      hook_event_name: 'SessionStart',
+      ...(startupType !== undefined ? { startup_type: startupType } : {}),
+    }),
+    encoding: 'utf8',
+    env: { ...process.env, AIWF_CLAUDE_HOME: home },
+  });
+  return { code: r.status, out: r.stdout || '', err: r.stderr || '' };
 }
 
 function assert(name, expected, result) {
@@ -80,6 +93,7 @@ assert('Edit CLAUDE.md', BLOCK, callHook('Edit', { file_path: claudeMdPath, old_
 assert('Edit a hook file', BLOCK, callHook('Edit', { file_path: hookPath, old_string: 'x', new_string: 'y' }));
 assert('Write an approval token directly', BLOCK, callHook('Write', { file_path: approvalPath, content: 'select 1' }));
 assert('Edit approve-ddl.mjs itself', BLOCK, callHook('Edit', { file_path: scriptPath, old_string: 'x', new_string: 'y' }));
+assert('Write the known-good SessionStart baseline directly', BLOCK, callHook('Write', { file_path: join(CLAUDE_HOME, 'known-good', 'settings.json'), content: '{}' }));
 
 console.log('\nmust block — shell commands:');
 assert('rm on a hook file', BLOCK, callHook('Bash', { command: `rm ${hookPath}` }));
@@ -106,10 +120,93 @@ assert('empty input', ALLOW, callHook('Bash', {}));
 
 console.log('\nConfigChange:');
 assert('user_settings change is blocked', BLOCK, callConfigChange('user_settings'));
-assert('user_settings change is blocked even with no source field', BLOCK, callConfigChange(undefined));
+assert('user_settings change is blocked even with no config_source field', BLOCK, callConfigChange(undefined));
 assert('project_settings change is not this hook\'s concern', ALLOW, callConfigChange('project_settings'));
 assert('local_settings change is not this hook\'s concern', ALLOW, callConfigChange('local_settings'));
 assert('skills change is not this hook\'s concern', ALLOW, callConfigChange('skills'));
+
+console.log('\nSessionStart:');
+{
+  // Its own throwaway home per case, distinct from CLAUDE_HOME above: these
+  // tests read and write settings.json / known-good/settings.json on disk,
+  // which the PreToolUse/ConfigChange cases above never touch.
+  function freshHome() {
+    const home = mkdtempSync(join(tmpdir(), 'aiwf-cfg-session-'));
+    writeFileSync(join(home, 'settings.json'), '{"hooks":{}}');
+    return home;
+  }
+
+  {
+    const home = freshHome();
+    const r = callSessionStart('startup', { home });
+    assert('exits 0 (SessionStart can never block, even on first run)', ALLOW, r);
+    if (r.code === 0) {
+      const baseline = join(home, 'known-good', 'settings.json');
+      if (!existsSync(baseline)) { console.log('  FAIL  first run records a baseline'); fail++; }
+      else if (!readFileSync(baseline).equals(readFileSync(join(home, 'settings.json')))) { console.log('  FAIL  recorded baseline matches current settings.json'); fail++; }
+      else { console.log('  PASS  first run records a baseline matching current settings.json'); pass++; }
+      if (!r.out.includes('"additionalContext"') || !/baseline recorded for the first time/.test(r.out)) { console.log('  FAIL  first run surfaces an informational (not alarming) context note'); fail++; }
+      else { console.log('  PASS  first run surfaces an informational (not alarming) context note'); pass++; }
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  {
+    const home = freshHome();
+    callSessionStart('startup', { home }); // establishes the baseline
+    const r = callSessionStart('startup', { home });
+    assert('second run against an unchanged file exits 0', ALLOW, r);
+    if (r.out.trim()) { console.log('  FAIL  second run against an unchanged file says nothing'); fail++; }
+    else { console.log('  PASS  second run against an unchanged file says nothing'); pass++; }
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  {
+    const home = freshHome();
+    callSessionStart('startup', { home }); // establishes the baseline
+    writeFileSync(join(home, 'settings.json'), '{"hooks":{},"tampered":true}');
+    const r = callSessionStart('resume', { home });
+    assert('a settings.json that no longer matches the baseline still exits 0', ALLOW, r);
+    if (!r.out.includes('"additionalContext"') || !/WARNING/.test(r.out)) { console.log('  FAIL  mismatch surfaces a WARNING in additionalContext'); fail++; }
+    else { console.log('  PASS  mismatch surfaces a WARNING in additionalContext'); pass++; }
+    if (!/hook-007/.test(r.out)) { console.log('  FAIL  warning points at hook-007.json for the background'); fail++; }
+    else { console.log('  PASS  warning points at hook-007.json for the background'); pass++; }
+    // The baseline itself is left untouched by a mere check -- only
+    // record-settings-baseline (run by a human) is allowed to update it.
+    const baselineAfter = readFileSync(join(home, 'known-good', 'settings.json'), 'utf8');
+    if (baselineAfter.includes('tampered')) { console.log('  FAIL  a mismatch does not silently adopt the new file as the baseline'); fail++; }
+    else { console.log('  PASS  a mismatch does not silently adopt the new file as the baseline'); pass++; }
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  {
+    const home = mkdtempSync(join(tmpdir(), 'aiwf-cfg-session-'));
+    // No settings.json at all in this home.
+    assert('no installed settings.json is not this hook\'s problem', ALLOW, callSessionStart('startup', { home }));
+    if (existsSync(join(home, 'known-good'))) { console.log('  FAIL  no baseline directory is created when there is nothing to record'); fail++; }
+    else { console.log('  PASS  no baseline directory is created when there is nothing to record'); pass++; }
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  {
+    const home = freshHome();
+    assert('clear is not startup or resume; skipped without recording a baseline', ALLOW, callSessionStart('clear', { home }));
+    if (existsSync(join(home, 'known-good'))) { console.log('  FAIL  clear does not trigger baseline bootstrap'); fail++; }
+    else { console.log('  PASS  clear does not trigger baseline bootstrap'); pass++; }
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  {
+    // A broader/custom registration with no startup_type field at all still
+    // runs the check, the same defensive default as ConfigChange's missing
+    // config_source above.
+    const home = freshHome();
+    assert('missing startup_type field still runs the check', ALLOW, callSessionStart(undefined, { home }));
+    if (!existsSync(join(home, 'known-good', 'settings.json'))) { console.log('  FAIL  missing startup_type still records a baseline'); fail++; }
+    else { console.log('  PASS  missing startup_type still records a baseline'); pass++; }
+    rmSync(home, { recursive: true, force: true });
+  }
+}
 
 rmSync(CLAUDE_HOME, { recursive: true, force: true });
 

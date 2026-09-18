@@ -6,30 +6,30 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 21,
+    "total": 22,
     "by_set": {
-      "pitfalls": 21
+      "pitfalls": 22
     },
     "by_confidence": {
       "measured": 15,
       "inferred": 3,
-      "documented": 2,
+      "documented": 3,
       "unverified": 1
     },
     "by_status": {
       "closed": 14,
-      "open_recorded": 1,
+      "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
       "trap": 13,
-      "limitation": 4,
+      "limitation": 5,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 11,
+      "hook": 12,
       "runtime": 2,
       "ci": 1,
       "external": 1
@@ -37,10 +37,10 @@
     "by_stale_risk": {
       "unknown_version": 11,
       "ok": 4,
-      "not_applicable": 6
+      "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 10
+    "checkable": 11
   },
   "checks": [
     {
@@ -105,6 +105,15 @@
       "expect": "present",
       "message": "この早期returnを外して無害化を適用すると、npx supabase db execute --sql 'truncate bookings' のようなコマンドでTRUNCATEが検査から外れる可能性がある（過去に一度実際に起きた穴）。外すときはguard-destructiveのレクサーで実際の引数を取り出す形にすること。",
       "severity": "low"
+    },
+    {
+      "id": "hook-011",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-config.mjs",
+      "pattern": "function checkSessionStartBaseline()",
+      "expect": "present",
+      "message": "known-good/settings.jsonとの比較を行うSessionStartの検知本体。これが無くなると、Claude Codeを起動していない間のsettings.json書き換えに気づく手段が無くなる。",
+      "severity": "medium"
     },
     {
       "id": "install-001",
@@ -313,7 +322,8 @@
       "has_prose": false,
       "checkable": false,
       "related": [
-        "hook-006"
+        "hook-006",
+        "hook-011"
       ],
       "tags": [
         "guard-config",
@@ -400,6 +410,31 @@
         "neutralize",
         "shell",
         "known-limitation"
+      ]
+    },
+    {
+      "id": "hook-011",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-011.json",
+      "title": "SessionStartはブロックできないので、hook-007の穴は「警告」までしか塞げない",
+      "layer": "hook",
+      "kind": "limitation",
+      "severity": "medium",
+      "confidence": "documented",
+      "status": "open_recorded",
+      "stale_risk": "not_applicable",
+      "origin": "docs/02-guardrails.md#sessionstart-で起動していない間の書き換えにも気づけるようにしました",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-007"
+      ],
+      "tags": [
+        "guard-config",
+        "sessionstart",
+        "settings-json",
+        "known-good",
+        "cannot-block"
       ]
     },
     {

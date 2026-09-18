@@ -28,6 +28,6 @@
     "kind": "manual",
     "note": "Claude Code自体の実行時挙動であり、ファイル内容の静的検査では確かめられない。"
   },
-  "related": ["hook-006"],
+  "related": ["hook-006", "hook-011"],
   "tags": ["guard-config", "configchange", "settings-json", "restart"]
 }

@@ -23,14 +23,14 @@
  * is a human running the script themselves, in their own terminal. See
  * data/pitfalls/hook-006.json.
  *
- * TWO EVENTS, ONE FILE
- * This script is registered under two different hook events, and branches on
- * `hook_event_name` from its stdin payload:
+ * THREE EVENTS, ONE FILE
+ * This script is registered under three different hook events, and branches
+ * on `hook_event_name` from its stdin payload:
  *
  *   - PreToolUse: pattern-matches Edit/Write/Bash/PowerShell calls against
  *     the protected paths below. Necessary for CLAUDE.md, hooks/, scripts/,
- *     and approvals/, none of which have a native "this file changed" event
- *     Claude Code can block on.
+ *     approvals/, and known-good/, none of which have a native "this file
+ *     changed" event Claude Code can block on.
  *   - ConfigChange: Claude Code's own file watcher fires this whenever
  *     ~/.claude/settings.json (a "user_settings" source) actually changes,
  *     by any means at all -- not just the write shapes this file's
@@ -52,6 +52,31 @@
  *     "the running session keeps using known-good permissions", not as
  *     "the file is tamper-evident across restarts".
  *
+ *   - SessionStart: fills the gap ConfigChange leaves open. At every launch
+ *     or resume, compares the installed settings.json against a copy saved
+ *     under known-good/ (recorded at install time by install.mjs/.ps1, or
+ *     re-recorded by hand with record-settings-baseline.mjs/.ps1 after a
+ *     deliberate edit). A mismatch means the file changed by some path this
+ *     kit never saw -- including the exact hook-007 scenario, a change
+ *     ConfigChange blocked from a session that landed on disk anyway.
+ *
+ *     Per Claude Code's own hooks reference (code.claude.com/docs/en/hooks,
+ *     checked 2026-09-18): SessionStart CANNOT block startup. Exit 2 and any
+ *     "decision" field are ignored outright; the session starts regardless.
+ *     So this is detection, not prevention -- it surfaces a warning through
+ *     `additionalContext` (Claude sees it as context at the very start of
+ *     the session and can act on it) and `systemMessage` (the human sees it
+ *     directly), never a hard stop. See data/pitfalls/hook-011.json for the
+ *     residual gap this leaves and why it was accepted rather than chased
+ *     further.
+ *
+ *     No baseline recorded yet (a fresh upgrade of an older install, or the
+ *     known-good/ directory was lost) is not treated as a mismatch: the
+ *     current file is trusted once, recorded as the new baseline, and a
+ *     one-time informational note is surfaced instead of a warning. Silent
+ *     trust-on-first-use, not a block, for the same reason install.mjs does
+ *     not require a human to bless day-one settings.json by hand.
+ *
  * SCOPE
  * The PreToolUse branch is path-name matching, the same approach as
  * guard-secrets: it looks for the installed claude home's path as a literal
@@ -68,13 +93,17 @@
  * change through the person's own hands or the installer, not through a tool
  * call the agent decided to make.
  *
- * Exit 0 -> allow.  Exit 2 -> block, reason on stderr.
+ * Exit 0 -> allow.  Exit 2 -> block, reason on stderr. (SessionStart is the
+ * exception: Claude Code ignores its exit code and any decision field
+ * outright, so that branch always exits 0 and speaks through stdout JSON
+ * instead -- see the SessionStart bullet above.)
  * Any internal failure exits 0: a broken guard must not brick the toolchain.
  * This hook guards metadata about the other guards, not a destructive action
  * directly, so unlike guard-sql it fails open on its own errors, the same
  * choice guard-secrets makes.
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -85,8 +114,18 @@ const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || join(homedir(), '.cl
 // home prefix itself, not the subpath names chosen below.
 const HOME_NORM = CLAUDE_HOME.replaceAll('\\', '/').toLowerCase();
 
-/** Directories and files inside the claude home that this hook protects. */
-const PROTECTED_SUBPATHS = ['settings.json', 'CLAUDE.md', 'hooks', 'scripts', 'approvals'];
+/**
+ * Directories and files inside the claude home that this hook protects.
+ * known-good/ holds the SessionStart baseline (below) -- it needs the same
+ * protection as approvals/: if Claude Code could write it, a tampered
+ * settings.json and a freshly "approved" baseline could land together and
+ * the SessionStart check would never see a mismatch.
+ */
+const PROTECTED_SUBPATHS = ['settings.json', 'CLAUDE.md', 'hooks', 'scripts', 'approvals', 'known-good'];
+
+const KNOWN_GOOD_DIR = join(CLAUDE_HOME, 'known-good');
+const KNOWN_GOOD_SETTINGS = join(KNOWN_GOOD_DIR, 'settings.json');
+const INSTALLED_SETTINGS = join(CLAUDE_HOME, 'settings.json');
 
 const FILE_TOOL_RE = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
@@ -213,6 +252,76 @@ function denyConfigChange() {
   process.exit(2);
 }
 
+/**
+ * Emits SessionStart's supported JSON output. additionalContext reaches
+ * Claude directly (SessionStart is one of the few events whose stdout the
+ * model actually sees, per the hooks reference); systemMessage reaches the
+ * human. Both are best-effort -- SessionStart ignores exit codes and
+ * decision fields entirely, so there is no "block" branch to fall back to.
+ */
+function warnSessionStart(message, systemMessage) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: { hookEventName: 'SessionStart' },
+    additionalContext: message,
+    systemMessage,
+  }) + '\n');
+  process.stderr.write(message + '\n');
+}
+
+/**
+ * Compares the installed settings.json against the known-good/ baseline.
+ * See data/pitfalls/hook-007.json for the gap this closes (detection, not
+ * prevention -- SessionStart cannot block startup) and hook-011.json for
+ * that limitation itself. Never throws: any failure here falls through to
+ * the outer try/catch and exits 0, same fail-open posture as the rest of
+ * this hook.
+ */
+function checkSessionStartBaseline() {
+  let current;
+  try {
+    current = readFileSync(INSTALLED_SETTINGS);
+  } catch {
+    return; // No installed settings.json at all; nothing to compare.
+  }
+
+  let baseline;
+  try {
+    baseline = readFileSync(KNOWN_GOOD_SETTINGS);
+  } catch {
+    // No baseline yet: an install that predates this check, or known-good/
+    // was lost. Trust the current file once rather than warn on every
+    // session forever -- the same trade-off install.mjs already makes for
+    // day-one settings.json.
+    try {
+      mkdirSync(KNOWN_GOOD_DIR, { recursive: true });
+      writeFileSync(KNOWN_GOOD_SETTINGS, current);
+    } catch {
+      // Could not record a baseline (read-only filesystem, permissions).
+      // Fail open: say nothing rather than warn every single session with
+      // no way for the human to make the warning go away.
+      return;
+    }
+    warnSessionStart(
+      `[guard-config] settings.json baseline recorded for the first time (${KNOWN_GOOD_SETTINGS}). ` +
+        `If ${INSTALLED_SETTINGS} does not reflect a version you trust, review it now and re-record ` +
+        `with record-settings-baseline once it is correct.`,
+      'guard-config: settings.json baseline recorded for the first time.'
+    );
+    return;
+  }
+
+  if (Buffer.compare(current, baseline) === 0) return; // matches; say nothing
+
+  warnSessionStart(
+    `[guard-config] WARNING: ${INSTALLED_SETTINGS} does not match its last recorded baseline ` +
+      `(${KNOWN_GOOD_SETTINGS}). It may have been edited while Claude Code was not running, or a ` +
+      'change that ConfigChange blocked from an earlier session still landed on disk (see ' +
+      'data/pitfalls/hook-007.json). Review the file yourself before trusting it. If this change is ' +
+      'intentional, re-record the baseline outside Claude Code with record-settings-baseline.',
+    'guard-config: settings.json changed since the last recorded baseline -- see additional context.'
+  );
+}
+
 function readStdin() {
   return new Promise((res) => {
     let raw = '';
@@ -234,12 +343,35 @@ try {
     // settings.json's own hooks.ConfigChange matcher is already scoped to
     // "user_settings", so this only ever fires for the installed
     // ~/.claude/settings.json. The extra check here is defensive: if the
-    // payload does carry a source field and it names something else, skip
-    // rather than block, on the theory that an unrecognized source is more
-    // likely a Claude Code change we have not accounted for than a reason to
-    // widen this hook's blast radius by accident.
-    const source = typeof payload.source === 'string' ? payload.source : null;
+    // payload does carry a config_source field and it names something else,
+    // skip rather than block, on the theory that an unrecognized source is
+    // more likely a Claude Code change we have not accounted for than a
+    // reason to widen this hook's blast radius by accident.
+    //
+    // The field is config_source, not source -- corrected 2026-09-18 against
+    // code.claude.com/docs/en/hooks. The old name meant this check always
+    // read undefined and fell through to the "deny" branch regardless of
+    // the real value, which happened to match the intended behaviour only
+    // because the matcher above already restricts invocation to
+    // user_settings; a broader matcher would have blocked config sources
+    // this hook was never meant to touch. Not re-measured live (no source
+    // field mismatch was ever visible in the hook-007 repro, which only
+    // ever sent user_settings), so this fix is documented confidence, not
+    // measured -- see data/pitfalls/hook-011.json.
+    const source = typeof payload.config_source === 'string' ? payload.config_source : null;
     if (!source || source === 'user_settings') denyConfigChange();
+    process.exit(0);
+  }
+
+  if (hookEventName === 'SessionStart') {
+    // Matcher entries can restrict this to startup|resume, but check here
+    // too in case of a custom, broader registration -- the same defensive
+    // posture as the ConfigChange source check above. clear/compact/fork
+    // happen inside an already-running process, where ConfigChange is
+    // already watching; re-checking the baseline there would be redundant,
+    // not wrong, so skip rather than guess if the field is absent.
+    const startupType = typeof payload.startup_type === 'string' ? payload.startup_type : null;
+    if (!startupType || startupType === 'startup' || startupType === 'resume') checkSessionStartBaseline();
     process.exit(0);
   }
 

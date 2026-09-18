@@ -104,7 +104,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 47   fail: 0
 |---|---|---|
 | `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 47 |
 | `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた | 65 |
-| `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象 | 29 |
+| `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象。`settings.json` は起動していない間の書き換えも `SessionStart` で検知（警告のみ） | 45 |
 | `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など。あわせて、`deny` には無いが同じく取り消せない `find -delete`、`git stash drop` / `clear`、`gh repo sync --force`、`gh repo delete` | 219 |
 
 `guard-config` が `approvals/` まで見るのは、DDL の承認ファイルを**エージェント自身が書けてしまった**からです。
@@ -119,7 +119,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 47   fail: 0
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 47    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
-node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
+node kit/scripts/test-guard-config.mjs        # pass: 45    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```
 
@@ -191,16 +191,18 @@ node kit/scripts/install.mjs
 インストーラがやること:
 
 1. `~/.claude/CLAUDE.md` と `~/.claude/settings.json` を配置（既存は `.bak` にバックアップ）
-2. `~/.claude/hooks/` に 4 つのフックと DDL の承認スクリプトを配置し、`settings.json` の `PreToolUse` に登録
-3. 残りの手作業（動作確認と `pull-all` の登録）を表示する
+2. `~/.claude/hooks/` に 4 つのフックと DDL の承認スクリプト・設定基準の再記録スクリプトを配置し、
+   `settings.json` の `PreToolUse`・`ConfigChange`・`SessionStart` に登録
+3. 今の `settings.json` を `~/.claude/known-good/settings.json` に基準として記録する
+4. 残りの手作業（動作確認と `pull-all` の登録）を表示する
 
 **消しません。** 上書きするものは必ず `.bak.<日時>` に退避します。
 
 **入れたら、Claude Code を `/exit` で終了して起動し直してください。** 起動中のセッションは、
 起動したときの設定のまま動きます（guard-config は、起動中のセッションへの設定変更を意図的に拒否します）。
-起動し直したら `/hooks` を開いて、`PreToolUse` の `Bash|PowerShell` が **2 hooks** になっているかを
-確認してから試してください。1 件のままなら、入れ替え前の設定で試していることになります
-（[hook-009](data/pitfalls/hook-009.json)）。
+起動し直したら `/hooks` を開いて、`PreToolUse` の `Bash|PowerShell` が **2 hooks**、
+`SessionStart` が **1 hook** になっているかを確認してから試してください。`PreToolUse` が 1 件のままなら、
+入れ替え前の設定で試していることになります（[hook-009](data/pitfalls/hook-009.json)）。
 
 ---
 

@@ -988,6 +988,98 @@ supabase で `select 1; drop table nothing;` を実行して
 固定接頭辞の matcher だと一致せず、フックが発火しないまま気づかないことがあります
 （[hook-004](../data/pitfalls/hook-004.json)）。
 
+## SessionStart で、起動していない間の書き換えにも気づけるようにしました
+
+guard-config は ConfigChange イベント（matcher: `user_settings`）で settings.json への
+ライブな変更を検知しますが、[hook-007](../data/pitfalls/hook-007.json) で実測した通り、
+これは「起動中のセッションがその変更を取り込むのを止める」だけです。ファイル自体は
+書き換わったまま残り、Claude Code を起動していない間に同じ書き換えをされると、次回
+起動時にそれがそのまま「起動時の設定」として読み込まれ、ConfigChange の対象にすら
+なりません。
+
+`SessionStart` イベントなら起動のたびに発火するので検知はできますが、公式ドキュメント
+（https://code.claude.com/docs/en/hooks、2026-09-18 時点で確認）によれば、SessionStart は
+何を返しても起動を止められません。exit code 2 も `decision`/`permissionDecision` も
+無視されます。つまりこの穴を SessionStart で完全に塞ぐことはできず、できるのは
+「警告」までです。
+
+### known-good/ に基準を持たせて、起動のたびに比較する
+
+guard-config に `known-good/settings.json` という基準ファイルを持たせ、`approvals/` と
+同じ扱いで `PROTECTED_SUBPATHS` に加えました。Claude Code 経由の書き込みからは守られますが、
+Claude Code の外からの書き換え（今回の穴そのもの）は守れません。あくまで「エージェントが
+自分でこっそり基準ごと書き換える」方を防ぐためのものです。
+
+起動時（`startup`/`resume`）の比較は 3 パターンです。
+
+- 基準ファイルがまだ無い（このキットの旧バージョンを使っている等）→ 今の settings.json を
+  そのまま基準として静かに採用する（警告ではなく informational な note のみ）
+- 基準と一致する → 何も出さない
+- 一致しない → `additionalContext`（Claude 自身向け）と `systemMessage`（人間向け UI）の
+  両方に WARNING を出す。ただし起動は止めない。一致しないからといって、その内容を新しい
+  基準として採用することもしない
+
+`SessionStart` は `additionalContext` と `systemMessage` を返せますが、`ConfigChange` は
+どちらも無視される（できるのは exit code だけ）ことも、この実装で併せて確認しました。
+
+### 副産物: ConfigChange が読んでいたフィールド名が違っていました
+
+SessionStart を実装している最中に、既存の ConfigChange の分岐が `payload.source` を
+読んでいるのに気づきました。公式ドキュメントの payload には `config_source` としか
+書かれていません。settings.json 側の matcher を `user_settings` に絞っていたため、
+実際に困る場面（他の source 値との判定違い）が起きていなかっただけで、直しています。
+このキットの開発環境には対話的に起動できる Claude Code のセッションが無いため、実機の
+ConfigChange イベントで再確認はできていません（ドキュメントに基づく修正、という位置づけです）。
+
+### 基準の再記録は、人の手で
+
+`kit/scripts/record-settings-baseline.mjs`（PowerShell 版は `.ps1`）を、インストーラが
+`approve-ddl.mjs` と同じ場所に置きます。settings.json を意図的に手で編集したときは、
+これを実行して基準を更新してください。差分を表示したうえで y/N を聞きます（`--force` で
+無人実行も可能）。
+
+これも `approve-ddl.mjs` と同じ立場です。guard-config の PreToolUse は「`node
+record-settings-baseline.mjs` というコマンドそのもの」を書き込みとして特別扱いしません。
+実際の歯止めは、Claude Code 自身の Bash/PowerShell 権限確認と、このスクリプト自身の
+対話的な y/N 確認であり、技術的に強制しているわけではありません。
+
+### この穴を「閉じた」とは書いていません
+
+[hook-011](../data/pitfalls/hook-011.json) として別記録にしています。`kind: behaviour` の
+hook-007 自体には `status` を持たせられない（スキーマの R09）ため、「直った」と書けるのは
+新しい記録の側だけです。しかも SessionStart は起動を止められないという制約がある以上、
+`status: open_recorded` のままです。警告さえ見逃せば、次の起動もそのまま通ります。
+
+### 動作確認
+
+```bash
+node kit/scripts/test-guard-config.mjs     # Windows / macOS / Linux
+```
+
+```powershell
+.\kit\scripts\test-guard-config.ps1        # PowerShell 版を使う場合
+```
+
+合計 45 ケース（PreToolUse と ConfigChange で 30、SessionStart で 15）。
+
+```
+SessionStart:
+  PASS  exits 0 (SessionStart can never block, even on first run)
+  PASS  first run records a baseline matching current settings.json
+  PASS  first run surfaces an informational (not alarming) context note
+  PASS  second run against an unchanged file exits 0
+  PASS  a settings.json that no longer matches the baseline still exits 0
+  PASS  mismatch surfaces a WARNING in additionalContext
+  PASS  a mismatch does not silently adopt the new file as the baseline
+  (抜粋。SessionStart は 15 件)
+
+pass: 45   fail: 0
+```
+
+インストール（または再インストール）した後は、`/hooks` で `SessionStart` が **1 hook**
+になっていることも確認してください（`PreToolUse` の `Bash|PowerShell` は引き続き 2 hooks
+です）。
+
 ## Windows 形式の秘密ファイルパス
 
 `guard-secrets` はパス判定時にバックスラッシュをスラッシュへ統一します。

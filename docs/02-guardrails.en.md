@@ -846,6 +846,103 @@ when it tries "another way of writing it".
 
 ---
 
+## SessionStart closes part of it, but only as far as a warning
+
+guard-config's ConfigChange hook (matcher `user_settings`) catches a live edit to
+`settings.json` while Claude Code is running, but as recorded in
+[hook-007](../data/pitfalls/hook-007.json), that is all it does: it keeps the running
+session from adopting the change, and nothing more. The file on disk stays edited. Make
+the same edit while Claude Code is not running at all, and there is no ConfigChange event
+to catch it — the next launch just reads the edited file as its starting configuration.
+
+`SessionStart` fires on every launch, so it can see that gap. What it cannot do is close
+it: per the official docs (https://code.claude.com/docs/en/hooks, checked 2026-09-18),
+`SessionStart` ignores exit code 2 and any `decision`/`permissionDecision` field. Nothing
+it returns can stop the session from starting. The most this hook can ever do about an
+off-hours edit is warn about it after the fact.
+
+### A known-good baseline, compared on every launch
+
+guard-config now keeps a `known-good/settings.json` baseline, protected the same way
+`approvals/` already is (added to `PROTECTED_SUBPATHS`, so a write through Claude Code
+itself is blocked — an edit made outside Claude Code, which is the gap this exists for,
+is not something that protection can reach).
+
+On `startup`/`resume`, three things can happen:
+
+- no baseline recorded yet (an older install of this kit, say) — the current
+  `settings.json` is adopted as the baseline silently, with an informational note, not a
+  warning;
+- it matches — nothing is printed;
+- it does not match — both `additionalContext` (for Claude itself) and `systemMessage`
+  (for the human-facing UI) carry a WARNING. The session still starts, and the changed
+  file is not adopted as the new baseline just because it differs.
+
+Building this also confirmed that `SessionStart` can return `additionalContext` and
+`systemMessage`, while `ConfigChange` returns neither — only its exit code reaches
+anything.
+
+### A field name ConfigChange had wrong
+
+While wiring up SessionStart I found the existing ConfigChange branch reading
+`payload.source`. The documented field is `config_source`. It went unnoticed because the
+`settings.json` matcher was already narrowed to `user_settings`, the one value that
+mattered here. Fixed in both the Node and PowerShell hooks; I have not been able to
+re-confirm it against a live ConfigChange event, since this working setup has no
+interactive Claude Code session to trigger one from — the fix rests on the documented
+field name, not a fresh measurement.
+
+### Re-recording the baseline is a manual step
+
+`kit/scripts/record-settings-baseline.mjs` (`.ps1` on the PowerShell side) is installed
+next to `approve-ddl.mjs`. After a deliberate hand-edit of `settings.json`, run it to
+update the baseline — it shows the diff and asks y/N before writing (`--force` skips the
+prompt).
+
+It sits at the same trust level as `approve-ddl.mjs`: guard-config's `PreToolUse` does not
+treat `node record-settings-baseline.mjs` itself as a write to guard against. What
+actually stops an agent from re-recording its own tampering is Claude Code's own
+Bash/PowerShell permission prompt, plus this script's own interactive confirmation — not
+a technical guarantee.
+
+### Still open_recorded, not closed
+
+Tracked separately as [hook-011](../data/pitfalls/hook-011.json). hook-007 is
+`kind: behaviour` and cannot carry a `status` field at all (schema rule R09), so "fixed"
+could only ever be said on a new record — and even there, it isn't: SessionStart's
+inability to block means a missed warning still lets the next launch through unchanged.
+
+### Running the tests
+
+```bash
+node kit/scripts/test-guard-config.mjs     # Windows / macOS / Linux
+```
+
+```powershell
+.\kit\scripts\test-guard-config.ps1        # if you use the PowerShell hook
+```
+
+45 cases in total (30 for PreToolUse and ConfigChange, 15 for SessionStart).
+
+```
+SessionStart:
+  PASS  exits 0 (SessionStart can never block, even on first run)
+  PASS  first run records a baseline matching current settings.json
+  PASS  first run surfaces an informational (not alarming) context note
+  PASS  second run against an unchanged file exits 0
+  PASS  a settings.json that no longer matches the baseline still exits 0
+  PASS  mismatch surfaces a WARNING in additionalContext
+  PASS  a mismatch does not silently adopt the new file as the baseline
+  (excerpt; SessionStart has 15 cases)
+
+pass: 45   fail: 0
+```
+
+After installing or reinstalling, open `/hooks` and confirm `SessionStart` shows **1
+hook** (`PreToolUse`'s `Bash|PowerShell` still shows 2).
+
+---
+
 ## Verifying it
 
 ### 1. Run the test suite

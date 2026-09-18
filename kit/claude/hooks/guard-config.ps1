@@ -7,14 +7,18 @@
 
 .DESCRIPTION
     PowerShell twin of guard-config.mjs. Same behaviour, same protected
-    paths, same two hook events (PreToolUse and ConfigChange). See
-    guard-config.mjs for the full design notes; this file only carries the
-    parts that differ for PowerShell.
+    paths, same three hook events (PreToolUse, ConfigChange, SessionStart).
+    See guard-config.mjs for the full design notes, including why
+    SessionStart can only warn (additionalContext / systemMessage) and never
+    block -- Claude Code ignores its exit code and any decision field
+    outright (code.claude.com/docs/en/hooks, checked 2026-09-18). This file
+    only carries the parts that differ for PowerShell.
 
     ASCII-only on purpose. See the encoding note in guard-sql.ps1.
 
 .NOTES
-    Exit 0 -> allow.  Exit 2 -> block, reason on stderr.
+    Exit 0 -> allow.  Exit 2 -> block, reason on stderr. SessionStart always
+    exits 0 regardless of outcome; it speaks through stdout JSON instead.
     Any internal failure exits 0: a broken guard must not brick the toolchain.
 #>
 
@@ -34,7 +38,15 @@ Set-StrictMode -Version Latest
 $script:HomeNorm = ($ClaudeHome -replace '\\', '/').ToLowerInvariant()
 
 # Directories and files inside the claude home that this hook protects.
-$script:ProtectedSubpaths = @('settings.json', 'CLAUDE.md', 'hooks', 'scripts', 'approvals')
+# known-good/ holds the SessionStart baseline: it needs the same protection
+# as approvals/, or a tampered settings.json and a freshly "approved"
+# baseline could land together and the SessionStart check would never see a
+# mismatch.
+$script:ProtectedSubpaths = @('settings.json', 'CLAUDE.md', 'hooks', 'scripts', 'approvals', 'known-good')
+
+$script:KnownGoodDir = Join-Path $ClaudeHome 'known-good'
+$script:KnownGoodSettings = Join-Path $script:KnownGoodDir 'settings.json'
+$script:InstalledSettings = Join-Path $ClaudeHome 'settings.json'
 
 # The protected subpath a piece of text names, or $null.
 function Get-ProtectedSubpath([string] $Text) {
@@ -155,6 +167,55 @@ function Deny-ConfigChange {
     exit 2
 }
 
+# Emits SessionStart's supported JSON output. additionalContext reaches
+# Claude directly (SessionStart is one of the few events whose stdout the
+# model actually sees); systemMessage reaches the human. SessionStart
+# ignores exit codes and decision fields entirely -- there is no "block"
+# branch to fall back to.
+function Warn-SessionStart([string] $Message, [string] $SystemMessage) {
+    $decision = @{
+        hookSpecificOutput = @{ hookEventName = 'SessionStart' }
+        additionalContext  = $Message
+        systemMessage      = $SystemMessage
+    } | ConvertTo-Json -Compress
+    [Console]::Out.WriteLine($decision)
+    [Console]::Error.WriteLine($Message)
+}
+
+# Compares the installed settings.json against the known-good/ baseline. See
+# guard-config.mjs for the full design notes (hook-007.json / hook-011.json).
+# Never throws: any failure here falls through to the outer try/catch and
+# exits 0, same fail-open posture as the rest of this hook.
+function Test-SessionStartBaseline {
+    if (-not (Test-Path -LiteralPath $script:InstalledSettings -PathType Leaf)) { return }
+    $current = [System.IO.File]::ReadAllBytes($script:InstalledSettings)
+
+    if (-not (Test-Path -LiteralPath $script:KnownGoodSettings -PathType Leaf)) {
+        # No baseline yet: an install that predates this check, or
+        # known-good/ was lost. Trust the current file once rather than warn
+        # on every session forever.
+        try {
+            New-Item -ItemType Directory -Path $script:KnownGoodDir -Force | Out-Null
+            [System.IO.File]::WriteAllBytes($script:KnownGoodSettings, $current)
+        } catch {
+            # Could not record a baseline. Fail open: say nothing rather
+            # than warn every single session with no way to clear it.
+            return
+        }
+        Warn-SessionStart `
+            "[guard-config] settings.json baseline recorded for the first time ($script:KnownGoodSettings). If $script:InstalledSettings does not reflect a version you trust, review it now and re-record with record-settings-baseline once it is correct." `
+            'guard-config: settings.json baseline recorded for the first time.'
+        return
+    }
+
+    $baseline = [System.IO.File]::ReadAllBytes($script:KnownGoodSettings)
+    if ([Convert]::ToBase64String($current) -ceq [Convert]::ToBase64String($baseline)) { return }
+
+    Warn-SessionStart `
+        "[guard-config] WARNING: $script:InstalledSettings does not match its last recorded baseline ($script:KnownGoodSettings). It may have been edited while Claude Code was not running, or a change that ConfigChange blocked from an earlier session still landed on disk (see data/pitfalls/hook-007.json). Review the file yourself before trusting it. If this change is intentional, re-record the baseline outside Claude Code with record-settings-baseline." `
+        'guard-config: settings.json changed since the last recorded baseline -- see additional context.'
+}
+
 try {
     $raw = [Console]::In.ReadToEnd()
     if (-not $raw) { exit 0 }
@@ -168,14 +229,32 @@ try {
         # settings.json's own hooks.ConfigChange matcher is already scoped to
         # "user_settings", so this only ever fires for the installed
         # ~/.claude/settings.json. The extra check here is defensive: if the
-        # payload does carry a source field and it names something else, skip
-        # rather than block, on the theory that an unrecognized source is more
-        # likely a Claude Code change we have not accounted for than a reason
-        # to widen this hook's blast radius by accident.
-        $source = if ($payload.PSObject.Properties.Name -contains 'source') {
-            [string] $payload.source
+        # payload does carry a config_source field and it names something
+        # else, skip rather than block, on the theory that an unrecognized
+        # source is more likely a Claude Code change we have not accounted
+        # for than a reason to widen this hook's blast radius by accident.
+        #
+        # The field is config_source, not source -- corrected 2026-09-18
+        # against code.claude.com/docs/en/hooks. See guard-config.mjs's copy
+        # of this comment for why the old name never changed observed
+        # behaviour, and data/pitfalls/hook-011.json for the confidence note.
+        $source = if ($payload.PSObject.Properties.Name -contains 'config_source') {
+            [string] $payload.config_source
         } else { $null }
         if (-not $source -or $source -eq 'user_settings') { Deny-ConfigChange }
+        exit 0
+    }
+
+    if ($hookEventName -eq 'SessionStart') {
+        # Matcher entries can restrict this to startup|resume, but check
+        # here too in case of a custom, broader registration -- the same
+        # defensive posture as the ConfigChange source check above.
+        $startupType = if ($payload.PSObject.Properties.Name -contains 'startup_type') {
+            [string] $payload.startup_type
+        } else { $null }
+        if (-not $startupType -or $startupType -eq 'startup' -or $startupType -eq 'resume') {
+            Test-SessionStartBaseline
+        }
         exit 0
     }
 

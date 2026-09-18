@@ -7,9 +7,13 @@
     Copies the shared CLAUDE.md, settings.json and the guard hooks into
     ~/.claude, backing up anything already there. Nothing is deleted.
     The hooks are guard-sql, guard-secrets, guard-config (self-tamper
-    protection for these settings, CLAUDE.md and the hooks themselves) and
-    guard-destructive (the deny list's destructive commands, in the shapes
-    deny does not match).
+    protection for these settings, CLAUDE.md and the hooks themselves, plus
+    a SessionStart check that warns if settings.json changed while Claude
+    Code was not running) and guard-destructive (the deny list's destructive
+    commands, in the shapes deny does not match). Also records the
+    known-good/ baseline guard-config's SessionStart check compares against;
+    re-record it with record-settings-baseline.ps1 after any later
+    hand-edit.
 
     Run with -WhatIf first to see exactly what would happen.
 
@@ -175,6 +179,23 @@ $approveFile = if ($Hook -eq 'node') { 'approve-ddl.mjs' } else { 'approve-ddl.p
 $approveContent = Get-Content -LiteralPath (Join-Path $kitRoot "scripts\$approveFile") -Raw -Encoding UTF8
 Install-File -Content $approveContent -Destination (Join-Path $ClaudeHome "scripts\$approveFile")
 
+# --- 2c. settings baseline recorder -----------------------------------------
+#
+# guard-config's SessionStart check warns when settings.json no longer
+# matches the last recorded baseline. This is the script a human runs, by
+# hand, outside Claude Code, to re-record that baseline after a deliberate
+# edit. See the SessionStart notes in guard-config.mjs for why it has to be
+# a separate, human-run step rather than something this hook does itself.
+
+Write-Host '2c. settings baseline recorder' -ForegroundColor White
+$recorderFile = if ($Hook -eq 'node') { 'record-settings-baseline.mjs' } else { 'record-settings-baseline.ps1' }
+$recorderContent = Get-Content -LiteralPath (Join-Path $kitRoot "scripts\$recorderFile") -Raw -Encoding UTF8
+Install-File -Content $recorderContent -Destination (Join-Path $ClaudeHome "scripts\$recorderFile")
+$recorderPath = Join-Path $ClaudeHome "scripts\$recorderFile"
+# Same node/ps1 split as $configCommand etc. above -- $hookExecutable is only
+# set in the -Hook ps1 branch, which is exactly when this side needs it.
+$recorderCommand = if ($Hook -eq 'node') { "node `"$recorderPath`"" } else { "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$recorderPath`"" }
+
 # --- 3. settings.json ------------------------------------------------------
 
 Write-Host '3. settings.json' -ForegroundColor White
@@ -184,6 +205,10 @@ if ($SkipSettings) {
     Write-Step "  $secretsCommand"
     Write-Step "  $configCommand"
     Write-Step "  $destructiveCommand"
+    Write-Step 'Also add a ConfigChange hook (matcher "user_settings") and a SessionStart'
+    Write-Step 'hook (matcher "startup|resume") both running this command:'
+    Write-Step "  $configCommand"
+    Write-Step 'Without the SessionStart entry, step 4 below records a baseline nobody checks.'
 } else {
     $settings = Get-Content -LiteralPath (Join-Path $srcClaude 'settings.json') -Raw -Encoding UTF8
     $settings = $settings.Replace('{{CLAUDE_HOME}}', $homeSlash)
@@ -236,16 +261,46 @@ foreach ($entry in $pending) {
     Write-InstalledFile -Content $entry.Content -Destination $entry.Destination
 }
 
-# --- 4. what is left to do by hand -----------------------------------------
+# --- 4. known-good baseline -------------------------------------------------
+#
+# Records the settings.json now on disk (whichever one: freshly written
+# above, or the pre-existing file if -SkipSettings kept it) as the trusted
+# baseline guard-config's SessionStart check compares against. Day one gets
+# a baseline the same way every later hand-edit does -- through
+# record-settings-baseline, not written ad hoc here.
+
+Write-Host '4. known-good baseline' -ForegroundColor White
+$finalSettingsPath = Join-Path $ClaudeHome 'settings.json'
+$knownGoodPath = Join-Path $ClaudeHome 'known-good\settings.json'
+if ($WhatIfPreference) {
+    Write-Step "would record -> $knownGoodPath"
+} elseif (-not (Test-Path -LiteralPath $finalSettingsPath -PathType Leaf)) {
+    Write-Step 'skipped: no settings.json on disk to record a baseline from.'
+} else {
+    $finalSettingsBytes = [System.IO.File]::ReadAllBytes($finalSettingsPath)
+    $unchanged = (Test-Path -LiteralPath $knownGoodPath -PathType Leaf) -and
+        ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($knownGoodPath)) -ceq [Convert]::ToBase64String($finalSettingsBytes))
+    if ($unchanged) {
+        Write-Step "unchanged -> $knownGoodPath"
+    } else {
+        $knownGoodDir = Split-Path -Parent $knownGoodPath
+        if (-not (Test-Path -LiteralPath $knownGoodDir)) { New-Item -ItemType Directory -Path $knownGoodDir -Force | Out-Null }
+        [System.IO.File]::WriteAllBytes($knownGoodPath, $finalSettingsBytes)
+        Write-Step "recorded  -> $knownGoodPath"
+    }
+}
+
+# --- 5. what is left to do by hand -----------------------------------------
 
 Write-Host ''
-Write-Host 'Done. Two things are deliberately left to you:' -ForegroundColor Green
+Write-Host 'Done. Three things are deliberately left to you:' -ForegroundColor Green
 Write-Host ''
 Write-Host '  a) Quit Claude Code (/exit) and start it again. A running session keeps the' -ForegroundColor White
 Write-Host '     hooks it started with, and guard-config refuses live changes to'
 Write-Host '     settings.json on purpose. Then open /hooks: PreToolUse must show'
-Write-Host '     Bash|PowerShell with 2 hooks. If it shows 1, you are still testing the'
-Write-Host '     old settings, and every result below is meaningless.'
+Write-Host '     Bash|PowerShell with 2 hooks, and SessionStart must show 1. If PreToolUse'
+Write-Host '     shows 1, you are still testing the old settings, and every result below is'
+Write-Host '     meaningless.'
 Write-Host ''
 Write-Host '     Verify all four hooks fire. In Claude Code, ask it to run:'
 Write-Host '       select 1; drop table nothing;      -> [guard-sql] must block it'
@@ -266,7 +321,12 @@ Write-Host "       & `"$kitRoot\scripts\test-guard-config.ps1`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-destructive.mjs`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-destructive.mjs`" --target ps"
 Write-Host ''
-Write-Host '  b) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
+Write-Host '  b) After any deliberate hand-edit of settings.json, re-record its baseline' -ForegroundColor White
+Write-Host '     yourself, outside Claude Code, or every session start will warn that it'
+Write-Host '     no longer matches what was last approved:'
+Write-Host "       $recorderCommand"
+Write-Host ''
+Write-Host '  c) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
 Write-Host '       $a = New-ScheduledTaskAction -Execute "powershell.exe" ``'
 Write-Host "         -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$kitRoot\scripts\pull-all.ps1`" -Root C:\Dev'"
 Write-Host '       $t = New-ScheduledTaskTrigger -AtLogOn'

@@ -18,6 +18,14 @@ const TOKENS = { '{{GUARD_SQL_COMMAND}}': 'guard-sql', '{{GUARD_SECRETS_COMMAND}
 const POS = {};
 source.hooks.PreToolUse.forEach((e, i) => e.hooks.forEach((h, j) => { if (TOKENS[h.command]) POS[TOKENS[h.command]] = [i, j]; }));
 const hookOf = (s, name) => s.hooks.PreToolUse[POS[name][0]].hooks[POS[name][1]];
+// ConfigChange and SessionStart both only ever carry guard-config, on a
+// single matcher entry each (user_settings / startup|resume) -- set both
+// together so every fixture that "installs" a settings clone stays in sync
+// on both non-PreToolUse events, not just the one added first.
+function setConfigEventHooks(s, command) {
+  s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = command;
+  s.hooks.SessionStart.find(e => e.matcher === 'startup|resume').hooks[0].command = command;
+}
 function cli(args) { return spawnSync(process.execPath, [join(here, 'doctor.mjs'), ...args], { encoding: 'utf8' }); }
 try {
   test('valid kit passes scoped checks and host remains unverified', () => { const r = inspectSettings(clone(), { template: true }); assert.equal(r.status, 'static-pass'); assert.equal(r.hostVerification, 'not-performed'); });
@@ -44,21 +52,24 @@ try {
   for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
   const installed = clone();
   for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) hookOf(installed, n).command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
-  installed.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = `node "${join(temp, 'hooks', 'guard-config.mjs')}"`;
+  setConfigEventHooks(installed, `node "${join(temp, 'hooks', 'guard-config.mjs')}"`);
   test('standard installed commands with spaces recognized', () => assert.equal(inspectSettings(installed, { claudeHome: temp }).status, 'static-pass'));
   test('installed placeholders rejected', () => assert(inspectSettings(clone(), { claudeHome: temp }).findings.some(f => f.id === 'hooks.placeholder')));
   test('missing registered file rejected', () => { rmSync(join(temp, 'hooks', 'guard-sql.mjs')); assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-sql.file')); writeFileSync(join(temp, 'hooks', 'guard-sql.mjs'), '// stub'); });
+  test('SessionStart matcher not covering startup|resume is caught', () => { const s = structuredClone(installed); s.hooks.SessionStart[0].matcher = 'clear'; assert(inspectSettings(s, { claudeHome: temp }).findings.some(f => f.id === 'guard-config.sessionstart.registration')); });
+  test('missing SessionStart registration is not silently passed', () => { const s = structuredClone(installed); delete s.hooks.SessionStart; assert(inspectSettings(s, { claudeHome: temp }).findings.some(f => f.id === 'guard-config.sessionstart.registration')); });
+  test('malformed SessionStart entry rejected', () => { const s = structuredClone(installed); s.hooks.SessionStart[0].matcher = 42; assert(inspectSettings(s, { claudeHome: temp }).findings.some(f => f.id === 'hooks.sessionstart.shape')); });
   test('PowerShell installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config','guard-destructive']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
+    setConfigEventHooks(s, hookOf(s, 'guard-config').command);
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
   test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config','guard-destructive']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
+    setConfigEventHooks(s, hookOf(s, 'guard-config').command);
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
   test('CLI never executes malicious configured command or changes settings', () => {
     const s = clone(); const sentinel = join(temp, 'executed');
     hookOf(s, 'guard-sql').command = `node -e "require('fs').writeFileSync('${sentinel.replaceAll('\\','/')}','bad')"`;
     for (const n of ['guard-secrets', 'guard-config', 'guard-destructive']) hookOf(s, n).command = hookOf(installed, n).command;
-    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = installed.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command;
+    setConfigEventHooks(s, installed.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command);
     const bytes = JSON.stringify(s); writeFileSync(join(temp, 'settings.json'), bytes);
     const r = cli(['--claude-home', temp, '--json']); assert.equal(r.status, 2); assert.equal(JSON.parse(r.stdout).hostVerification, 'not-performed'); assert(!existsSync(sentinel)); assert.equal(readFileSync(join(temp,'settings.json'),'utf8'),bytes);
   });

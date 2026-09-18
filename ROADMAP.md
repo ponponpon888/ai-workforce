@@ -122,10 +122,12 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 `git -C <worktree> push --force nowhere` の 3 つは `[guard-destructive] BLOCKED`、
 `Write-Output "rm -rf is blocked"` はそのまま実行された。docs/02 に「実機では、2回すり抜けました」を追加。
 
+`guard-destructive.ps1`（PowerShell 版）は別PRで追加した。`test-guard-destructive.mjs --target ps`
+で同じ 206 件を当て、pwsh 7.4.6 で全件通過。`install.ps1 -Hook powershell` は 4 つとも `.ps1` を
+登録するようになった。実装中に踏んだ PowerShell の配列の癖は [`shell-002`](data/pitfalls/shell-002.json)。
+
 **残り（このPRの外）:**
 
-- `guard-destructive.ps1`（PowerShell 版）。`test-guard-destructive.mjs --target ps` で同じケースを
-  当てられるようにしてある。
 - README / README.en の「4本柱」「5分で入れる」の記述をどうするか（guard-config と合わせて判断）。
 
 ## 基本開発で完了したこと

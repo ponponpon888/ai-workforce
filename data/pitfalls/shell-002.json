@@ -1,0 +1,32 @@
+{
+  "id": "shell-002",
+  "title": "PowerShell の関数は 1 要素の配列をスカラーにして返す。, で包むと、今度は @() が二重にする",
+  "summary": "guard-destructive.ps1 を書いているときに 2 回踏んだ。PowerShell の関数は、出力するときに配列を 1 段ほどく。要素が 1 つの配列を返すと呼び出し側にはスカラーが届き、Set-StrictMode の下では .Count を読んだ時点で「プロパティが見つからない」で落ちる。定番の対策は return , $arr（包んでから返すと、ほどかれて中の配列が残る）。ただしその関数を @(...) で囲むと、@() は出力そのものを列挙するので、配列を 1 要素だけ持つ配列ができる。片方だけなら正しく、両方やると壊れる。実際、最初の版は 7 件が exit 0 になり、@() を足したら全件が exit 0 になった。",
+  "layer": "runtime",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-18",
+  "environment": {
+    "os": "Linux",
+    "shell": "pwsh",
+    "shell_version": "7.4.6",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "配列を返すヘルパー（引数の一部を切り出して返すもの）を素直に return $arr と書くと、要素が 1 つのときだけ呼び出し側で .Count が無く、Set-StrictMode -Version Latest が The property 'Count' cannot be found on this object で止まる。テストでは 206 件中 7 件が exit 0（素通り）になった",
+    "return , $arr に直しつつ、呼び出し側も $x = @(Helper ...) と書いたところ、$x は「配列を 1 要素だけ持つ配列」になり、要素を GdWord として扱う箇所が Cannot convert System.Object[] to GdWord で落ちて、206 件すべてが exit 0 になった",
+    "呼び出し側の @() を外して return , $arr だけにすると 206/206 が期待どおりになった"
+  ],
+  "status": "closed",
+  "fix": "配列を返す関数はすべて return , $arr の形に統一し、その戻り値を @() で囲まない。@() を使うのは、関数の出力ではなく変数やリテラルを配列として扱いたいときだけにした。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "書き方の問題なので、静的な文字列検査では表せない。テストが exit 0 に偏ったら、まずここを疑う。"
+  },
+  "related": ["shell-001"],
+  "tags": ["powershell", "arrays", "strictmode", "guard-destructive"]
+}

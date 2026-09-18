@@ -123,7 +123,7 @@ Three more hooks have the same shape. **All four are decided the same way, and t
 | `guard-sql` | `DROP`, `TRUNCATE`, `UPDATE`/`DELETE` without `WHERE`, DDL without an approval token | 45 |
 | `guard-secrets` | reading `.env` or a private key **through a shell**. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and `Get-Content .env` walked straight past it | 65 |
 | `guard-config` | the agent **rewriting its own guardrails**: `settings.json`, `CLAUDE.md`, `hooks/`, and the DDL approval store | 29 |
-| `guard-destructive` | the destructive commands already in `deny`, **in the shapes deny does not match**: `bash -c 'rm -rf x'`, `/bin/rm`, `sudo`, `npx rimraf`, `git -C . push --force`, `rm -rfv`, `cmd /c rd /s`, `node -e` with `rmSync` | 207 |
+| `guard-destructive` | the destructive commands already in `deny`, **in the shapes deny does not match**: `bash -c 'rm -rf x'`, `/bin/rm`, `sudo`, `npx rimraf`, `git -C . push --force`, `rm -rfv`, `cmd /c rd /s`, `node -e` with `rmSync`. Also four that `deny` never covered and that cannot be undone either: `find -delete`, `git stash drop`/`clear`, `gh repo sync --force`, `gh repo delete` | 219 |
 
 `guard-config` covers `approvals/` because the agent could write a DDL approval file itself. The
 fingerprint algorithm is public, in this repository, so anything that can write that file can
@@ -138,7 +138,7 @@ stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c
 node kit/scripts/test-guard-sql.mjs           # pass: 45    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
-node kit/scripts/test-guard-destructive.mjs   # pass: 207   fail: 0
+node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```
 
 Every hook has a PowerShell twin with the same behaviour (`install.ps1 -Hook powershell`), held to

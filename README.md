@@ -104,7 +104,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 | `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 45 |
 | `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた | 65 |
 | `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象 | 29 |
-| `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など | 207 |
+| `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など。あわせて、`deny` には無いが同じく取り消せない `find -delete`、`git stash drop` / `clear`、`gh repo sync --force`、`gh repo delete` | 219 |
 
 `guard-config` が `approvals/` まで見るのは、DDL の承認ファイルを**エージェント自身が書けてしまった**からです。
 ハッシュの計算式はこのリポジトリに公開されているので、書ければ人間に見せずに自分で承認できました
@@ -119,7 +119,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 node kit/scripts/test-guard-sql.mjs           # pass: 45    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
-node kit/scripts/test-guard-destructive.mjs   # pass: 207   fail: 0
+node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```
 
 どのフックにも PowerShell 版があり、挙動は同じです。

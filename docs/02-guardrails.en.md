@@ -688,10 +688,10 @@ recorded as [perm-006](../data/pitfalls/perm-006.json).
 ### A hook for the shapes that really get through
 
 [guard-destructive](../kit/claude/hooks/guard-destructive.mjs) (and its PowerShell twin
-[guard-destructive.ps1](../kit/claude/hooks/guard-destructive.ps1); the same 206 cases run
+[guard-destructive.ps1](../kit/claude/hooks/guard-destructive.ps1); the same cases run
 against both) stops the destructive commands
-already in deny **when they arrive in a shape deny does not match**. What it forbids is what
-deny forbids; nothing new.
+already in deny **when they arrive in a shape deny does not match**. What it forbids is mostly
+what deny forbids, plus the four commands at the end of this section.
 
 | shape | examples |
 |---|---|
@@ -715,9 +715,31 @@ Two checks have no deny counterpart: `git -c alias.x=...` (an alias defined on t
 any command) and `git -c clean.requireForce=false` (`git clean` without `-f`). Neither has a
 use except hiding one of the above.
 
+### Four commands deny never covered
+
+Everything above generalizes a line that is already in deny. Four checks do not:
+
+| added | what happens |
+|---|---|
+| `find ... -delete` | `rm -rf`, spelled differently |
+| `git stash drop` / `git stash clear` | throws away uncommitted work |
+| `gh repo sync --force` | overwrites a branch on the **remote**, not locally |
+| `gh repo delete` | deletes the repository |
+
+The test is whether it can be undone. These cannot, which is the property every destructive
+line in deny has.
+
+**`git checkout -- .` and `git restore` are deliberately left out.** They throw away
+uncommitted work like `git stash drop` does, but they are indistinguishable from an agent
+discarding files it generated itself. Blocking them would fire more often on ordinary work
+than on an accident. If that changes, the narrower shape (only when the argument is `.`) is
+where to look first.
+
 ### More of the tests are about what must pass
 
-206 cases: 135 that must be stopped, 71 that must not. The largest group on the "must not"
+219 cases: 143 that must be stopped, 76 that must not (`--target ps` runs 218; the one
+difference is the launch-through-a-link test, which only applies to the Node file). The
+largest group on the "must not"
 side is text that only **mentions** a dangerous command.
 
 ```bash

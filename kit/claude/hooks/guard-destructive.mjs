@@ -55,6 +55,18 @@
  * one of the above: `git -c alias.X=...` (an inline alias can be any
  * command) and `git -c clean.requireForce=false` (git clean without -f).
  *
+ * Four more have no deny counterpart either. They are here because what
+ * they destroy does not come back, which is what every line of the deny
+ * list above has in common:
+ *   find ... -delete                  (rm -rf, spelled differently)
+ *   git stash drop / git stash clear  (throws away uncommitted work)
+ *   gh repo sync --force              (overwrites a branch on the remote)
+ *   gh repo delete                    (deletes the repository)
+ * `git checkout -- .` and `git restore` are deliberately NOT here. They
+ * also throw away uncommitted work, but they are indistinguishable from an
+ * agent discarding files it generated itself, so blocking them would cost
+ * more in false positives than it saves.
+ *
  * WHY THIS IS STILL NOT A BOUNDARY
  * It reads command text, like deny does, only more of it. It cannot see
  * into a script file, an npm script, a git alias defined earlier, a
@@ -1055,6 +1067,12 @@ function inspectGit(args, via) {
       const force = cleanWithoutForce || opts.some((a) => isShortCluster(a, 'f') || isLong(a, '--force', 4));
       return force && !dry ? hitOf('git clean that deletes files', via2) : null;
     }
+    case 'stash': {
+      // drop and clear throw away work that was never committed: there is no
+      // reflog for a dropped stash entry.
+      const action = (rest.find((a) => !a.startsWith('-')) ?? '').toLowerCase();
+      return ['drop', 'clear'].includes(action) ? hitOf(`git stash ${action}`, via2) : null;
+    }
     case 'branch': {
       const forceDelete = opts.some((a) => isShortCluster(a, 'D'));
       const del = opts.some((a) => isShortCluster(a, 'd') || isLong(a, '--delete', 5));
@@ -1064,6 +1082,23 @@ function inspectGit(args, via) {
     default:
       return null;
   }
+}
+
+/**
+ * The GitHub CLI reaches past the local repository. `gh repo sync --force`
+ * overwrites a branch the way a force push does, and `gh repo delete` is the
+ * one command here with no local equivalent at all. Neither has a deny rule
+ * to generalize from; they are in for the same reason the rest is.
+ */
+function inspectGh(args, via) {
+  const positional = args.filter((a) => !a.startsWith('-'));
+  const flags = args.filter((a) => a.startsWith('-'));
+  if (positional[0] !== 'repo') return null;
+  if (positional[1] === 'delete') return hitOf('deleting a GitHub repository (gh repo delete)', [...via, 'gh']);
+  if (positional[1] === 'sync' && flags.some((a) => isLong(a, '--force', 4) || isShortCluster(a, 'f'))) {
+    return hitOf('a forced branch overwrite (gh repo sync --force)', [...via, 'gh']);
+  }
+  return null;
 }
 
 function inspectSupabase(args, via) {
@@ -1260,6 +1295,9 @@ function inspectCommand(words, g, depth, ctx, command, via) {
       return scan(text, 'ps', depth + 1, ctx, [...via, 'Invoke-Expression']);
     }
     if (name === 'find') {
+      // -delete removes everything the expression matched, with no second
+      // chance and no rm on the command line to match a deny rule against.
+      if (argv.includes('-delete')) return hitOf('a recursive delete (find -delete)', via);
       for (let i = 0; i < args.length; i++) {
         if (!['-exec', '-execdir', '-ok', '-okdir'].includes(args[i].v)) continue;
         let j = i + 1;
@@ -1271,6 +1309,7 @@ function inspectCommand(words, g, depth, ctx, command, via) {
       return null;
     }
     if (name === 'git') return inspectGit(argv, via);
+    if (name === 'gh') return inspectGh(argv, via);
     if (name === 'supabase') return inspectSupabase(argv, via);
     if (name === 'rimraf') return hitOf('a recursive delete (rimraf)', via);
 

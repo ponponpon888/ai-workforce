@@ -200,6 +200,15 @@ bashBlocks('export G=git; $G push --force');
 bashBlocks('$(which rm) -rf build');
 bashBlocks('`command -v rm` -rf build');
 
+console.log('\nno deny rule to generalize from, in for the same reason:');
+bashBlocks('find . -delete');
+bashBlocks("find . -name '*.log' -delete");
+bashBlocks('git stash drop');
+bashBlocks('git stash clear');
+bashBlocks('gh repo sync --force');
+bashBlocks('gh repo delete ponponpon888/throwaway --yes');
+psBlocks('gh repo sync --force');
+
 console.log('\ndeny does not cover these — interpreter one-liners:');
 bashBlocks(`node -e "require('fs').rmSync('dist', { recursive: true, force: true })"`);
 bashBlocks(`node --eval "fs.promises.rm('dist', {recursive:true})"`);
@@ -280,6 +289,12 @@ bashAllows('echo $((1 + 2))');
 bashAllows('ls -la 2>/dev/null');
 bashAllows('ls -la # rm -rf build', 'a comment that mentions rm -rf');
 bashAllows('');
+
+bashAllows('git stash pop');
+bashAllows('git stash list');
+bashAllows('gh repo sync');
+bashAllows('gh pr create --title x --body y');
+bashAllows("find . -name '*.log' -print");
 
 console.log('\nmust allow — text that only mentions a dangerous command:');
 bashAllows('echo "rm -rf /"');

@@ -11,6 +11,22 @@
 
 ## 未リリース
 
+- `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
+  実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
+  残り、Claude Code を起動していない間の書き換えは検知すらできなかった
+  （[hook-007](data/pitfalls/hook-007.json)）。`SessionStart` は起動のたびに発火するが、
+  公式ドキュメントの通り exit code も `decision`/`permissionDecision` も無視され起動を
+  ブロックできないため、`known-good/settings.json` に基準を持たせて起動時に比較し、
+  不一致なら `additionalContext`/`systemMessage` に **警告** を出す（起動は止めない）形にした。
+  基準が無ければ初回起動時に静かに採用。再記録は新設の
+  `kit/scripts/record-settings-baseline.mjs`/`.ps1`（`approve-ddl.mjs` と同じ信頼モデル、
+  インストーラが `approve-ddl` と同じ場所に設置）を人が手で実行する。副産物として、
+  ConfigChange が読んでいたペイロードのフィールド名の誤り（`source` → 正しくは
+  `config_source`）も見つけて直した。判断と理由は [ROADMAP.md](ROADMAP.md) と
+  [hook-011](data/pitfalls/hook-011.json)（`status: open_recorded` — プラットフォーム制約に
+  より「警告」以上には塞げないため）に記録（[`docs/02`](docs/02-guardrails.md) にも節を追加）。
+  `guard-config` のテスト件数は 29 → 45（PreToolUse/ConfigChange 30、SessionStart 15）。
+
 - `guard-sql` のテストに、既知の制約として残すと決めた誤検知（シェル経由コマンドで、
   実行される SQL としてではなく文字列として書いてあるだけの DDL キーワードに反応する）を
   2 件追加。件数は 45 → 47。塞ぐか残すかの判断と理由は [ROADMAP.md](ROADMAP.md) と

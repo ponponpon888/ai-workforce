@@ -148,7 +148,7 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
 
 test('identical reinstall preserves timestamps and creates no backups', () => fixture(({ root, run }) => {
   const home = join(root, 'home'); run(home);
-  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'scripts/approve-ddl.mjs'];
+  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'scripts/approve-ddl.mjs', 'scripts/record-settings-baseline.mjs', 'known-good/settings.json'];
   const before = new Map();
   for (const file of files) {
     const path = join(home, file); utimesSync(path, 1000000000, 1000000000);
@@ -159,7 +159,30 @@ test('identical reinstall preserves timestamps and creates no backups', () => fi
     assert.deepEqual(readFileSync(join(home, file)), before.get(file).bytes);
     assert.equal(statSync(join(home, file)).mtimeMs, before.get(file).mtime);
   }
-  for (const dir of ['', 'hooks', 'scripts']) assert.equal(readdirSync(join(home, dir)).some(n => n.includes('.bak.')), false);
+  for (const dir of ['', 'hooks', 'scripts', 'known-good']) assert.equal(readdirSync(join(home, dir)).some(n => n.includes('.bak.')), false);
+}));
+test('install records a known-good baseline matching the installed settings.json', () => fixture(({ root, run }) => {
+  const home = join(root, 'home'); run(home);
+  assert.deepEqual(readFileSync(join(home, 'known-good', 'settings.json')), readFileSync(join(home, 'settings.json')));
+}));
+test('re-recording the baseline after a hand-edit clears a SessionStart mismatch', () => fixture(({ root, run }) => {
+  const home = join(root, 'home'); run(home);
+  const settingsPath = join(home, 'settings.json');
+  const edited = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  edited.permissions.allow.push('Bash(echo hand-edited:*)');
+  writeFileSync(settingsPath, JSON.stringify(edited));
+  const guardConfig = join(home, 'hooks', 'guard-config.mjs');
+  const sessionStart = () => spawnSync(process.execPath, [guardConfig], {
+    input: JSON.stringify({ session_id: 'test', hook_event_name: 'SessionStart', startup_type: 'startup' }),
+    encoding: 'utf8', env: { ...process.env, AIWF_CLAUDE_HOME: home },
+  });
+  const before = sessionStart();
+  assert.ok(/WARNING/.test(before.stdout), before.stdout);
+  const recorder = join(home, 'scripts', 'record-settings-baseline.mjs');
+  const r = spawnSync(process.execPath, [recorder, '--claude-home', home, '--force'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const after = sessionStart();
+  assert.equal(after.stdout.trim(), '');
 }));
 test('only changed file gets backed up', () => fixture(({ root, run }) => {
   const home = join(root, 'home'); run(home);

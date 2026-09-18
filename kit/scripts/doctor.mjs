@@ -130,6 +130,47 @@ export function inspectSettings(settings, { template = false, claudeHome = join(
     if (!recognized) add('unknown', 'guard-config.configchange.registration', 'No standard guard-config ConfigChange registration found on user_settings; missing or custom commands need manual verification.');
   }
 
+  // SessionStart: fills the gap ConfigChange leaves open (a settings.json
+  // edit made while Claude Code was not running has no native change event
+  // at all -- see data/pitfalls/hook-007.json and hook-011.json). Checked
+  // the same way as ConfigChange above: only confirms the registration
+  // exists on startup|resume, not that the hook actually fires or that a
+  // known-good/ baseline was ever recorded (doctor never touches the
+  // filesystem beyond the one settings file it was given).
+  const sessionStartEntries = settings.hooks?.SessionStart;
+  if (sessionStartEntries !== undefined && !Array.isArray(sessionStartEntries)) {
+    add('error', 'hooks.sessionstart.shape', 'SessionStart must be an array of matcher entries.');
+  } else {
+    let recognized = false;
+    for (const entry of sessionStartEntries ?? []) {
+      if (!object(entry) || typeof entry.matcher !== 'string' || !Array.isArray(entry.hooks)) {
+        add('error', 'hooks.sessionstart.shape', 'Each SessionStart entry needs a matcher string and hooks array.');
+        continue;
+      }
+      // The matcher is a pipe-separated set of startup_type values, not a
+      // regex to test values against -- SessionStart's matcher grammar is
+      // simple alternation, so split rather than compile.
+      if (!entry.matcher.split('|').some(v => v === 'startup' || v === 'resume')) continue;
+      for (const hook of entry.hooks) {
+        if (!object(hook)) { add('error', 'hooks.sessionstart.shape', 'Hook definitions must be objects.'); continue; }
+        if (!template && typeof hook.command === 'string' && /\{\{[^}]+\}\}/.test(hook.command)) {
+          add('error', 'hooks.placeholder', 'Installed SessionStart hook command contains an unexpanded placeholder.');
+        }
+        if (hook.type !== 'command' || typeof hook.command !== 'string') continue;
+        let matches = template && hook.command === '{{GUARD_CONFIG_COMMAND}}';
+        if (!template) for (const extension of ['mjs', 'ps1']) {
+          const path = join(resolve(claudeHome), 'hooks', `guard-config.${extension}`);
+          const forms = [path, path.replaceAll('\\', '/')];
+          const expected = forms.flatMap(f => extension === 'mjs' ? [`node "${f}"`] :
+            ['powershell.exe', 'pwsh'].map(exe => `${exe} -NoProfile -ExecutionPolicy Bypass -File "${f}"`));
+          if (expected.includes(hook.command)) matches = true;
+        }
+        if (matches) recognized = true;
+      }
+    }
+    if (!recognized) add('unknown', 'guard-config.sessionstart.registration', 'No standard guard-config SessionStart registration found on startup|resume; missing or custom commands need manual verification.');
+  }
+
   add('info', 'host.unverified', 'Only one settings file was checked. Interpreter availability, file contents, host version, effective settings precedence, and actual hook execution remain unverified. No configured command was executed.');
   return result();
 }

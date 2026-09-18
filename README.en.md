@@ -127,7 +127,7 @@ Three more hooks have the same shape. **All four are decided the same way, and t
 |---|---|---|
 | `guard-sql` | `DROP`, `TRUNCATE`, `UPDATE`/`DELETE` without `WHERE`, DDL without an approval token | 47 |
 | `guard-secrets` | reading `.env` or a private key **through a shell**. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and `Get-Content .env` walked straight past it | 65 |
-| `guard-config` | the agent **rewriting its own guardrails**: `settings.json`, `CLAUDE.md`, `hooks/`, and the DDL approval store | 29 |
+| `guard-config` | the agent **rewriting its own guardrails**: `settings.json`, `CLAUDE.md`, `hooks/`, and the DDL approval store. Also detects (warns only) a `settings.json` edit made while Claude Code was not running, via `SessionStart` | 45 |
 | `guard-destructive` | the destructive commands already in `deny`, **in the shapes deny does not match**: `bash -c 'rm -rf x'`, `/bin/rm`, `sudo`, `npx rimraf`, `git -C . push --force`, `rm -rfv`, `cmd /c rd /s`, `node -e` with `rmSync`. Also four that `deny` never covered and that cannot be undone either: `find -delete`, `git stash drop`/`clear`, `gh repo sync --force`, `gh repo delete` | 219 |
 
 `guard-config` covers `approvals/` because the agent could write a DDL approval file itself. The
@@ -142,7 +142,7 @@ stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 47    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
-node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
+node kit/scripts/test-guard-config.mjs        # pass: 45    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```
 
@@ -236,9 +236,9 @@ Nothing is deleted. Anything overwritten is copied to `.bak.<timestamp>` first.
 
 **Then quit Claude Code (`/exit`) and start it again.** A running session keeps the hooks it
 started with, and guard-config refuses live changes to `settings.json` on purpose. After the
-restart, open `/hooks`: `PreToolUse` must show `Bash|PowerShell` with **2 hooks**. If it shows 1,
-you are still testing the settings from before the install
-([hook-009](data/pitfalls/hook-009.json)).
+restart, open `/hooks`: `PreToolUse` must show `Bash|PowerShell` with **2 hooks**, and
+`SessionStart` must show **1 hook**. If `PreToolUse` shows 1, you are still testing the settings
+from before the install ([hook-009](data/pitfalls/hook-009.json)).
 
 Every hook has two implementations with identical behaviour: the `.mjs` files run everywhere
 (Claude Code already ships on Node, so there is nothing to install — no jq, no python), and the

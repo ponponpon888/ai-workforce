@@ -320,6 +320,20 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   現行の Claude Code では解消済みと判明。残りの本当に抜ける形は guard-destructive で対応（上記、PR #30）。
   `find . -delete`、`gh repo sync --force`、`git stash drop`、`git checkout -- .` は deny にも無いため
   PR #30 では広げていなかった。→ 判断した（下記「deny に無いもののうち、4 つだけ足した」）。
-- guard-configのConfigChange層の限界（hook-007）を補うため、`SessionStart`フックで
+- ~~guard-configのConfigChange層の限界（hook-007）を補うため、`SessionStart`フックで
   settings.jsonのハッシュ（またはpermissions/hooksの内容）を既知の値と照合し、Claude Code
-  が起動していない間に書き換えられていた場合は警告する仕組みを検討する。
+  が起動していない間に書き換えられていた場合は警告する仕組みを検討する。~~ → 実装した
+  （2026-09-18）。公式ドキュメント確認の結果、`SessionStart` は exit code も
+  `decision`/`permissionDecision` も無視され、**起動そのものは原理的にブロックできない**
+  （プラットフォーム側の制約）。そのため「警告どまり」と判断し、guard-config.mjs/.ps1 に
+  `known-good/settings.json` という基準ファイルを追加（`approvals/` と同じく
+  `PROTECTED_SUBPATHS` で保護）、SessionStart（startup/resume）のたびに現在の
+  settings.json と比較して不一致なら `additionalContext`/`systemMessage` に WARNING を出す形にした。
+  基準が未作成のときは初回起動時に静かに採用（TOFU）。再記録は
+  `kit/scripts/record-settings-baseline.mjs`/`.ps1` を人が手で実行する（`approve-ddl.mjs`
+  と同じ信頼モデル）。副産物として ConfigChange が読んでいたペイロードのフィールド名の
+  誤り（`source` → 正しくは `config_source`）も見つけて直した。記録: `docs/02` の新設節
+  「SessionStart で、起動していない間の書き換えにも気づけるようにしました」と
+  [hook-011](data/pitfalls/hook-011.json)（`kind: limitation`, `status: open_recorded`
+  — プラットフォーム制約により「警告」以上には塞げないため）。hook-007 自体は
+  `kind: behaviour` のため `status` を持てず、`related` に hook-011 を追記した。

@@ -141,6 +141,20 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "//": "Fills the gap ConfigChange leaves open: a settings.json edit made while Claude Code was not running becomes the next launch's baseline with no warning at all (data/pitfalls/hook-007.json). At every launch or resume, compares settings.json against the known-good/ copy install.mjs/.ps1 records and warns (never blocks -- SessionStart cannot; see data/pitfalls/hook-011.json) if it no longer matches.",
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{GUARD_CONFIG_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-config: checking settings.json baseline"
+          }
+        ]
+      }
     ]
   }
 }

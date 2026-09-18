@@ -79,8 +79,25 @@ function Invoke-ConfigChangeHook {
     param([string] $Source, [switch] $NoSource)
 
     $payload = @{ session_id = 'test'; hook_event_name = 'ConfigChange' }
-    if (-not $NoSource) { $payload.source = $Source }
+    if (-not $NoSource) { $payload.config_source = $Source }
     return Invoke-Hook $payload
+}
+
+function Invoke-SessionStartHook {
+    param([string] $TargetHome, [string] $StartupType, [switch] $NoStartupType)
+
+    $json = @{ session_id = 'test'; hook_event_name = 'SessionStart' }
+    if (-not $NoStartupType) { $json.startup_type = $StartupType }
+    $body = $json | ConvertTo-Json -Compress
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $body | & $pwshExe -NoProfile -File $Hook -ClaudeHome $TargetHome 2>&1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
 }
 
 $BLOCK = 2
@@ -118,6 +135,7 @@ Assert-Result 'Edit CLAUDE.md' $BLOCK (Invoke-ToolHook 'Edit' @{ file_path = $cl
 Assert-Result 'Edit a hook file' $BLOCK (Invoke-ToolHook 'Edit' @{ file_path = $hookPath; old_string = 'x'; new_string = 'y' })
 Assert-Result 'Write an approval token directly' $BLOCK (Invoke-ToolHook 'Write' @{ file_path = $approvalPath; content = 'select 1' })
 Assert-Result 'Edit approve-ddl.ps1 itself' $BLOCK (Invoke-ToolHook 'Edit' @{ file_path = $scriptPath; old_string = 'x'; new_string = 'y' })
+Assert-Result 'Write the known-good SessionStart baseline directly' $BLOCK (Invoke-ToolHook 'Write' @{ file_path = (Join-Path $ClaudeHome 'known-good\settings.json'); content = '{}' })
 
 Write-Host ''
 Write-Host 'must block - shell commands:' -ForegroundColor White
@@ -147,10 +165,102 @@ Assert-Result 'empty input' $ALLOW (Invoke-ToolHook 'Bash' @{})
 Write-Host ''
 Write-Host 'ConfigChange:' -ForegroundColor White
 Assert-Result 'user_settings change is blocked' $BLOCK (Invoke-ConfigChangeHook -Source 'user_settings')
-Assert-Result 'user_settings change is blocked even with no source field' $BLOCK (Invoke-ConfigChangeHook -NoSource)
+Assert-Result 'user_settings change is blocked even with no config_source field' $BLOCK (Invoke-ConfigChangeHook -NoSource)
 Assert-Result "project_settings change is not this hook's concern" $ALLOW (Invoke-ConfigChangeHook -Source 'project_settings')
 Assert-Result "local_settings change is not this hook's concern" $ALLOW (Invoke-ConfigChangeHook -Source 'local_settings')
 Assert-Result "skills change is not this hook's concern" $ALLOW (Invoke-ConfigChangeHook -Source 'skills')
+
+Write-Host ''
+Write-Host 'SessionStart:' -ForegroundColor White
+
+function New-FreshHome {
+    # Not $home -- PowerShell reserves $HOME as a read-only automatic
+    # variable, and variable names are case-insensitive.
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-session-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $dir 'settings.json') -Value '{"hooks":{}}' -NoNewline -Encoding UTF8
+    return $dir
+}
+
+$sessionHome = New-FreshHome
+$r = Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'startup'
+Assert-Result 'exits 0 (SessionStart can never block, even on first run)' $ALLOW $r
+$baselinePath = Join-Path $sessionHome 'known-good\settings.json'
+if (-not (Test-Path -LiteralPath $baselinePath -PathType Leaf)) {
+    Write-Host '  FAIL  first run records a baseline' -ForegroundColor Red; $script:fail++
+} elseif ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($baselinePath)) -cne [Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Join-Path $sessionHome 'settings.json')))) {
+    Write-Host '  FAIL  recorded baseline matches current settings.json' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  first run records a baseline matching current settings.json' -ForegroundColor Green; $script:pass++
+}
+if ($r.Output -notmatch '"additionalContext"' -or $r.Output -notmatch 'baseline recorded for the first time') {
+    Write-Host '  FAIL  first run surfaces an informational (not alarming) context note' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  first run surfaces an informational (not alarming) context note' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
+
+$sessionHome = New-FreshHome
+Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'startup' | Out-Null
+$r = Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'startup'
+Assert-Result 'second run against an unchanged file exits 0' $ALLOW $r
+if ($r.Output.Trim()) {
+    Write-Host '  FAIL  second run against an unchanged file says nothing' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  second run against an unchanged file says nothing' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
+
+$sessionHome = New-FreshHome
+Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'startup' | Out-Null
+Set-Content -LiteralPath (Join-Path $sessionHome 'settings.json') -Value '{"hooks":{},"tampered":true}' -NoNewline -Encoding UTF8
+$r = Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'resume'
+Assert-Result 'a settings.json that no longer matches the baseline still exits 0' $ALLOW $r
+if ($r.Output -notmatch '"additionalContext"' -or $r.Output -notmatch 'WARNING') {
+    Write-Host '  FAIL  mismatch surfaces a WARNING in additionalContext' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  mismatch surfaces a WARNING in additionalContext' -ForegroundColor Green; $script:pass++
+}
+if ($r.Output -notmatch 'hook-007') {
+    Write-Host '  FAIL  warning points at hook-007.json for the background' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  warning points at hook-007.json for the background' -ForegroundColor Green; $script:pass++
+}
+$baselineAfter = Get-Content -LiteralPath (Join-Path $sessionHome 'known-good\settings.json') -Raw -Encoding UTF8
+if ($baselineAfter -match 'tampered') {
+    Write-Host '  FAIL  a mismatch does not silently adopt the new file as the baseline' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  a mismatch does not silently adopt the new file as the baseline' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
+
+$sessionHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-session-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $sessionHome -Force | Out-Null
+Assert-Result "no installed settings.json is not this hook's problem" $ALLOW (Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'startup')
+if (Test-Path -LiteralPath (Join-Path $sessionHome 'known-good')) {
+    Write-Host '  FAIL  no baseline directory is created when there is nothing to record' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  no baseline directory is created when there is nothing to record' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
+
+$sessionHome = New-FreshHome
+Assert-Result 'clear is not startup or resume; skipped without recording a baseline' $ALLOW (Invoke-SessionStartHook -TargetHome $sessionHome -StartupType 'clear')
+if (Test-Path -LiteralPath (Join-Path $sessionHome 'known-good')) {
+    Write-Host '  FAIL  clear does not trigger baseline bootstrap' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  clear does not trigger baseline bootstrap' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
+
+$sessionHome = New-FreshHome
+Assert-Result 'missing startup_type field still runs the check' $ALLOW (Invoke-SessionStartHook -TargetHome $sessionHome -NoStartupType)
+if (-not (Test-Path -LiteralPath (Join-Path $sessionHome 'known-good\settings.json') -PathType Leaf)) {
+    Write-Host '  FAIL  missing startup_type still records a baseline' -ForegroundColor Red; $script:fail++
+} else {
+    Write-Host '  PASS  missing startup_type still records a baseline' -ForegroundColor Green; $script:pass++
+}
+Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Remove-Item -LiteralPath $ClaudeHome -Recurse -Force -ErrorAction SilentlyContinue
 

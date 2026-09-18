@@ -126,6 +126,29 @@ Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配
 で同じ 206 件を当て、pwsh 7.4.6 で全件通過。`install.ps1 -Hook powershell` は 4 つとも `.ps1` を
 登録するようになった。実装中に踏んだ PowerShell の配列の癖は [`shell-002`](data/pitfalls/shell-002.json)。
 
+### deny に無いもののうち、4 つだけ足した
+
+競合調査で名前が挙がっていた 4 つ（`find . -delete`、`gh repo sync --force`、`git stash drop`、
+`git checkout -- .`）は、どれも deny に対応する行が無い。PR #30 の時点では「deny に書いてあるものを
+deny が一致しない形でも止める」という範囲に絞っていたため、保留にしていた。
+
+**入れる（2026-09-18 判断）:** `find -delete`、`git stash drop` / `git stash clear`、
+`gh repo sync --force`、`gh repo delete`。理由は、消えたものが戻らない点が deny の破壊系コマンドと
+同じだから。`find -delete` は `rm -rf` と同じことを別の綴りでやる。`git stash drop` / `clear` は
+コミットされていない変更を捨てる。`gh repo sync --force` はローカルではなくリモートを上書きする
+（force push と同じ）。`gh repo delete` はリポジトリそのものを消す。
+
+**入れない:** `git checkout -- .` と `git restore`。捨てるのは未コミットの変更だけで、
+エージェントが普通にやる操作（生成物の破棄、部分的な取り消し）と見分けがつかない。
+止めると誤検知のほうが多くなると判断した。必要なら次の版で、引数が `.` のときだけ、
+などの形で見直す。
+
+テストは 219 件（`--target ps` は 218 件。差の 1 件は hook-008 のリンク経由起動テストで、
+Node 版のファイルにしか当てられない）。フック本体は
+`find` の引数に `-delete` があるか、`git stash` のサブコマンドが `drop` / `clear` か、
+`gh repo` のサブコマンドが `delete` か、`sync` に `--force` / `-f` が付いているかを見るだけで、
+`git stash pop` / `list`、`gh repo sync`（フラグなし）、`gh pr create`、`find -print` は通す。
+
 **残り（このPRの外）:**
 
 
@@ -287,7 +310,7 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - ~~競合調査で見つかったもう一つの穴（`cd /tmp && rm -rf x` 等が deny をすり抜ける）~~ → 前提の半分は
   現行の Claude Code では解消済みと判明。残りの本当に抜ける形は guard-destructive で対応（上記、PR #30）。
   `find . -delete`、`gh repo sync --force`、`git stash drop`、`git checkout -- .` は deny にも無いため
-  今回は広げていない。入れるかどうかは別途判断する。
+  PR #30 では広げていなかった。→ 判断した（下記「deny に無いもののうち、4 つだけ足した」）。
 - guard-configのConfigChange層の限界（hook-007）を補うため、`SessionStart`フックで
   settings.jsonのハッシュ（またはpermissions/hooksの内容）を既知の値と照合し、Claude Code
   が起動していない間に書き換えられていた場合は警告する仕組みを検討する。

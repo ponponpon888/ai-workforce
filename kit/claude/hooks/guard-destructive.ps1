@@ -15,7 +15,10 @@
     strips timeout/nice/nohup/xargs, so 'cd /tmp && rm -rf x' is stopped by
     Claude Code itself. What deny does not match -- 'bash -c ...', /bin/rm,
     'git -C . push --force', 'rm -rfv', 'npx rimraf', 'cmd /c rd /s',
-    'node -e' with rmSync -- is what this hook stops.
+    'node -e' with rmSync -- is what this hook stops. Four commands with no
+    deny counterpart are stopped too, because what they destroy does not
+    come back: 'find -delete', 'git stash drop'/'clear',
+    'gh repo sync --force', 'gh repo delete'.
 
     NOTE ON ENCODING
     ASCII-only on purpose. Windows PowerShell 5.1 reads a BOM-free UTF-8
@@ -1254,6 +1257,14 @@ function Invoke-GdGit {
             if ($force -and -not $dry) { return (New-GdHit 'git clean that deletes files' $via2) }
             return $null
         }
+        'stash' {
+            # drop and clear throw away work that was never committed: there is
+            # no reflog for a dropped stash entry.
+            $action = ''
+            foreach ($a in $rest) { if (-not $a.StartsWith('-')) { $action = $a.ToLowerInvariant(); break } }
+            if (@('drop', 'clear') -ccontains $action) { return (New-GdHit "git stash $action" $via2) }
+            return $null
+        }
         'branch' {
             $forceDelete = $false
             $del = $false
@@ -1265,6 +1276,29 @@ function Invoke-GdGit {
             }
             if ($forceDelete -or ($del -and $force)) { return (New-GdHit 'a forced branch delete (git branch -D)' $via2) }
             return $null
+        }
+    }
+    return $null
+}
+
+# The GitHub CLI reaches past the local repository. 'gh repo sync --force'
+# overwrites a branch the way a force push does, and 'gh repo delete' is the one
+# command here with no local equivalent at all.
+function Invoke-GdGh {
+    param([string[]] $Items, [object[]] $Via)
+    $positional = @()
+    $flags = @()
+    foreach ($a in $Items) {
+        if ($a.StartsWith('-')) { $flags += $a } else { $positional += $a }
+    }
+    if ((Get-GdItem $positional 0) -cne 'repo') { return $null }
+    $second = Get-GdItem $positional 1
+    if ($second -ceq 'delete') { return (New-GdHit 'deleting a GitHub repository (gh repo delete)' ($Via + @('gh'))) }
+    if ($second -ceq 'sync') {
+        foreach ($a in $flags) {
+            if ((Test-GdLongOption $a '--force' 4) -or (Test-GdShortCluster $a 'f')) {
+                return (New-GdHit 'a forced branch overwrite (gh repo sync --force)' ($Via + @('gh')))
+            }
         }
     }
     return $null
@@ -1528,6 +1562,9 @@ function Invoke-GdCommandWords {
             return (Invoke-GdScan ([string]::Join(' ', $parts)) 'ps' ($Depth + 1) $Ctx ($via + @('Invoke-Expression')))
         }
         if ($name -ceq 'find') {
+            # -delete removes everything the expression matched, with no second
+            # chance and no rm on the command line to match a deny rule against.
+            if ($argv -ccontains '-delete') { return (New-GdHit 'a recursive delete (find -delete)' $via) }
             for ($i = 0; $i -lt $rest.Count; $i++) {
                 if (-not (@('-exec', '-execdir', '-ok', '-okdir') -ccontains $rest[$i].V)) { continue }
                 $j = $i + 1
@@ -1541,6 +1578,7 @@ function Invoke-GdCommandWords {
             return $null
         }
         if ($name -ceq 'git') { return (Invoke-GdGit $argv $via) }
+        if ($name -ceq 'gh') { return (Invoke-GdGh $argv $via) }
         if ($name -ceq 'supabase') { return (Invoke-GdSupabase $argv $via) }
         if ($name -ceq 'rimraf') { return (New-GdHit 'a recursive delete (rimraf)' $via) }
 

@@ -118,6 +118,19 @@ assert('unapproved DDL inside a file', BLOCK, callHook('Bash', { command: `psql 
 assert('a file route with nothing readable behind it', BLOCK,
   callHook('Bash', { command: `npx supabase db push --file ${MISSING_SQL}` }));
 
+console.log('\nknown limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):');
+// Shell-grammar text is never neutralized (see the block comment on neutralize()),
+// so a DDL keyword that is only TEXT -- not SQL actually sent to a client -- still
+// trips the guard when an SQL client is invoked anywhere in the same command. This
+// is a deliberate, documented trade-off (docs/02-guardrails.md), not an oversight.
+// If a change here makes these ALLOW, that is a real fix — update hook-010.json's
+// status/fix and docs/02 in the same change, do not just adjust this test.
+assert('SQL-client name and DROP as plain text, not executed SQL', BLOCK,
+  callHook('Bash', { command: 'psql -c "select 1" && echo "note: never run DROP TABLE in prod"' }));
+assert('DDL keyword only in a commit message', BLOCK, callHook('Bash', {
+  command: `git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked by guard-sql"`,
+}));
+
 console.log('\nmust allow:');
 assert('DELETE with WHERE', ALLOW, callHook(SB, { query: 'delete from bookings where id = 1' }));
 assert('UPDATE with WHERE', ALLOW, callHook(SB, { query: "update bookings set status = 1 where id = 'x'" }));

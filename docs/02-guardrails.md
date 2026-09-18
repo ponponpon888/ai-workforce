@@ -130,6 +130,37 @@ const pattern = new RegExp([
 
 無害化したあとで `;` で分割するので、文字列に含まれるセミコロンで文が割れることもありません。
 
+### シェル経由のコマンドは無害化していません（既知の誤検知）
+
+上の無害化は、フックに **SQL の文法として** 渡ってきたものにしか適用していません。
+`Bash` / `PowerShell` ツールの `command` フィールド（シェルのコマンド行）には適用していません。
+
+理由は、後述の「3 つ目は、賢くしたせいで空きました」で踏んだ穴の裏返しです。SQL の文法
+（`--` はコメント、`'...'` は文字列）をシェルのコマンド行に当てると、`--sql` のようなオプションが
+丸ごと消え、`npx supabase db execute --sql 'truncate bookings'` の `TRUNCATE` が視界から
+外れます（無害化する側が穴を作る）。これを避けるため、シェル経由のコマンドは**無害化せず、
+そのままの文字列で** `DROP` / `TRUNCATE` / `WHERE` なしの `UPDATE`・`DELETE` を検査しています。
+
+その結果、SQL クライアントの名前（`psql` など）と `DROP` / `TRUNCATE` が、**実行される SQL
+としてではなく単なる文字列として**同じシェルコマンドの中に両方出てくると、guard-sql は
+反応します。
+
+```bash
+psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # select 1 しか実行しないが BLOCK される
+git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked"  # コミットメッセージが理由で BLOCK される
+```
+
+実害はブロックだけです（安全側に倒れる誤検知で、危険な SQL を通す方向の穴ではありません）。
+このドキュメント自体、guard-sql の挙動を説明するのに `psql` と `DROP` / `TRUNCATE` を
+並べて書いているため、そのままコミットメッセージに引用すると起こり得ます。
+
+**いまは既知の制約として残しています。** 安全に塞ぐには、guard-destructive が持つ文法ごとの
+レクサー（Bash は POSIX シェル、PowerShell は PowerShell として実際にトークン化する）を使って、
+SQL クライアントに渡っている**実際の引数だけ**を取り出して検査する必要があります。1 本の
+正規表現や SQL 文法の無害化をシェル文字列に当てる形で済ませようとすると、上と同じ
+「賢くしたせいで空く」失敗を繰り返しかねません。[hook-010](../data/pitfalls/hook-010.json) に
+記録しています。
+
 ### DDL の承認トークン
 
 DDL は「内容を提示して承認を得てから実行する」というルールにしていますが、
@@ -884,7 +915,7 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 45 ケース（落とす 20 / 通す 16 / 承認トークン関連 9）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。
+合計 47 ケース（落とす 20 / 既知の制約として残した誤検知 2 / 通す 16 / 承認トークン関連 9）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。既知の制約として残した誤検知 2 件は「シェル経由のコマンドは無害化していません（既知の誤検知）」（上）と [hook-010](../data/pitfalls/hook-010.json) を参照してください。
 
 ```
 guard-sql test suite (node)
@@ -898,6 +929,10 @@ must block:
   PASS  DROP in a file piped through cat
   PASS  a file route with nothing readable behind it
   (抜粋。must block は 20 件)
+
+known limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):
+  PASS  SQL-client name and DROP as plain text, not executed SQL
+  PASS  DDL keyword only in a commit message
 
 must allow:
   PASS  DELETE with WHERE
@@ -914,7 +949,7 @@ approval token:
   PASS  approved blind file route passes
   (抜粋。承認トークン関連は 9 件)
 
-pass: 45   fail: 0
+pass: 47   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。

@@ -131,6 +131,36 @@ const pattern = new RegExp([
 Splitting on `;` happens after that, so a semicolon inside a string cannot break a statement in
 two.
 
+### Shell commands are not neutralized (a known false positive)
+
+The pass above only runs on text that reached the hook **as SQL**. It does not run on the
+`command` field of the `Bash` / `PowerShell` tools — the shell command line.
+
+The reason is the flip side of "The third one opened up because I made it smarter" below.
+Applying SQL grammar (`--` is a comment, `'...'` is a string) to a shell command line swallows an
+option such as `--sql` as a comment, and `npx supabase db execute --sql 'truncate bookings'` loses
+its `TRUNCATE` from view. To avoid that, shell commands are scanned **unneutralized, as raw text**
+for `DROP` / `TRUNCATE` / `UPDATE`/`DELETE` without `WHERE`.
+
+The consequence: if the name of an SQL client (`psql`, say) and `DROP` / `TRUNCATE` both appear in
+the same shell command **as plain text, not as SQL actually sent to that client**, guard-sql
+blocks it.
+
+```bash
+psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # only runs select 1, still BLOCKED
+git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked"  # blocked by the commit message itself
+```
+
+The only real effect is a block — a false positive on the safe side, not a hole that lets
+dangerous SQL through. This very paragraph is why it can recur: it puts `psql` and `DROP` /
+`TRUNCATE` next to each other, so quoting it verbatim in a commit message can trigger it.
+
+**This is left as a known constraint for now.** Fixing it safely needs the same per-grammar lexer
+guard-destructive has (actually tokenizing Bash as POSIX shell, PowerShell as PowerShell) to pull
+out only the argument actually handed to the SQL client. A single regex, or applying SQL
+neutralization to shell text, risks repeating the exact "smarter but it opened a hole" mistake
+above. Recorded as [hook-010](data/pitfalls/hook-010.json).
+
 ### The DDL approval token
 
 The rule is "show the SQL and get approval before running DDL", but a hook cannot hold a
@@ -828,7 +858,9 @@ node kit/scripts/test-guard-sql.mjs      # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1         # if you use the PowerShell hook
 ```
 
-29 cases in total (10 must block, 13 must allow, 6 approval-token). Both halves.
+47 cases in total (20 must block, 2 known-limitation still-block, 16 must allow, 9
+approval-token). Both halves matter — the false-positive half is what keeps this guard from
+getting switched off.
 
 ```
 guard-sql test suite (node)
@@ -843,6 +875,10 @@ must block:
   PASS  a file route with nothing readable behind it
   (excerpt; must block has 20 cases)
 
+known limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):
+  PASS  SQL-client name and DROP as plain text, not executed SQL
+  PASS  DDL keyword only in a commit message
+
 must allow:
   PASS  DELETE with WHERE
   PASS  keyword inside a string
@@ -855,10 +891,17 @@ approval token:
   PASS  approved DDL passes
   PASS  token is single use
   PASS  approved blind file route passes
-  (excerpt; approval token has 8 cases)
+  (excerpt; approval token has 9 cases)
 
-pass: 44   fail: 0
+pass: 47   fail: 0
 ```
+
+Two of the must-block cases are a known, deliberately unfixed false positive
+([hook-010](data/pitfalls/hook-010.json)): shell-grammar text is never neutralized (see below), so
+a shell command that only *mentions* an SQL client and a DDL keyword as plain text — not SQL
+actually sent to that client — still gets blocked. Fixing that safely needs the same real
+per-grammar lexer guard-destructive has; a quick regex here once reopened a worse hole, letting
+`TRUNCATE` slip past `--sql`.
 
 **The false-positive half is the important half.** Once correct SQL starts getting blocked,
 people switch the hook off, and then the defence is zero.

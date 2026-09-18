@@ -91,17 +91,18 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 文が 1 文字違えば通りません。
 
 誤検知しないことの方が大事なので、テストは「止まるべきもの」と
-「止まってはいけないもの」を両方見ています（合計 45 ケース: 落とす 20 / 通す 16 / 承認トークン関連 9）。
+「止まってはいけないもの」を両方見ています（合計 47 ケース: 落とす 20 / 既知の制約として残した
+誤検知 2（[hook-010](data/pitfalls/hook-010.json)） / 通す 16 / 承認トークン関連 9）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 47   fail: 0
 ```
 
 同じ形のフックが、あと 3 つあります。**4 つとも、止める理由も、テストの形も同じです。**
 
 | フック | 何を止めるか | テスト |
 |---|---|---|
-| `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 45 |
+| `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 47 |
 | `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた | 65 |
 | `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象 | 29 |
 | `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など。あわせて、`deny` には無いが同じく取り消せない `find -delete`、`git stash drop` / `clear`、`gh repo sync --force`、`gh repo delete` | 219 |
@@ -116,7 +117,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 45   fail: 0
 （[perm-006](data/pitfalls/perm-006.json)）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs           # pass: 45    fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 47    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 29    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0

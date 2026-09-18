@@ -6,40 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 20,
+    "total": 21,
     "by_set": {
-      "pitfalls": 20
+      "pitfalls": 21
     },
     "by_confidence": {
-      "measured": 14,
+      "measured": 15,
       "inferred": 3,
       "documented": 2,
       "unverified": 1
     },
     "by_status": {
       "closed": 14,
+      "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
       "trap": 13,
-      "limitation": 3,
+      "limitation": 4,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 10,
+      "hook": 11,
       "runtime": 2,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 10,
+      "unknown_version": 11,
       "ok": 4,
       "not_applicable": 6
     },
     "without_prose": 10,
-    "checkable": 9
+    "checkable": 10
   },
   "checks": [
     {
@@ -95,6 +96,15 @@
       "expect": "absent",
       "message": "フック本体に「自分が直接起動されたか」の判定を戻すと、リンクを含むパスに置かれたときに黙って無効になる。",
       "severity": "high"
+    },
+    {
+      "id": "hook-010",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-sql.mjs",
+      "pattern": "if (grammar === 'shell') return sql;",
+      "expect": "present",
+      "message": "この早期returnを外して無害化を適用すると、npx supabase db execute --sql 'truncate bookings' のようなコマンドでTRUNCATEが検査から外れる可能性がある（過去に一度実際に起きた穴）。外すときはguard-destructiveのレクサーで実際の引数を取り出す形にすること。",
+      "severity": "low"
     },
     {
       "id": "install-001",
@@ -364,6 +374,32 @@
         "configchange",
         "settings-json",
         "windows"
+      ]
+    },
+    {
+      "id": "hook-010",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-010.json",
+      "title": "guard-sqlはシェル経由のコマンドを無害化しないため、文字列として書いてあるだけのDDLキーワードにも反応する",
+      "layer": "hook",
+      "kind": "limitation",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません既知の誤検知",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-005",
+        "perm-006"
+      ],
+      "tags": [
+        "guard-sql",
+        "false-positive",
+        "neutralize",
+        "shell",
+        "known-limitation"
       ]
     },
     {

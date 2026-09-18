@@ -1,0 +1,36 @@
+{
+  "id": "hook-009",
+  "title": "設定を入れ替えても、起動中のセッションは前のフック構成のまま動いていた（/hooks の件数で見分けられた）",
+  "summary": "Windows 実機で、キットの settings.json を PreToolUse 4 エントリの版に入れ替えた（15:57 JST）。入れ替え前のファイルは、以前に入れたキットの版で、PreToolUse の matcher は guard-sql / guard-secrets（Bash|PowerShell）/ guard-config の 3 つだった（ConfigChange の登録の有無は控えていない）。15:59 と 17:04 の確認では、cmd /c rd /s、powershell -Command \"Remove-Item -Recurse ...\"、git -C ... push --force が 3 つともフックに止められずに実行された。17:04 の確認のあと /hooks を開くと PreToolUse は 3 件で、Bash|PowerShell の下は 1 hook。入れ替え前のファイルとまったく同じ構成だった。インストール済みの guard-destructive.mjs に同じペイロードを直接渡すと exit 2 で止まったので、フック本体は動いていた。その後 Claude Code を起動し直すと、/hooks の Bash|PowerShell は 2 hooks になり、17:19 の確認では 3 つとも [guard-destructive] BLOCKED で止まった。このときディスク上の settings.json は、まだ Bash|PowerShell のエントリを 2 つに分けた版のままだった（2 つを 1 エントリにまとめた版を入れたのは 17:23:48。インストーラが作ったバックアップのファイル名 20260917082348 は UTC）。つまり失敗の原因はファイルの書き方ではなく、セッションが入れ替え前の設定のまま動いていたことだった。同じ matcher のエントリが 2 つあっても、/hooks では 1 つの matcher の下に 2 hooks として並び、両方とも実行された。最初の 2 回の確認の前に起動し直したかどうかは記録していない。入れ替え前のキットの設定には guard-config の ConfigChange 登録があるはずで、それが起動中のセッションへの設定変更の反映を拒否する（hook-007）ため、起動し直さない限り前のフックのままになる。途中で原因を「同じ matcher のエントリが 2 つあること」と取り違え、doctor にエラーを足したが、同じ PR の中で取り消した。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#実機では2回すり抜けました",
+  "measured_on": "2026-09-17",
+  "environment": {
+    "os": "Windows",
+    "shell": "PowerShell",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded"
+  },
+  "repro": [
+    "入れ替え前の ~/.claude/settings.json を settings.json.pre-pr30 に控え、install.mjs --skip-claude-md で PR #30 の kit を入れた（バックアップ名 20260917065702 = 15:57 JST）",
+    "15:59 と 17:04 に、PowerShell ツールで存在しないフォルダ・存在しないリモートを対象に cmd /c rd /s、powershell -Command \"Remove-Item -Recurse ...\"、git -C ... push --force を実行させると、3 つとも実行された",
+    "17:04 の確認のあと /hooks を開くと PreToolUse (3)、[User] Bash|PowerShell 1 hook だった",
+    "インストール済みの guard-destructive.mjs に同じ cmd /c rd /s のペイロードをパイプで直接渡すと、[guard-destructive] BLOCKED と exit 2 が返った",
+    "2 つのファイルの PreToolUse を並べると、pre-pr30 は guard-sql / guard-secrets（Bash|PowerShell）/ guard-config の 3 エントリ、入れ替え後は 4 エントリ（Bash|PowerShell が 2 つ）だった",
+    "Claude Code を起動し直すと /hooks の [User] Bash|PowerShell が 2 hooks になり、17:19 の確認では 3 つとも PreToolUse:PowerShell hook error ... [guard-destructive] BLOCKED で止まった。Write-Output \"rm -rf is blocked\" はそのまま実行された",
+    "2 エントリを 1 エントリにまとめた settings.json を入れたのは、その後の 17:23:48（バックアップ名 20260917082348）。17:19 の時点のディスクは、分けた版のままだった"
+  ],
+  "status": "closed",
+  "fix": "install.mjs / install.ps1 の最後の案内に、確認の前に Claude Code を /exit して起動し直すこと、/hooks で Bash|PowerShell が 2 hooks になっているのを見てから試すことを追加した。1 件のままなら入れ替え前の設定で試していることになり、結果は意味を持たない。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "起動中のセッションがどの設定で動いているかは、ファイルの静的検査では分からない。/hooks の件数とファイルの中身を突き合わせる。"
+  },
+  "related": ["hook-007", "hook-008", "perm-006"],
+  "tags": ["guard-destructive", "stale-session", "restart", "configchange", "settings-json", "windows"]
+}

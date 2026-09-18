@@ -71,6 +71,63 @@ PreToolUse側は既存のguard-sql/secrets向けの認識・カバレッジ・�
 guard-configはこれでNode版・PowerShell版・PreToolUse・ConfigChange・doctorによる静的検査、
 すべて揃った。
 
+## guard-destructive（deny をすり抜ける形の破壊系コマンド）— 実装・Windows 実機確認済み（PR #30）
+
+**2026-09-17、「基本版以降」にあった「`permissions.deny` は前方一致なので `cd /tmp && rm -rf x` /
+`timeout 30 rm -rf x` / サブシェル / パイプ経由ですり抜ける」という項目に着手し、前提が半分古かった
+ことが分かった。** Anthropic の公式ドキュメント（[Configure permissions](https://code.claude.com/docs/en/permissions)、
+同日参照）によると、Claude Code は `&&` `||` `;` `|` `&` と改行でコマンドを分けて deny を 1 つずつに当て
+（サブシェル・`$(...)`・`for` の中も含む）、`timeout` `time` `nice` `nohup` `stdbuf` `command` `builtin`・
+フラグなしの `xargs`・先頭の変数代入を外してから照合する。つまり上の 4 形はすでに deny で止まる。
+
+一方、同じページは「deny はプログラムのまわりの境界ではない」として、一致しない形を明記している:
+`/bin/rm -rf`、`bash -c 'rm -rf ...'`、`git -C . push`、`git -c k=v push`、`git 'push'`。フラグ付きの
+`xargs`、`npx` / `devbox run` などの実行ツールも外されない。これに `perm-005` の `rm -rfv` と、
+フラグを後ろに置いた `git push origin main --force` が加わる。
+[`perm-006`](data/pitfalls/perm-006.json)（confidence: documented）として記録した。
+
+`kit/claude/hooks/guard-destructive.mjs` を新設。deny に書いてある破壊系コマンド（再帰の `rm`・
+`Remove-Item`・`rd /s`・`rimraf`・force push・`git reset --hard`・`git clean -f`・`git branch -D`・
+`supabase db reset`）が、deny の一致しない形で来たときに止める。Bash は POSIX シェル、PowerShell は
+PowerShell、`cmd /c` の中は cmd の文法で読み、`bash -c` / `eval` / `powershell -Command` /
+`-EncodedCommand` / `Invoke-Expression` の中身、`sudo` / `env` / `xargs` / `find -exec` / `npx` などの先、
+git のグローバルオプションの後ろまで追う。`test-guard-destructive.mjs` は 206 件（止める 135 / 通す 71）。
+`$(cat <<'EOF' ...)` 形式のコミットメッセージに危ないコマンド名が書いてあるだけのケースを通すため、
+`$( )` の対応取りでヒアドキュメント本文を読み飛ばすようにした。`perm-005` はこのフックで closed にした
+（deny 側の穴は残る）。
+
+settings.json テンプレート（4 つ目の PreToolUse）、`install.mjs`、`install.ps1`（`-Hook powershell` でも
+Node 版を登録。`.ps1` 版はまだ無い）、`doctor.mjs` の `guards` 配列、`test-doctor` /
+`test-install-backups` / `test-lint-pitfalls` を更新。docs/02（日英）に「deny をすり抜ける形の、
+半分はもう古い話でした」の節を追加。
+
+`.github/workflows/test.yml` にも `test-guard-destructive.mjs` の実行と、インストール先ファイルの確認を
+足した（チャット側の GitHub 連携は workflow ファイルを書けないため、bundle で渡して手元から push した）。
+
+**Windows 実機での確認で、テストが通っていたのにすり抜ける原因が 2 つ見つかり、同じ PR で直した。**
+
+- [`hook-008`](data/pitfalls/hook-008.json): フックに「直接起動されたときだけ動く」判定を入れていたため、
+  リンクを含むパスに置くと何も見ずに exit 0 していた。PR の CI では macOS だけが落ちた。判定を削除し、
+  リンク（Windows ではジャンクション）経由で起動するテストを追加。
+- [`hook-009`](data/pitfalls/hook-009.json): 実機の確認が、入れ替え前の設定のまま動いていたセッションで
+  行われていた（`/hooks` の件数が入れ替え前のファイルと同じだった）。いったん「同じ matcher のエントリが
+  2 つあると片方しか登録されない」と取り違えて doctor にエラーを足したが、バックアップの時刻から
+  分けた版のままでも 2 hooks で動いていたと分かり、取り消した。テンプレートは 1 エントリに
+  まとめた形のまま（どちらでも動く）。インストーラの最後に「起動し直して `/hooks` で 2 hooks を
+  確認してから試す」を追加。
+
+起動し直したあとの 2026-09-17 の実機確認（Windows、PowerShell ツール。settings.json は一時的にキットのものに
+入れ替え、確認後に元へ戻す手順）: `/hooks` で `Bash|PowerShell` が 2 hooks、
+`cmd /c rd /s /q <存在しないフォルダ>`・`powershell -Command "Remove-Item -Recurse <同>"`・
+`git -C <worktree> push --force nowhere` の 3 つは `[guard-destructive] BLOCKED`、
+`Write-Output "rm -rf is blocked"` はそのまま実行された。docs/02 に「実機では、2回すり抜けました」を追加。
+
+**残り（このPRの外）:**
+
+- `guard-destructive.ps1`（PowerShell 版）。`test-guard-destructive.mjs --target ps` で同じケースを
+  当てられるようにしてある。
+- README / README.en の「4本柱」「5分で入れる」の記述をどうするか（guard-config と合わせて判断）。
+
 ## 基本開発で完了したこと
 
 - [x] 設定テンプレートの形式修正と、読み取り専用の doctor。
@@ -172,15 +229,18 @@ guard-configはこれでNode版・PowerShell版・PreToolUse・ConfigChange・do
   [PR #27](https://github.com/ponponpon888/ai-workforce/pull/27)・
   [PR #28](https://github.com/ponponpon888/ai-workforce/pull/28)・
   [PR #29](https://github.com/ponponpon888/ai-workforce/pull/29)。
-- [ ] README・CHANGELOG の最終確認・タグ付け。guard-config追加に伴い、README/README.enの
-  「4本柱」や「5分で入れる」の記述をguard-config込みに更新するかも合わせて判断する
-  （今回のPRでは触っていない）。
+- [ ] README・CHANGELOG の最終確認・タグ付け。guard-config・guard-destructive追加に伴い、README/README.enの
+  「4本柱」や「5分で入れる」の記述をこの2つ込みに更新するかも合わせて判断する
+  （guard-config・guard-destructive の各PRでは触っていない）。
+- [x] guard-destructive（PR #30）の Windows 実機確認と test.yml への追加。実機確認で hook-008（フックの不具合）と hook-009（確認手順の落とし穴）を発見・対処した。
+- [ ] guard-destructive（PR #30）のマージ。
 
 Set-Content の別名 `sc` を deny に追加しない判断も、下記の制約として保持します。
 
 ## 基本版の制約と判断
 
 - `rm` の全フラグ変種を権限ルールだけで止める保証はない。通常の削除まで禁止する一律 deny は追加しない。
+  フラグ変種と、deny が一致しない呼び方（`bash -c`、`/bin/rm`、`git -C` など）は guard-destructive で止める（perm-006）。
 - Read の権限ルールとシェル側の秘密ファイルガードは判定範囲が異なる。ガードには文書・ソースコードの例外がある。
 - `Set-Content` の一律 deny は追加しない。将来追加する場合も `sc.exe` を巻き込む `sc` の記述を避ける。
 - SQL コマンドの引用文字列にも反応する場合がある。基本版では保守的な検査を維持し、テストペイロードはファイルと標準入力で渡す。
@@ -191,6 +251,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   matcher やフック内部のツール名チェックを書くときは、固定接頭辞ではなく部分一致で書くこと（hook-004）。
 - guard-config はパス名の文字列一致であり、`git checkout` での古いコミットへの巻き戻しや
   パッケージスクリプト、エディタ拡張機能経由の書き換えはカバーしない（hook-006）。
+- guard-destructive もコマンド文字列を読むだけで、スクリプトファイル・`npm run`・Makefile の中身、
+  `ssh` / `docker exec` の先、見えないところで代入された変数は追えない。境界が必要ならサンドボックス。
 - guard-config の `ConfigChange` 層は「実行中セッションへの反映」を止めるだけで、ディスク上の
   ファイルは元に戻らない。Claude Code が起動していない間の書き換えは検知できず、次回起動時に
   そのまま「起動時の設定」として読み込まれる（hook-007）。
@@ -217,11 +279,10 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
   を塞ぐか、既知の制約として残すかを検討する。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
-- 競合調査で見つかったもう一つの穴: `permissions.deny` は前方一致なので、
-  `cd /tmp && rm -rf x` / `timeout 30 rm -rf x` / サブシェル / パイプ経由の `rm -rf` 等が
-  すり抜ける（`perm-005` の「フラグ変種」よりさらに広い話）。guard-sql と同じ
-  「コマンド全体をセグメント分割して正規表現で走査する」設計を、deny リストの主要な
-  危険パターン（`rm -rf`、`git push --force`、`git reset --hard` 等）にも広げるかを検討する。
+- ~~競合調査で見つかったもう一つの穴（`cd /tmp && rm -rf x` 等が deny をすり抜ける）~~ → 前提の半分は
+  現行の Claude Code では解消済みと判明。残りの本当に抜ける形は guard-destructive で対応（上記、PR #30）。
+  `find . -delete`、`gh repo sync --force`、`git stash drop`、`git checkout -- .` は deny にも無いため
+  今回は広げていない。入れるかどうかは別途判断する。
 - guard-configのConfigChange層の限界（hook-007）を補うため、`SessionStart`フックで
   settings.jsonのハッシュ（またはpermissions/hooksの内容）を既知の値と照合し、Claude Code
   が起動していない間に書き換えられていた場合は警告する仕組みを検討する。

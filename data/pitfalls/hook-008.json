@@ -1,0 +1,35 @@
+{
+  "id": "hook-008",
+  "title": "「直接起動されたときだけ動く」判定のせいで、シンボリックリンク経由だとフックが何もせず exit 0 した",
+  "summary": "guard-destructive.mjs の最初の版は、テストから import できるように process.argv[1] と import.meta.url を比べ、一致したときだけ本体を動かしていた。Node はエントリのモジュールのシンボリックリンクを解決するので、リンクを含むパスで起動すると両者の綴りが食い違い、フックは入力を読まずに exit 0 した。止めるべきコマンドがすべて通る。単体テスト（206 件）はチェックアウト内の実パスで起動していたため全部緑で、PR の CI では一時ディレクトリが /var -> /private/var のリンクである macOS のジョブだけが落ちた。同じ日に Windows 実機でも Claude Code から 3 つのコマンドがフックに止められずに実行されたが、修正前のフックに同じペイロードを直接渡すと exit 2 で止まった。Windows 側の原因はこれではなく、セッションが入れ替え前の設定のまま動いていたことだった（hook-009）。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-09-17",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "real/ にフックを置き、ln -s real link でディレクトリのシンボリックリンクを作った",
+    "同じ PreToolUse ペイロード（Bash、bash -c 'rm -rfv x'）を渡すと、node real/guard-destructive.mjs は exit 2、node link/guard-destructive.mjs は exit 0 だった",
+    "PR #30 の CI で、Ubuntu は成功、macOS は開始から約 1 分で失敗した"
+  ],
+  "status": "closed",
+  "fix": "起動方法の判定を削除し、他の 3 フックと同じく常に本体を実行するようにした（テスト用の export も削除）。test-guard-destructive.mjs に、フックのコピーをシンボリックリンク（Windows ではジャンクション）経由で起動して exit 2 になることを見るケースを追加した。修正前のフックに対してこのケースだけが落ちることを確認済み。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-destructive.mjs",
+    "pattern": "fileURLToPath(import.meta.url)",
+    "expect": "absent",
+    "message": "フック本体に「自分が直接起動されたか」の判定を戻すと、リンクを含むパスに置かれたときに黙って無効になる。"
+  },
+  "related": ["perm-006", "hook-009"],
+  "tags": ["guard-destructive", "symlink", "entry-module", "silent-allow", "macos"]
+}

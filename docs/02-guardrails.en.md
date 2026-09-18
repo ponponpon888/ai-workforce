@@ -82,7 +82,9 @@ The real file: [kit/claude/settings.json](../kit/claude/settings.json)
 slips through on one extra flag character (see "Two spellings, and both of them worked" below).
 
 So the deny list closes **the common accident shapes**, not the space of all of them. Layer 3
-exists because that coverage gap is permanent.
+exists because that coverage gap is permanent. Destructive commands that arrive in a shape deny does
+not match are picked up by the `guard-destructive` hook (see "Half of the deny bypasses were
+already closed" below).
 
 ---
 
@@ -477,10 +479,13 @@ Bash(rm -rf:*)  ->  rm -rf /foo    blocked
 **One extra flag character walks straight past it.** So does `rm -fr`. What is being
 blocked is the string `rm -rf`, not dangerous uses of `rm`.
 
-I have not closed it. Closing it means denying `rm` itself, which also stops everyday
-work like `rm -rf ./dist`. The argument this page keeps making — a rule with too many
-false positives gets switched off — applies to this one too. For now it stays open,
-and documented.
+I have not closed it on the deny side. Closing it there means denying `rm` itself,
+which also stops everyday work like `rm ./dist/app.js`. The argument this page keeps
+making — a rule with too many false positives gets switched off — applies to this one too.
+
+It is closed on the hook side instead (`guard-destructive`, below). A hook can take the
+flags apart one by one, so `-rfv`, `-fr` and `-r -f` all read as "recursive delete". The
+hole in deny itself is still there.
 
 ### This layer cannot have tests
 
@@ -646,6 +651,146 @@ Where it is not closed, I say it is not closed.
 
 This stops accidents, not an adversary. It is a wall where a hand reaches for `cat .env`.
 Stopping a service-role key from landing in a transcript once already pays for it.
+
+---
+
+## Half of the deny bypasses were already closed
+
+"`permissions.deny` is a prefix match, so putting anything in front — `cd /tmp && rm -rf x`,
+`timeout 30 rm -rf x` — walks past it." I read that while looking at other people's
+guardrail repositories, and wrote it into the ROADMAP.
+
+Re-reading Anthropic's own page ([Configure permissions](https://code.claude.com/docs/en/permissions),
+read on 2026-09-17), **that part is already handled by Claude Code:**
+
+- it splits on `&&` `||` `;` `|` `&` and newlines, and **applies deny to every piece**,
+  including subshells, `$(...)` and `for` bodies;
+- it strips `timeout` `time` `nice` `nohup` `stdbuf` `command` `builtin`, flag-less `xargs`,
+  and a leading `FOO=bar` before matching;
+- for PowerShell it splits on the syntax tree and resolves aliases.
+
+Earlier, one `Set-Location ...; Remove-Item ...; git commit ...` line was refused as a whole
+because a single `Remove-Item` was in it. That was this behaviour.
+
+The same page is just as clear about **what deny does not match** — it says a rule "isn't a
+security boundary around the program":
+
+| deny | stops | does not stop |
+|---|---|---|
+| `Bash(rm *)` | `rm -rf build/` | `/bin/rm -rf build/`, `bash -c 'rm -rf build/'` |
+| `Bash(git push *)` | `git push origin main` | `git -C . push origin main`, `git -c k=v push origin main`, `git 'push' origin main` |
+
+`xargs` with flags and runners like `npx` or `devbox run` are not stripped either. The
+`rm -rfv` case from earlier ([perm-005](../data/pitfalls/perm-005.json)) and a trailing flag,
+`git push origin main --force`, are also out of reach for a prefix match. All of this is
+recorded as [perm-006](../data/pitfalls/perm-006.json).
+
+### A hook for the shapes that really get through
+
+[guard-destructive](../kit/claude/hooks/guard-destructive.mjs) stops the destructive commands
+already in deny **when they arrive in a shape deny does not match**. What it forbids is what
+deny forbids; nothing new.
+
+| shape | examples |
+|---|---|
+| through a shell or evaluator | `bash -c` `sh -c` `eval` `echo ... \| sh` `bash <<EOF` `powershell -Command` `-EncodedCommand` (decoded and read) `cmd /c` `Invoke-Expression` `wsl` |
+| by path or with quotes | `/bin/rm` `\rm` `'rm'` `git 'push'` |
+| wrappers and runners Claude Code keeps | `sudo` `env` `xargs -n1` `find -exec` `npx` `pnpm dlx` `bunx` `devbox run` `direnv exec` `mise exec` `uv run` `busybox` `watch` `flock` |
+| git global options | `git -C .` `git -c k=v` `git --git-dir=...` |
+| flags a prefix cannot enumerate | `rm -rfv` `rm -fr` `rm -r -f` `rm --recursive` `git push origin main --force` `git push -uf` `git push origin +main` `--force-with-lease` `git clean -xdf` |
+| interpreter one-liners | `node -e` with `rmSync(..., { recursive: true })`, `python -c` with `shutil.rmtree`, `os.system('rm -rf ...')` |
+
+Bash commands are read as POSIX shell, PowerShell commands as PowerShell, and whatever sits
+inside `cmd /c` as cmd. Reading everything with one grammar is what opened a hole in
+guard-sql ("The third one opened up because I made it smarter").
+
+It widens deny in two places. `rm` is stopped for any recursive flag, not just `-rf`
+(`Bash(rm -r:*)` is in deny too, so the intent is the same). `git clean` is stopped for any
+`-f` without `-n`, not just `-fd`. `Remove-Item` in PowerShell is stopped whether or not it
+recurses, exactly like the deny rule.
+
+Two checks have no deny counterpart: `git -c alias.x=...` (an alias defined on the spot can be
+any command) and `git -c clean.requireForce=false` (`git clean` without `-f`). Neither has a
+use except hiding one of the above.
+
+### More of the tests are about what must pass
+
+206 cases: 135 that must be stopped, 71 that must not. The largest group on the "must not"
+side is text that only **mentions** a dangerous command.
+
+```bash
+git commit -m "$(cat <<'EOF'
+feat: block rm -rf variants (and git push --force)
+
+Don't let bash -c 'rm -rf x' through.
+EOF
+)"
+```
+
+When matching the `$( )`, counting the here-document body as code breaks on the `'` in
+`Don't` and the `(` in `(and`, and the `git push --force` in the message gets read as a
+command. I caught this while writing it, and taught the matcher to skip here-document
+bodies.
+
+`python3 -c "print('shutil.rmtree is dangerous')"` did fail the first test run. The hook now
+blanks string contents before looking for the call.
+
+### It got through twice on the real machine
+
+Every test passed. Asked to run `cmd /c rd /s /q <a folder that does not exist>`,
+Claude Code on Windows still ran it. There were two separate causes.
+
+**The first was the hook's own entry check** ([hook-008](../data/pitfalls/hook-008.json)).
+So that a test could import it, the hook only ran when it had been launched directly.
+Node resolves symlinks before loading the entry file, so placed under a path that
+contains a link, the check failed and the hook exited 0 without reading anything. Only
+the macOS CI job failed — its temp directory is the link `/var` -> `/private/var` —
+and that is how it surfaced. The check is gone, and a test now launches the hook
+through a link.
+
+**The second was that I was testing old settings** ([hook-009](../data/pitfalls/hook-009.json)).
+`/hooks` showed `Bash|PowerShell` with **1 hook**. Piping the same input to the hook directly
+did block, so the hook itself worked.
+
+My first reading was that guard-secrets and guard-destructive, written as two separate entries
+with the same matcher, had collapsed into one. I merged them into one entry and added a doctor
+check for it. **That was wrong.**
+
+The installer's backup files carry a timestamp. The merged version went in at 17:23; the check
+where all three commands were stopped had finished at 17:19. At that moment the file on disk
+still had the two separate entries. After a restart, `/hooks` showed **2 hooks**, and both ran.
+And while it was failing, `/hooks` had shown exactly the three matchers of the settings file
+from before the install.
+
+So **the running session was still using the settings it started with.** Those earlier settings
+were an older install of this kit, guard-config included. That version refuses to let a running
+session pick up a change to settings.json ([hook-007](../data/pitfalls/hook-007.json); whether
+its ConfigChange entry was present was not recorded). Most likely, my own guard kept my own
+check on the old configuration. The doctor check is gone, and the installer now ends with "restart, open
+`/hooks`, and see 2 hooks before you test".
+
+It is the same shape of mistake as "Two spellings, and both of them worked": **I compared
+without first checking what I was comparing.**
+
+Neither was visible to the unit tests: the first is about where the hook is installed, the
+second about which settings the session is actually running. **Before testing, open `/hooks`
+and check that the counts match the file** — the cheapest check there was.
+
+### What is still open
+
+- the inside of a script file, an `npm run` script, a Makefile, a git alias defined earlier;
+- `ssh host ...` and `docker exec ...` (another machine or container);
+- `find . -delete`, `gh repo sync --force`, `git stash drop`, `git checkout -- .` — none of
+  them is in deny either, so this change does not widen to them;
+- variables assigned out of sight. `$CMD` in `$CMD -rf x` is followed only when the
+  assignment is visible in the same command;
+- a command buried in an argument string, like `Start-Process cmd -ArgumentList '/c rd /s /q x'`;
+- there is no PowerShell port (`guard-destructive.ps1`) yet. `install.ps1 -Hook powershell`
+  registers the Node version for this one hook.
+
+As Anthropic's page says, enforcement that does not depend on the command text is the
+sandbox's job. This hook makes sure a model that was refused by deny hits the wall again
+when it tries "another way of writing it".
 
 ---
 

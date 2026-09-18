@@ -13,8 +13,8 @@
     "docs/02-guardrails.md#測り方"
   ],
 
-  "status": "open_recorded",
-  "why_not_closed": "塞ぐには rm そのものを deny するしかなく、そうすると rm -rf ./dist のような日常の操作まで止まる。誤検知の多いルールは外されるので、抜け方が分かったうえで残している。",
+  "status": "closed",
+  "fix": "deny の側では塞いでいない（塞ぐには rm そのものを deny するしかなく、rm ./dist/app.js のような日常の削除まで止まる）。代わりに guard-destructive フックが rm のフラグを 1 つずつ分解し、-r / -R / --recursive を含むとき（-rfv・-fr・-r -f のような形も含む）だけ止める。deny の前方一致の穴そのものは残っている。",
 
   "detection": {
     "checkable": false,
@@ -22,6 +22,6 @@
     "note": "判定しているのは Claude Code 本体なので、設定を置いて実際に rm -rfv を叩く以外に確かめる方法がない。叩けば inferred から measured に上げられる。"
   },
 
-  "related": ["perm-001", "perm-004"],
+  "related": ["perm-001", "perm-004", "perm-006"],
   "tags": ["deny", "prefix-match", "rm"]
 }

@@ -6,8 +6,10 @@
 .DESCRIPTION
     Copies the shared CLAUDE.md, settings.json and the guard hooks into
     ~/.claude, backing up anything already there. Nothing is deleted.
-    The hooks are guard-sql, guard-secrets and guard-config (self-tamper
-    protection for these settings, CLAUDE.md and the hooks themselves).
+    The hooks are guard-sql, guard-secrets, guard-config (self-tamper
+    protection for these settings, CLAUDE.md and the hooks themselves) and
+    guard-destructive (the deny list's destructive commands, in the shapes
+    deny does not match; Node only for now).
 
     Run with -WhatIf first to see exactly what would happen.
 
@@ -150,9 +152,14 @@ if ($Hook -eq 'node') {
     $configCommand  = "$hookExecutable -NoProfile -ExecutionPolicy Bypass -File `"$homeSlash/hooks/guard-config.ps1`""
 }
 
+# guard-destructive is always the Node version, even with -Hook powershell:
+# there is no guard-destructive.ps1 port yet.
+$destructiveFile    = 'guard-destructive.mjs'
+$destructiveCommand = "node `"$homeSlash/hooks/guard-destructive.mjs`""
+
 # NOT $hook -- PowerShell variable names are case-insensitive, so that would
 # assign file content to the $Hook parameter and trip its ValidateSet.
-foreach ($hookFile in @($sqlFile, $secretsFile, $configFile)) {
+foreach ($hookFile in @($sqlFile, $secretsFile, $configFile, $destructiveFile)) {
     $hookContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\$hookFile") -Raw -Encoding UTF8
     Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
 }
@@ -176,6 +183,7 @@ if ($SkipSettings) {
     Write-Step "  $hookCommand"
     Write-Step "  $secretsCommand"
     Write-Step "  $configCommand"
+    Write-Step "  $destructiveCommand"
 } else {
     $settings = Get-Content -LiteralPath (Join-Path $srcClaude 'settings.json') -Raw -Encoding UTF8
     $settings = $settings.Replace('{{CLAUDE_HOME}}', $homeSlash)
@@ -183,6 +191,7 @@ if ($SkipSettings) {
     $settings = $settings.Replace('{{GUARD_SQL_COMMAND}}', ($hookCommand -replace '\\', '\\\\' -replace '"', '\"'))
     $settings = $settings.Replace('{{GUARD_SECRETS_COMMAND}}', ($secretsCommand -replace '\\', '\\\\' -replace '"', '\"'))
     $settings = $settings.Replace('{{GUARD_CONFIG_COMMAND}}', ($configCommand -replace '\\', '\\\\' -replace '"', '\"'))
+    $settings = $settings.Replace('{{GUARD_DESTRUCTIVE_COMMAND}}', ($destructiveCommand -replace '\\', '\\\\' -replace '"', '\"'))
     # Validate JSON before any destination is changed.
     $parsed = ConvertFrom-Json -InputObject $settings -ErrorAction Stop
     if ($null -eq $parsed -or $parsed -isnot [System.Management.Automation.PSCustomObject]) {
@@ -232,9 +241,16 @@ foreach ($entry in $pending) {
 Write-Host ''
 Write-Host 'Done. Two things are deliberately left to you:' -ForegroundColor Green
 Write-Host ''
-Write-Host '  a) Verify all three hooks fire. In Claude Code, ask it to run:' -ForegroundColor White
+Write-Host '  a) Quit Claude Code (/exit) and start it again. A running session keeps the' -ForegroundColor White
+Write-Host '     hooks it started with, and guard-config refuses live changes to'
+Write-Host '     settings.json on purpose. Then open /hooks: PreToolUse must show'
+Write-Host '     Bash|PowerShell with 2 hooks. If it shows 1, you are still testing the'
+Write-Host '     old settings, and every result below is meaningless.'
+Write-Host ''
+Write-Host '     Verify all four hooks fire. In Claude Code, ask it to run:'
 Write-Host '       select 1; drop table nothing;      -> [guard-sql] must block it'
 Write-Host '       Get-Content .env                   -> [guard-secrets] must block it'
+Write-Host "       cmd /c rd /s /q .\aiwf-nothing     -> [guard-destructive] must block it"
 Write-Host '     Then ask it to edit or delete your own settings.json or CLAUDE.md:'
 Write-Host '       -> [guard-config] must block it'
 Write-Host '     If any of these goes through, that hook is not wired up and you are'
@@ -247,6 +263,7 @@ Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`""
 Write-Host "       node `"$kitRoot\scripts\test-guard-secrets.mjs`" --target ps"
 Write-Host "       node `"$kitRoot\scripts\test-guard-config.mjs`""
 Write-Host "       & `"$kitRoot\scripts\test-guard-config.ps1`""
+Write-Host "       node `"$kitRoot\scripts\test-guard-destructive.mjs`""
 Write-Host ''
 Write-Host '  b) Register pull-all.ps1 at logon, if you want it:' -ForegroundColor White
 Write-Host '       $a = New-ScheduledTaskAction -Execute "powershell.exe" ``'

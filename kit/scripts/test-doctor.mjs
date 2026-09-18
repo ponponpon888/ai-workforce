@@ -13,6 +13,11 @@ const temp = mkdtempSync(join(tmpdir(), 'aiwf doctor-'));
 let count = 0;
 function test(name, fn) { fn(); count++; console.log(`PASS ${name}`); }
 function finding(edit, id) { const s = clone(); edit(s); const r = inspectSettings(s, { template: true }); assert(r.findings.some(f => f.id === id), JSON.stringify(r)); assert.notEqual(r.status, 'static-pass'); }
+// Hooks are located by their placeholder, not by position: one entry can hold several hooks.
+const TOKENS = { '{{GUARD_SQL_COMMAND}}': 'guard-sql', '{{GUARD_SECRETS_COMMAND}}': 'guard-secrets', '{{GUARD_CONFIG_COMMAND}}': 'guard-config', '{{GUARD_DESTRUCTIVE_COMMAND}}': 'guard-destructive' };
+const POS = {};
+source.hooks.PreToolUse.forEach((e, i) => e.hooks.forEach((h, j) => { if (TOKENS[h.command]) POS[TOKENS[h.command]] = [i, j]; }));
+const hookOf = (s, name) => s.hooks.PreToolUse[POS[name][0]].hooks[POS[name][1]];
 function cli(args) { return spawnSync(process.execPath, [join(here, 'doctor.mjs'), ...args], { encoding: 'utf8' }); }
 try {
   test('valid kit passes scoped checks and host remains unverified', () => { const r = inspectSettings(clone(), { template: true }); assert.equal(r.status, 'static-pass'); assert.equal(r.hostVerification, 'not-performed'); });
@@ -27,29 +32,36 @@ try {
   test('missing PreToolUse rejected', () => finding(s => delete s.hooks.PreToolUse, 'hooks.missing'));
   test('invalid matcher rejected', () => finding(s => s.hooks.PreToolUse[0].matcher = '[', 'hooks.matcher'));
   test('SQL matcher missing PowerShell is caught', () => finding(s => s.hooks.PreToolUse[0].matcher = '^Bash$', 'guard-sql.coverage'));
+  test('every guard placeholder is present in the template', () => assert.deepEqual(Object.keys(POS).sort(), Object.values(TOKENS).sort()));
+  test('two entries with the same matcher are accepted', () => { const s = clone(); const [i, j] = POS['guard-destructive']; const h = s.hooks.PreToolUse[i].hooks.splice(j, 1)[0]; s.hooks.PreToolUse.push({ matcher: s.hooks.PreToolUse[i].matcher, hooks: [h] }); assert.equal(inspectSettings(s, { template: true }).status, 'static-pass'); });
+  test('destructive matcher missing PowerShell is caught', () => finding(s => s.hooks.PreToolUse[POS['guard-destructive'][0]].matcher = '^Bash$', 'guard-destructive.coverage'));
+  test('missing destructive guard is not silently passed', () => finding(s => s.hooks.PreToolUse[POS['guard-destructive'][0]].hooks.splice(POS['guard-destructive'][1], 1), 'guard-destructive.registration'));
   test('async guard cannot count as a verified gate', () => finding(s => s.hooks.PreToolUse[0].hooks[0].async = true, 'guard-sql.execution'));
   test('zero timeout rejected', () => finding(s => s.hooks.PreToolUse[0].hooks[0].timeout = 0, 'guard-sql.timeout'));
   test('custom command is incomplete, never falsely passed', () => { const s = clone(); s.hooks.PreToolUse[0].hooks[0].command = 'custom-check'; assert.equal(inspectSettings(s, { template: true }).status, 'incomplete'); });
   test('null document rejected', () => assert.equal(inspectSettings(null).status, 'error'));
   mkdirSync(join(temp, 'hooks'));
-  for (const n of ['guard-sql', 'guard-secrets', 'guard-config']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
+  for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
   const installed = clone();
-  for (const [i, n] of ['guard-sql', 'guard-secrets', 'guard-config'].entries()) installed.hooks.PreToolUse[i].hooks[0].command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
+  for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) hookOf(installed, n).command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
   installed.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = `node "${join(temp, 'hooks', 'guard-config.mjs')}"`;
   test('standard installed commands with spaces recognized', () => assert.equal(inspectSettings(installed, { claudeHome: temp }).status, 'static-pass'));
   test('installed placeholders rejected', () => assert(inspectSettings(clone(), { claudeHome: temp }).findings.some(f => f.id === 'hooks.placeholder')));
   test('missing registered file rejected', () => { rmSync(join(temp, 'hooks', 'guard-sql.mjs')); assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-sql.file')); writeFileSync(join(temp, 'hooks', 'guard-sql.mjs'), '// stub'); });
-  test('PowerShell installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets','guard-config'].entries()) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = s.hooks.PreToolUse[2].hooks[0].command;
+  test('PowerShell installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
+    // guard-destructive has no .ps1 port yet, so the PowerShell installer registers it with node.
+    hookOf(s, 'guard-destructive').command = hookOf(installed, 'guard-destructive').command;
+    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
-  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const [i,n] of ['guard-sql','guard-secrets','guard-config'].entries()) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); s.hooks.PreToolUse[i].hooks[0].command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
-    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = s.hooks.PreToolUse[2].hooks[0].command;
+  test('PowerShell 7 installer command format recognized', () => { const s = clone(); for (const n of ['guard-sql','guard-secrets','guard-config']) { writeFileSync(join(temp,'hooks',n+'.ps1'), '# not executed'); hookOf(s, n).command = `pwsh -NoProfile -ExecutionPolicy Bypass -File "${join(temp,'hooks',n+'.ps1').replaceAll('\\','/')}"`; }
+    // guard-destructive has no .ps1 port yet, so the PowerShell installer registers it with node.
+    hookOf(s, 'guard-destructive').command = hookOf(installed, 'guard-destructive').command;
+    s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = hookOf(s, 'guard-config').command;
     assert.equal(inspectSettings(s,{claudeHome:temp}).status,'static-pass'); });
   test('CLI never executes malicious configured command or changes settings', () => {
     const s = clone(); const sentinel = join(temp, 'executed');
-    s.hooks.PreToolUse[0].hooks[0].command = `node -e "require('fs').writeFileSync('${sentinel.replaceAll('\\','/')}','bad')"`;
-    s.hooks.PreToolUse[1].hooks[0].command = installed.hooks.PreToolUse[1].hooks[0].command;
-    s.hooks.PreToolUse[2].hooks[0].command = installed.hooks.PreToolUse[2].hooks[0].command;
+    hookOf(s, 'guard-sql').command = `node -e "require('fs').writeFileSync('${sentinel.replaceAll('\\','/')}','bad')"`;
+    for (const n of ['guard-secrets', 'guard-config', 'guard-destructive']) hookOf(s, n).command = hookOf(installed, n).command;
     s.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command = installed.hooks.ConfigChange.find(e => e.matcher === 'user_settings').hooks[0].command;
     const bytes = JSON.stringify(s); writeFileSync(join(temp, 'settings.json'), bytes);
     const r = cli(['--claude-home', temp, '--json']); assert.equal(r.status, 2); assert.equal(JSON.parse(r.stdout).hostVerification, 'not-performed'); assert(!existsSync(sentinel)); assert.equal(readFileSync(join(temp,'settings.json'),'utf8'),bytes);

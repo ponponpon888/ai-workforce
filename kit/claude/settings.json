@@ -98,7 +98,7 @@
         ]
       },
       {
-        "//": "Only the shell tools. Read(.env) in deny binds the Read tool alone; cat and Get-Content arrive here instead. No database tool can read a file, so none is matched.",
+        "//": "Only the shell tools. guard-secrets: Read(.env) in deny binds the Read tool alone; cat and Get-Content arrive here instead. No database tool can read a file, so none is matched. guard-destructive: the destructive commands in deny above, in the shapes deny does not match (bash -c, /bin/rm, sudo, npx, find -exec, git -C, rm -rfv, git push origin main --force); see data/pitfalls/perm-006.json. Both shell-only hooks share this entry. (Two entries with the same matcher also work: /hooks lists them as one matcher with two hooks.)",
         "matcher": "Bash|PowerShell",
         "hooks": [
           {
@@ -106,6 +106,12 @@
             "command": "{{GUARD_SECRETS_COMMAND}}",
             "timeout": 15,
             "statusMessage": "guard-secrets: checking for secret files"
+          },
+          {
+            "type": "command",
+            "command": "{{GUARD_DESTRUCTIVE_COMMAND}}",
+            "timeout": 15,
+            "statusMessage": "guard-destructive: checking for destructive commands"
           }
         ]
       },

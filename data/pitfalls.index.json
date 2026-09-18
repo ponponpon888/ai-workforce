@@ -6,41 +6,40 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 16,
+    "total": 19,
     "by_set": {
-      "pitfalls": 16
+      "pitfalls": 19
     },
     "by_confidence": {
-      "measured": 11,
+      "measured": 13,
       "inferred": 3,
-      "documented": 1,
+      "documented": 2,
       "unverified": 1
     },
     "by_status": {
-      "closed": 9,
-      "open_recorded": 1,
+      "closed": 13,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 10,
-      "limitation": 2,
+      "trap": 12,
+      "limitation": 3,
       "behaviour": 4
     },
     "by_layer": {
-      "permissions": 5,
-      "hook": 8,
+      "permissions": 6,
+      "hook": 10,
       "runtime": 1,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 8,
+      "unknown_version": 10,
       "ok": 3,
-      "not_applicable": 5
+      "not_applicable": 6
     },
-    "without_prose": 8,
-    "checkable": 7
+    "without_prose": 9,
+    "checkable": 9
   },
   "checks": [
     {
@@ -89,6 +88,15 @@
       "severity": "high"
     },
     {
+      "id": "hook-008",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-destructive.mjs",
+      "pattern": "fileURLToPath(import.meta.url)",
+      "expect": "absent",
+      "message": "フック本体に「自分が直接起動されたか」の判定を戻すと、リンクを含むパスに置かれたときに黙って無効になる。",
+      "severity": "high"
+    },
+    {
       "id": "install-001",
       "kind": "file-content",
       "target": "kit/scripts/install.mjs",
@@ -105,6 +113,15 @@
       "expect": "absent",
       "message": "sc は Set-Content の別名だが、前方一致で sc.exe を巻き込む。Set-Content と書くこと。",
       "severity": "medium"
+    },
+    {
+      "id": "perm-006",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "GUARD_DESTRUCTIVE_COMMAND",
+      "expect": "present",
+      "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。",
+      "severity": "high"
     }
   ],
   "records": [
@@ -296,6 +313,60 @@
       ]
     },
     {
+      "id": "hook-008",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-008.json",
+      "title": "「直接起動されたときだけ動く」判定のせいで、シンボリックリンク経由だとフックが何もせず exit 0 した",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "perm-006",
+        "hook-009"
+      ],
+      "tags": [
+        "guard-destructive",
+        "symlink",
+        "entry-module",
+        "silent-allow",
+        "macos"
+      ]
+    },
+    {
+      "id": "hook-009",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-009.json",
+      "title": "設定を入れ替えても、起動中のセッションは前のフック構成のまま動いていた（/hooks の件数で見分けられた）",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#実機では2回すり抜けました",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "hook-007",
+        "hook-008",
+        "perm-006"
+      ],
+      "tags": [
+        "guard-destructive",
+        "stale-session",
+        "restart",
+        "configchange",
+        "settings-json",
+        "windows"
+      ]
+    },
+    {
       "id": "install-001",
       "set": "pitfalls",
       "file": "data/pitfalls/install-001.json",
@@ -445,19 +516,50 @@
       "kind": "trap",
       "severity": "high",
       "confidence": "inferred",
-      "status": "open_recorded",
+      "status": "closed",
       "stale_risk": "not_applicable",
       "origin": "docs/02-guardrails.md#ただし両方に同じ穴があります",
       "has_prose": true,
       "checkable": false,
       "related": [
         "perm-001",
-        "perm-004"
+        "perm-004",
+        "perm-006"
       ],
       "tags": [
         "deny",
         "prefix-match",
         "rm"
+      ]
+    },
+    {
+      "id": "perm-006",
+      "set": "pitfalls",
+      "file": "data/pitfalls/perm-006.json",
+      "title": "deny はパス指定・bash -c・git -C などで呼ばれた同じコマンドに一致しない",
+      "layer": "permissions",
+      "kind": "limitation",
+      "severity": "high",
+      "confidence": "documented",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/02-guardrails.md#deny-をすり抜ける形の半分はもう古い話でした",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "perm-001",
+        "perm-005",
+        "hook-008",
+        "hook-009"
+      ],
+      "tags": [
+        "deny",
+        "prefix-match",
+        "guard-destructive",
+        "bash-c",
+        "wrapper",
+        "rm",
+        "git-push"
       ]
     },
     {

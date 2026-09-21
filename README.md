@@ -224,9 +224,9 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | | |
 |---|---|
 | [00 原則](docs/00-principles.md) | なぜこの形になったか。8:2 の内訳（[EN](docs/00-principles.en.md)） |
-| [01 2 層の CLAUDE.md](docs/01-two-layer-claude-md.md) | 共通ルールと案件ルールの分け方 |
+| [01 2 層の CLAUDE.md](docs/01-two-layer-claude-md.md) | 共通ルールと案件ルールの分け方（[EN](docs/01-two-layer-claude-md.en.md)） |
 | [02 機械的な歯止め](docs/02-guardrails.md) | フック・deny リスト・承認モードの設計（[EN](docs/02-guardrails.en.md)） |
-| [03 役割分担](docs/03-division-of-labor.md) | チャット / Claude Code / MCP の使い分け |
+| [03 役割分担](docs/03-division-of-labor.md) | チャット / Claude Code / MCP の使い分け（[EN](docs/03-division-of-labor.en.md)） |
 | [04 複数案件運用](docs/04-multi-project.md) | 自動 pull、絶対パス指定、命名規約 |
 | [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き |
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |

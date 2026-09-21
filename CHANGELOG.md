@@ -11,6 +11,11 @@
 
 ## 未リリース
 
+- `docs/01`（2 層の CLAUDE.md）と `docs/03`（役割分担）の英訳を追加。これで
+  **4 本柱のうち 1・2・3 が英語で読める**ようになった（4 本目の `docs/04` と、
+  `docs/05`〜`08` は日本語のみ）。README / README.en のドキュメント表と
+  CONTRIBUTING の翻訳状況も更新した。日本語が正本であることは変えていない。
+
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
   残り、Claude Code を起動していない間の書き換えは検知すらできなかった

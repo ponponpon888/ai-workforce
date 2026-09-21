@@ -31,8 +31,8 @@ English follows the Japanese. 日本語・英語どちらでも構いません�
 
 ### 4. 翻訳
 
-日本語が正本です。英語版は README と `docs/00` `docs/02`（中身の核 2 本）。
-残りの `docs/` の英訳は歓迎します。
+日本語が正本です。英語版は README と `docs/00` `docs/01` `docs/02` `docs/03`（4 本柱の説明）。
+残りの `docs/`（04〜08）の英訳は歓迎します。
 
 ---
 
@@ -117,7 +117,8 @@ In order of value:
    worst state to be in, so corrections are the most valuable PRs.
 3. **Ports** — a POSIX `pull-all`, MySQL/SQLite support in `guard-sql`, more per-project
    `CLAUDE.md` templates.
-4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/02` exist in English.
+4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/01` / `docs/02` /
+   `docs/03` exist in English. The rest (`docs/04`-`08`) do not.
 
 ## What is not welcome
 

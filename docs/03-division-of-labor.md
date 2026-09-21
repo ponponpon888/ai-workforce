@@ -1,5 +1,7 @@
 # 03. 役割分担
 
+English: [03-division-of-labor.en.md](03-division-of-labor.en.md)
+
 同じモデルでも、置き場所で得意が変わります。
 「どこで何をやらせるか」を固定しておかないと、遅い場所に重い仕事が流れます。
 

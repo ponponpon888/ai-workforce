@@ -1,5 +1,7 @@
 # 01. 2 層の CLAUDE.md
 
+English: [01-two-layer-claude-md.en.md](01-two-layer-claude-md.en.md)
+
 ## 結論
 
 | ファイル | 置き場所 | 書くもの | 変更頻度 |

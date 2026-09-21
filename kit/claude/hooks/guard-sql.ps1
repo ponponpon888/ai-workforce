@@ -15,6 +15,17 @@
 
     Blocked until a human approves the exact statement (see approve-ddl.ps1):
       - CREATE / ALTER / GRANT / REVOKE / REINDEX / VACUUM
+      - MySQL only: RENAME TABLE / REPLACE / LOAD DATA / FLUSH / RESET /
+        PURGE ... LOGS / OPTIMIZE / REPAIR / SET PASSWORD
+      - SQLite only: ATTACH / DETACH / a PRAGMA that sets state / INSERT OR REPLACE
+
+    NOTE ON DIALECT
+    The same string does not mean the same thing to every client. "-f" is --file
+    to psql and --force to mysql, and "#" opens a comment in MySQL while it is an
+    operator in Postgres. So the client being invoked decides which file routes
+    are read as files and which grammar the statement is read under. When the
+    client is ambiguous (an ORM CLI that could be pointed at either), every rule
+    applies and nothing is neutralized -- the conservative side of both.
 
     NOTE ON FILE ROUTES
     SQL does not have to appear on the command line. "psql -f x.sql", "psql < x.sql",
@@ -103,20 +114,29 @@ What to do:
 # "npx supabase db execute" and the TRUNCATE is no longer in view. The quoting
 # is the shell's too, and the statement we need to read sits inside it. So a
 # command line is scanned exactly as it arrived.
-function Get-NeutralizedSql([string] $Sql, [string] $Grammar) {
+function Get-NeutralizedSql([string] $Sql, [string] $Grammar, [string] $Dialect) {
     if ($Grammar -eq 'shell') { return $Sql }
 
-    $pattern = @(
-        "'(?:[^']|'')*'",                 # single-quoted literal, '' escape
-        '\$([A-Za-z0-9_]*)\$.*?\$\1\$',   # postgres dollar-quoted body
-        '--[^\r\n]*',                     # line comment
-        '/\*.*?\*/'                       # block comment
-    ) -join '|'
+    $alternatives = New-Object System.Collections.Generic.List[string]
+    $alternatives.Add("'(?:[^']|'')*'")                # single-quoted literal, '' escape
+    $alternatives.Add('\$([A-Za-z0-9_]*)\$.*?\$\1\$')   # postgres dollar-quoted body
+    $alternatives.Add('--[^\r\n]*')                    # line comment
+    $alternatives.Add('/\*.*?\*/')                     # block comment
 
+    # MySQL only, and only when we know it is MySQL: "#" opens a comment there,
+    # but it is an operator in Postgres. Hiding text that is not a comment would
+    # hide a WHERE and turn an unfiltered DELETE into an allowed one, so this is
+    # never applied to a dialect we are unsure about.
+    if ($Dialect -eq 'mysql') {
+        $alternatives.Add('#[^\r\n]*')                 # mysql line comment
+        $alternatives.Add('`(?:[^`]|``)*`')            # mysql quoted identifier
+    }
+
+    $pattern = ($alternatives -join '|')
     $rx = [regex]::new($pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
     return $rx.Replace($Sql, {
         param($m)
-        if ($m.Value.StartsWith("'") -or $m.Value.StartsWith('$')) { "''" } else { ' ' }
+        if ($m.Value.StartsWith("'") -or $m.Value.StartsWith('$') -or $m.Value.StartsWith('`')) { "''" } else { ' ' }
     })
 }
 
@@ -219,13 +239,131 @@ function Get-SqlFromToolInput($ToolName, $ToolInput) {
 #
 # "<(?!<)" matters: "psql <<'EOF'" is a here-document, not a redirect, and reading
 # "<'EOF'" as a path would demand approval for every harmless here-document.
-$script:FileRoutePatterns = @(
-    '(?:^|\s)(?:-f|--file)[=\s]+(\S+)',       # psql -f x.sql / --file=x.sql
+$script:CommonFileRoutePatterns = @(
     '(?:^|\s)<(?!<)\s*(\S+)',                 # psql < x.sql
-    '\\ir?\s+(\S+)',                          # psql -c "\i x.sql"
     '\bcat\s+(\S+)',                          # cat x.sql | psql
     '(?:^|[\s"''`=])([^\s"''`;|<>]+\.sql)\b'  # any .sql path, however it got there
 )
+
+# Routes that belong to one client only.
+#
+# "-f" is the one that matters: to psql it is --file, to mysql it is --force.
+# Reading "mysql -f app -e ..." as psql does made the hook demand a file called
+# "app", fail to read it, and block a harmless SELECT. A guard that fires on
+# correct SQL gets switched off, so the option is read per client now
+# (data/pitfalls/hook-012.json).
+#
+# The MySQL "source" route requires the argument to look like a path -- a slash,
+# or an extension. "select source from t" must not be read as an include of a
+# file named "from".
+$script:DialectFileRoutePatterns = @{
+    postgres = @(
+        '(?:^|\s)(?:-f|--file)[=\s]+(\S+)',   # psql -f x.sql / --file=x.sql
+        '\\ir?\s+(\S+)'                       # psql -c "\i x.sql"
+    )
+    mysql = @(
+        '(?i)(?:^|[\s"''`;])source\s+([^\s;"''`]*(?:[\\/][^\s;"''`]*|\.[A-Za-z0-9]+))'
+    )
+    sqlite = @(
+        '(?:^|\s)(?:-init|--init)[=\s]+(\S+)', # sqlite3 -init x.sql
+        '(?i)\.read\s+(\S+)'                   # sqlite3's include
+    )
+}
+
+# An ambiguous client gets every route: coverage over a tidy answer.
+function Get-FileRoutePattern([string] $Dialect) {
+    if ($Dialect -eq 'unknown') {
+        $own = @($script:DialectFileRoutePatterns.Values | ForEach-Object { $_ })
+    } elseif ($script:DialectFileRoutePatterns.ContainsKey($Dialect)) {
+        $own = @($script:DialectFileRoutePatterns[$Dialect])
+    } else {
+        $own = @()
+    }
+    return @($script:CommonFileRoutePatterns) + $own
+}
+
+# Which dialect a command segment speaks. Only clients that pin the dialect are
+# listed: "prisma db" and "drizzle-kit" are deliberately absent, because the same
+# command can be pointed at Postgres or MySQL and guessing one would switch off
+# the other one's rules. Two different clients in one segment is 'unknown' for
+# the same reason.
+$script:ClientDialectPatterns = @(
+    @{ Pattern = '(?i)\bsqlite3\b'; Dialect = 'sqlite' },
+    @{ Pattern = '(?i)\b(mysql|mariadb)\b'; Dialect = 'mysql' },
+    @{ Pattern = '(?i)\b(psql|supabase\s+db)\b'; Dialect = 'postgres' }
+)
+
+# The MCP side of the same question: the server name is all we get.
+$script:McpDialectPatterns = @(
+    @{ Pattern = 'mcp__.*([Pp]lanetscale|[Mm]ysql|[Mm]ariadb)'; Dialect = 'mysql' },
+    @{ Pattern = 'mcp__.*[Ss]qlite'; Dialect = 'sqlite' },
+    @{ Pattern = 'mcp__.*([Ss]upabase|[Pp]ostgres|[Nn]eon)'; Dialect = 'postgres' }
+)
+
+function Get-SqlDialect([string] $Text, $Table) {
+    $hits = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in $Table) {
+        if ($Text -match $entry.Pattern -and -not $hits.Contains($entry.Dialect)) {
+            $hits.Add($entry.Dialect) | Out-Null
+        }
+    }
+    if ($hits.Count -eq 1) { return $hits[0] }
+    return 'unknown'
+}
+
+# Statements that are not DDL by name but are just as unrecoverable, and exist in
+# only one dialect. They go through the same human approval as DDL rather than
+# being blocked outright, because each one has a legitimate use.
+#
+# REPLACE is matched only when an identifier follows it, never a "(", so the
+# string function replace(col,'a','b') is left alone.
+$script:CommonApprovalPattern = '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b'
+$script:DialectApprovalPatterns = @{
+    mysql = @(
+        '(?i)\bRENAME\s+TABLE\b',
+        '(?i)\bREPLACE\s+(?:LOW_PRIORITY\s+|DELAYED\s+)?(?:INTO\s+)?[''"`\w]',
+        '(?i)\bLOAD\s+DATA\b',
+        '(?i)\bFLUSH\s+(?:NO_WRITE_TO_BINLOG\s+|LOCAL\s+)?[A-Z_]',
+        '(?i)\bRESET\s+(MASTER|REPLICA|SLAVE|BINARY\s+LOGS|QUERY\s+CACHE)\b',
+        '(?i)\bPURGE\s+(BINARY|MASTER)\s+LOGS\b',
+        '(?i)\b(OPTIMIZE|REPAIR)\s+(?:NO_WRITE_TO_BINLOG\s+|LOCAL\s+)?TABLE\b',
+        '(?i)\bSET\s+PASSWORD\b'
+    )
+    sqlite = @(
+        '(?i)\b(ATTACH|DETACH)\s+(?:DATABASE\s+)?[''"`\w]',
+        # Only the pragmas whose value changes what the database enforces or how
+        # it is written, and only when one is being set. "PRAGMA table_info(t)"
+        # and a bare "PRAGMA journal_mode;" read state and stay allowed.
+        '(?i)\bPRAGMA\s+(?:\w+\.)?(writable_schema|foreign_keys|ignore_check_constraints|defer_foreign_keys|legacy_alter_table|journal_mode|synchronous|trusted_schema)\s*[=(]',
+        '(?i)\bINSERT\s+OR\s+REPLACE\b',
+        '(?i)\bREPLACE\s+INTO\b',
+        '(?i)(?:^|[\s"''`;])\.(restore|import)\b'
+    )
+}
+
+function Test-NeedsApproval([string] $Statement, [string] $Dialect) {
+    if ($Statement -match $script:CommonApprovalPattern) { return $true }
+    if ($Dialect -eq 'unknown') {
+        $own = @($script:DialectApprovalPatterns.Values | ForEach-Object { $_ })
+    } elseif ($script:DialectApprovalPatterns.ContainsKey($Dialect)) {
+        $own = @($script:DialectApprovalPatterns[$Dialect])
+    } else {
+        $own = @()
+    }
+    foreach ($pattern in $own) {
+        if ($Statement -match $pattern) { return $true }
+    }
+    return $false
+}
+
+# Includes, per dialect. psql has \i, MySQL has source, SQLite has .read. All
+# three are refused inside a SQL file for the same reason: a command-only
+# approval cannot bind the contents of a file it never saw.
+$script:IncludePatterns = @{
+    postgres = '(?:^|[\r\n])\s*\\(?:i|ir)\b'
+    mysql    = '(?i)(?:^|[\r\n])\s*source\s+[^\s;"''`]*(?:[\\/]|\.[A-Za-z0-9]+)'
+    sqlite   = '(?i)(?:^|[\r\n])\s*\.read\b'
+}
 
 # A pipeline stays whole: "cat x.sql | psql" is one segment.
 $script:SegmentPattern = '&&|\|\||;|\r?\n'
@@ -243,13 +381,21 @@ function Get-Unquoted([string] $Token) {
 # Paths a command line hands to a database client. Only segments that invoke a
 # client are scanned, so an unrelated -f elsewhere on the line is left alone.
 function Get-FileRouteCandidate([string] $Command) {
-    $found = New-Object System.Collections.Generic.List[string]
+    $found = New-Object System.Collections.Generic.List[object]
+    $seen = New-Object System.Collections.Generic.List[string]
     foreach ($segment in ($Command -split $script:SegmentPattern)) {
         if ($segment -notmatch $script:SqlClientPattern) { continue }
-        foreach ($pattern in $script:FileRoutePatterns) {
+        $dialect = Get-SqlDialect $segment $script:ClientDialectPatterns
+        foreach ($pattern in (Get-FileRoutePattern $dialect)) {
             foreach ($m in [regex]::Matches($segment, $pattern)) {
                 $path = Get-Unquoted $m.Groups[1].Value
-                if ($path -and -not $found.Contains($path)) { $found.Add($path) | Out-Null }
+                # The file is read under the dialect of the client it is handed
+                # to. A path named twice by two clients keeps the first; the
+                # contents are scanned either way and only the grammar differs.
+                if ($path -and -not $seen.Contains($path)) {
+                    $seen.Add($path) | Out-Null
+                    $found.Add([pscustomobject]@{ Path = $path; Dialect = $dialect }) | Out-Null
+                }
             }
         }
     }
@@ -303,11 +449,20 @@ function Test-UnfilteredMutation([string] $Statement) {
     return $false
 }
 
-function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where) {
+function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where, [string] $Dialect) {
     $firstDdl = $null
-    $cleaned = Get-NeutralizedSql $Text $Grammar
-    if ($Grammar -eq 'sql' -and $cleaned -match '(?:^|[\r\n])\s*\\(?:i|ir)\b') {
-        Deny "Nested SQL includes are unsupported; submit the reviewed SQL directly.$Where" 'SQL include'
+    $cleaned = Get-NeutralizedSql $Text $Grammar $Dialect
+    if ($Dialect -eq 'unknown' -or -not $script:IncludePatterns.ContainsKey($Dialect)) {
+        $includePatterns = @($script:IncludePatterns.Values | ForEach-Object { $_ })
+    } else {
+        $includePatterns = @($script:IncludePatterns[$Dialect])
+    }
+    if ($Grammar -eq 'sql') {
+        foreach ($pattern in $includePatterns) {
+            if ($cleaned -match $pattern) {
+                Deny "Nested SQL includes are unsupported; submit the reviewed SQL directly.$Where" 'SQL include'
+            }
+        }
     }
     foreach ($stmt in ($cleaned -split ';')) {
         if (-not $stmt.Trim()) { continue }
@@ -315,7 +470,18 @@ function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where
         if ($stmt -match '(?is)\bTRUNCATE\b') { Deny "TRUNCATE is never allowed from an agent.$Where" $stmt }
         if (($Grammar -eq 'sql' -and $stmt -match '(?i)^\s*DO\b') -or ($Grammar -eq 'shell' -and $stmt -match '(?i)\bDO\s+(?:LANGUAGE\b|[''"$])')) { Deny "Procedural DO blocks are unsupported.$Where" $stmt }
         if (Test-UnfilteredMutation $stmt) { Deny "UPDATE/DELETE needs a WHERE in the same SQL scope.$Where" $stmt }
-        if ($null -eq $firstDdl -and $stmt -match '(?is)\b(CREATE|ALTER|GRANT|REVOKE|REINDEX|VACUUM)\b') { $firstDdl = $stmt }
+        # MySQL reads # to the end of the line as a comment. A command line is
+        # never neutralized (see Get-NeutralizedSql), so "delete from t # where
+        # id = 1" showed the guard a WHERE and showed MySQL an unfiltered
+        # DELETE -- the whole table. Read the statement a second time with the #
+        # comments taken out and block if THAT reading is unfiltered. This only
+        # ever adds a block: DROP and TRUNCATE are still matched against the text
+        # exactly as it arrived.
+        if (($Dialect -eq 'mysql' -or $Dialect -eq 'unknown') -and $stmt.Contains('#') -and
+            (Test-UnfilteredMutation ($stmt -replace '#[^\r\n]*', ' '))) {
+            Deny "UPDATE/DELETE needs a WHERE in the same SQL scope; MySQL reads # to the end of the line as a comment.$Where" $stmt
+        }
+        if ($null -eq $firstDdl -and (Test-NeedsApproval $stmt $Dialect)) { $firstDdl = $stmt }
     }
     return $firstDdl
 }
@@ -347,7 +513,7 @@ try {
     # "mcp__claude_ai_Supabase__list_projects", and a "mcp__[Ss]upabase__"
     # prefix match misses it entirely. Match "supabase" (etc) anywhere in the
     # tool name instead. See data/pitfalls/hook-004.json.
-    if ($toolName -notmatch '^(Bash|PowerShell)$|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale') {
+    if ($toolName -notmatch '^(Bash|PowerShell)$|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale|mcp__.*[Mm]ysql|mcp__.*[Mm]ariadb|mcp__.*[Ss]qlite') {
         exit 0
     }
 
@@ -365,7 +531,16 @@ try {
         exit 0
     }
 
-    $firstDdl = Invoke-StatementScan $sql $grammar ''
+    # A shell call names its client on the command line; an MCP call only has
+    # the server name. Either way, 'unknown' means every dialect's rules apply
+    # and nothing is neutralized.
+    if ($grammar -eq 'shell') {
+        $dialect = Get-SqlDialect $sql $script:ClientDialectPatterns
+    } else {
+        $dialect = Get-SqlDialect $toolName $script:McpDialectPatterns
+    }
+
+    $firstDdl = Invoke-StatementScan $sql $grammar '' $dialect
 
     # The statement need not be on the command line. Read what the client is being
     # pointed at and scan that too; a file route with nothing readable behind it
@@ -378,10 +553,11 @@ try {
         $candidates = @(Get-FileRouteCandidate $sql)
         if ($candidates.Count -gt 0) {
             $cwd = if ($payload.PSObject.Properties.Name -contains 'cwd') { [string]$payload.cwd } else { '' }
-            foreach ($path in $candidates) {
+            foreach ($candidate in $candidates) {
+                $path = $candidate.Path
                 $content = Read-SqlFile $path $cwd
                 if ($null -eq $content) { Deny 'SQL file is unreadable; cannot verify its contents.' 'Unreadable SQL file' }
-                $ddl = Invoke-StatementScan $content 'sql' " (from $path)"
+                $ddl = Invoke-StatementScan $content 'sql' " (from $path)" $candidate.Dialect
                 if ($null -ne $ddl) { Deny 'File-based DDL approval is unsupported; submit and approve the SQL text directly.' 'DDL in SQL file' }
             }
         }
@@ -400,7 +576,7 @@ try {
     # copied it verbatim into approve-ddl.ps1 got a different fingerprint and the
     # retry stayed blocked with no indication why. See data/pitfalls/hook-005.json.
     if ($null -ne $firstDdl -and -not (Test-Approved $sql)) {
-        Deny 'DDL requires a human approval token that is missing or expired.' $sql
+        Deny 'This statement requires a human approval token that is missing or expired.' $sql
     }
 
     exit 0

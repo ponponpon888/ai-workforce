@@ -33,16 +33,26 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// The same fixture is used to test both implementations, so they cannot drift.
+// The same fixture is used to test all three implementations, so they cannot
+// drift.
 //   node test-pull-all.mjs                 -> tests pull-all.mjs
 //   node test-pull-all.mjs --target ps     -> tests pull-all.ps1 via pwsh
-const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions();
+//   node test-pull-all.mjs --target sh     -> tests pull-all.sh via /bin/sh
+const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions(process.argv.slice(2), ['node', 'ps', 'sh']);
+
+// pull-all.sh takes the Node twin's options, not PowerShell's, so every place
+// that spells an option below only has to ask whether the target is 'ps'.
+function cliInvocation(args) {
+  return targetArg === 'sh'
+    ? ['sh', [resolve(here, 'pull-all.sh'), ...args]]
+    : [process.execPath, [resolve(here, 'pull-all.mjs'), ...args]];
+}
 
 function invocation(reposDir) {
   if (targetArg === 'ps') {
     return [pwshExe, ['-NoProfile', '-File', resolve(here, 'pull-all.ps1'), '-Root', reposDir]];
   }
-  return [process.execPath, [resolve(here, 'pull-all.mjs'), '--root', reposDir, '--quiet']];
+  return cliInvocation(['--root', reposDir, '--quiet']);
 }
 
 let pass = 0;
@@ -200,7 +210,8 @@ const before = Object.fromEntries(
 // Run it for real
 // ---------------------------------------------------------------------------
 
-console.log(`\npull-all test suite (${targetArg === 'ps' ? 'powershell' : 'node'})\n`);
+const TARGET_LABEL = { node: 'node', ps: 'powershell', sh: 'posix shell' }[targetArg];
+console.log(`\npull-all test suite (${TARGET_LABEL})\n`);
 
 const [exe, args] = invocation(reposDir);
 const run = spawnSync(exe, args, { encoding: 'utf8', env: GIT_ENV });
@@ -423,6 +434,22 @@ for (const hidden of ['untracked', 'submodule']) {
     !existsSync(join(repo, '.git', 'FETCH_HEAD')));
 }
 
+// A repository directory whose name starts with a dot is still a repository.
+// PowerShell's Get-ChildItem hides those on Unix unless -Force is passed, so
+// the twin skipped them while the Node one updated them (shell-003).
+{
+  const dottedRoot = join(rootDir, 'repos-dotted');
+  mkdirSync(dottedRoot);
+  git(dottedRoot, 'clone', '--quiet', originDir, '.dotted');
+  const dottedRepo = join(dottedRoot, '.dotted');
+  git(dottedRepo, 'remote', 'set-head', 'origin', '--auto');
+  git(dottedRepo, 'reset', '--hard', FIRST); // fixture setup only
+  const [exe, args] = invocation(dottedRoot);
+  const result = spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+  check('dot-prefixed repository directory is updated', result.status === 0 && head(dottedRepo) === SECOND,
+    `head=${head(dottedRepo).slice(0, 7)} want=${SECOND.slice(0, 7)}`);
+}
+
 // Invalid log destinations must stop before updating otherwise eligible repos.
 for (const kind of ['file', 'parent-file']) {
   const logRoot = join(rootDir, `repos-log-${kind}`);
@@ -503,10 +530,9 @@ for (const kind of ['missing', 'file']) {
   git(previewRoot, 'clone', '--quiet', originDir, 'preview');
   const previewRepo = join(previewRoot, 'preview');
   git(previewRepo, 'reset', '--hard', FIRST); // fixture setup only
-  const previewExe = targetArg === 'ps' ? pwshExe : process.execPath;
-  const previewArgs = targetArg === 'ps'
-    ? ['-NoProfile', '-File', resolve(here, 'pull-all.ps1'), '-Root', previewRoot, '-DryRun']
-    : [resolve(here, 'pull-all.mjs'), '--root', previewRoot, '--dry-run'];
+  const [previewExe, previewArgs] = targetArg === 'ps'
+    ? [pwshExe, ['-NoProfile', '-File', resolve(here, 'pull-all.ps1'), '-Root', previewRoot, '-DryRun']]
+    : cliInvocation(['--root', previewRoot, '--dry-run']);
   const firstPreview = spawnSync(previewExe, previewArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
   check('dry-run creates no log directory', firstPreview.status === 0 && !existsSync(join(previewRoot, '_logs')));
   const oldLogDir = join(rootDir, 'preview-logs');
@@ -531,9 +557,10 @@ for (const kind of ['missing', 'file']) {
   mkdirSync(join(selectionRoot, 'ordinary'));
   mkdirSync(join(selectionRoot, 'broken', '.git'), { recursive: true });
   function runSelection(names) {
-    if (targetArg !== 'ps') return spawnSync(process.execPath,
-      [resolve(here, 'pull-all.mjs'), '--root', selectionRoot, '--repos', names.join(',')],
-      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    if (targetArg !== 'ps') {
+      const [exe, args] = cliInvocation(['--root', selectionRoot, '--repos', names.join(',')]);
+      return spawnSync(exe, args, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    }
     // -File does not reliably bind multiple string[] values across PS versions.
     // A literal wrapper exercises the native array parameter without shell parsing.
     const quote = value => "'" + value.replaceAll("'", "''") + "'";
@@ -552,7 +579,8 @@ for (const kind of ['missing', 'file']) {
 }
 
 // Node's CLI used to ignore misspellings and consume a following flag as a value.
-// PowerShell has a separate parameter binder; these cases target the Node CLI.
+// PowerShell has a separate parameter binder; these cases target the hand-written
+// CLI, which the shell twin shares option for option.
 if (targetArg !== 'ps') {
   const invalidRoot = join(rootDir, 'invalid-cli-root');
   for (const [name, extra] of [
@@ -569,8 +597,8 @@ if (targetArg !== 'ps') {
     ['empty repository entry', ['--repos', 'api,']],
     ['repository traversal', ['--repos', '../outside']],
   ]) {
-    const bad = spawnSync(process.execPath, [resolve(here, 'pull-all.mjs'), '--root', invalidRoot, ...extra],
-      { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
+    const [badExe, badArgs] = cliInvocation(['--root', invalidRoot, ...extra]);
+    const bad = spawnSync(badExe, badArgs, { env: GIT_ENV, encoding: 'utf8', timeout: 10000 });
     check(`invalid CLI ${name} stops before writes`, bad.status === 2 && !existsSync(invalidRoot));
   }
 }

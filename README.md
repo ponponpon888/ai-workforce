@@ -163,14 +163,20 @@ Ubuntu / macOS / Windows、PowerShell 版を Windows / Ubuntu と、Windows Powe
 確認しているのは主に「触ってはいけないものに触らなかった」side です。
 
 ```bash
-node kit/scripts/test-pull-all.mjs     # pass: 72   fail: 0
+node kit/scripts/test-pull-all.mjs                 # Node 版        pass: 73   fail: 0
+node kit/scripts/test-pull-all.mjs --target ps     # PowerShell 版  pass: 61   fail: 0
+node kit/scripts/test-pull-all.mjs --target sh     # POSIX シェル版 pass: 73   fail: 0
 ```
+
+実装は3つあります（Node / PowerShell / POSIX シェル）。**同じフィクスチャを3つに当てているので、
+挙動がずれません。** 実際、3つ目を足したときに PowerShell 版だけが `.dotfiles` のような
+ドット始まりのフォルダを飛ばしていたことが分かりました（[shell-003](data/pitfalls/shell-003.json)）。
 
 **Windows PowerShell 5.1 でも確認済みです。** 5.1 は 7.x とは別物で、実際にそこでしか
 出ない不具合が 1 件見つかりました（[02](docs/02-guardrails.md) の PowerShell の落とし穴）。
 いまは CI に `shell: powershell`（＝5.1）のジョブを別に回しています。
 
-→ [kit/scripts/pull-all.mjs](kit/scripts/pull-all.mjs) / [docs/04-multi-project.md](docs/04-multi-project.md)
+→ [kit/scripts/pull-all.mjs](kit/scripts/pull-all.mjs) / [pull-all.sh](kit/scripts/pull-all.sh) / [docs/04-multi-project.md](docs/04-multi-project.md)
 
 ---
 

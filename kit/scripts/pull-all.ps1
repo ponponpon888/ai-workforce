@@ -149,7 +149,11 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if ($hasSelection) {
     $targets = $requestedTargets
 } else {
-    $targets = Get-ChildItem -LiteralPath $Root -Directory |
+    # -Force is load-bearing: without it Get-ChildItem hides dot-prefixed
+    # directories on Unix (and hidden ones on Windows), so a repository named
+    # .dotfiles was silently skipped here while the Node twin updated it.
+    # See data/pitfalls/shell-003.json.
+    $targets = Get-ChildItem -LiteralPath $Root -Directory -Force |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName '.git') } |
         Select-Object -ExpandProperty FullName
 }

@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 23,
+    "total": 24,
     "by_set": {
-      "pitfalls": 23
+      "pitfalls": 24
     },
     "by_confidence": {
-      "measured": 16,
+      "measured": 17,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
-      "closed": 15,
+      "closed": 16,
       "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 14,
+      "trap": 15,
       "limitation": 5,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
       "hook": 13,
-      "runtime": 2,
+      "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
       "unknown_version": 12,
-      "ok": 4,
+      "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 12
+    "checkable": 13
   },
   "checks": [
     {
@@ -150,6 +150,15 @@
       "expect": "present",
       "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。",
       "severity": "high"
+    },
+    {
+      "id": "shell-003",
+      "kind": "file-content",
+      "target": "kit/scripts/pull-all.ps1",
+      "pattern": "-Directory -Force",
+      "expect": "present",
+      "message": "-Force を外すと、Unixのドット始まりフォルダとWindowsの隠しフォルダがリポジトリ探索から消え、PowerShell版だけが対象を取りこぼす状態に戻る。",
+      "severity": "low"
     }
   ],
   "records": [
@@ -711,6 +720,31 @@
         "arrays",
         "strictmode",
         "guard-destructive"
+      ]
+    },
+    {
+      "id": "shell-003",
+      "set": "pitfalls",
+      "file": "data/pitfalls/shell-003.json",
+      "title": "PowerShellのGet-ChildItem -Directoryは、Unixのドット始まりフォルダとWindowsの隠しフォルダを既定で返さない",
+      "layer": "runtime",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/04-multi-project.md#移植して見つかったこと-powershell-版だけがドット始まりのフォルダを飛ばしていました",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "shell-002"
+      ],
+      "tags": [
+        "pull-all",
+        "powershell",
+        "get-childitem",
+        "portability",
+        "dotfiles"
       ]
     }
   ]

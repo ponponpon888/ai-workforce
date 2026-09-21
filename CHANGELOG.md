@@ -59,13 +59,25 @@
   骨抜きにしたフック・全部止めるフック・消したフック・登録を外した状態・壊れたJSON・
   ホーム不一致を、それぞれ別の結果として報告することを固定している。`verify-installers` の
   `core` にも入れ、CI の Ubuntu / Windows / macOS（Windows PowerShell 5.1 を含む）で回す。
-- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)、status: open_recorded）。
+- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)）。
   **`guard-config` は自分がインストールされた場所ではなく `~/.claude`（または `AIWF_CLAUDE_HOME`）を
-  守る。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
+  守っていた。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
   実際に使われている `settings.json` は保護対象に入らない。`AIWF_CLAUDE_HOME` はテストからしか
-  設定されておらず、文書にも載っていない。直し方（フック自身の位置から導出する）は分かって
-  いるが、Node版とPowerShell版の両方と既存テストの見直しを伴うため別PRに分け、まず
-  `probe-guards` が実行時に検出して警告し incomplete として報告する形を入れた。
+  設定されておらず、文書にも載っていなかった。`probe-guards` は実行時にこれを検出して警告し、
+  incomplete として報告する。ガード本体の修正は次の項目（別PRで入れた）。
+
+- `guard-config` が、保護対象の claude home を**自分の位置から導出する**ようになった。
+  インストールされたフックは `<claude home>/hooks/guard-config.*` に置かれるので、そこから
+  1つ上が「Claude Code がいま読んでいる home」になる。従来は実行時に `AIWF_CLAUDE_HOME`
+  （未設定なら `~/.claude`）だけで決めていたため、`--claude-home` で標準以外の場所へ入れると
+  **フックは登録されているのに、実際に使われている `settings.json` が無防備**だった
+  （[hook-013](data/pitfalls/hook-013.json) / status: closed）。`AIWF_CLAUDE_HOME`
+  （PowerShell 版は `-ClaudeHome`）は明示的な上書きとして残し、指定時はその home だけを守る。
+  指定が無いときは導出した home と `~/.claude` の両方を守る（守る範囲を広げるのは安全だが、
+  黙って狭めるのは危険なため）。ブロック時のメッセージは一致した方の home を名指しする。
+  テストは両版とも 45 → 50 件で、修正前の実装では増やした5件のうち3件が落ちることも確認した。
+  `probe-guards` の不一致判定も新しい挙動に合わせ、`AIWF_CLAUDE_HOME` が別の場所を指している
+  ときだけ警告して incomplete にする（12件）。
 
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま

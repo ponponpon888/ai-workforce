@@ -63,28 +63,36 @@ static-pass に見えますが、ここで落ちます。
 - **Claude Code 本体がフックを呼ぶことの証明にはなりません。** それができるのは本体だけです。
   ここで分かるのは「settings.json に書いてあるとおりに起動したとき、フックは仕事をする」まで
 
-### guard-config が守るのは「入れた場所」ではありません
+### guard-config が守るのは「入れた場所」です（以前は違いました）
 
-この検査を最初に流したときに見つかったことです。`guard-config` は実行時に
-`AIWF_CLAUDE_HOME`（未設定なら `~/.claude`）を守る対象として読みます。**自分がどこに
-インストールされたかは見ていません。**
+この検査を最初に流したときに見つかり、その場で直した1件です。
 
-つまり `install.mjs --claude-home /opt/claude` のように標準以外の場所へ入れると、
-フック自体は `/opt/claude/hooks/` に置かれて登録もされるのに、**守るのは `~/.claude` のまま**です。
-実際に使われている `/opt/claude/settings.json` は無防備になります。`AIWF_CLAUDE_HOME` は
-いまのところテスト用の抜け道で、文書にも載っていません。
+`guard-config` は保護対象の claude home を**実行時に `AIWF_CLAUDE_HOME`（未設定なら `~/.claude`）から
+決めていました**。自分がどこにインストールされたかは見ていません。つまり
+`install.mjs --claude-home /opt/claude` のように標準以外の場所へ入れると、フック自体は
+`/opt/claude/hooks/` に置かれて登録もされるのに、**守るのは `~/.claude` のまま**で、実際に
+使われている `/opt/claude/settings.json` は無防備でした。
 
-`probe-guards` は、この食い違いを見つけたら警告して `incomplete`（終了コード2）にします。
-黙って `probe-pass` にすると、守られていない場所を「守られている」と報告することになるためです。
+実測（修正前）:
 
 ```
-UNKNOWN guard-config.home: guard-config protects /root/.claude, not the home being
-probed (/opt/claude). Set AIWF_CLAUDE_HOME=/opt/claude to probe this home instead.
+Edit /opt/claude/settings.json   -> exit 0（許可）
+Edit ~/.claude/settings.json     -> exit 2（ブロック）
 ```
 
-**直し方は分かっています**（フック自身の位置から導出する）が、PowerShell 版の対応と
-既存テストの更新を伴うため、このPRでは塞いでいません。
-[hook-013](../data/pitfalls/hook-013.json) に記録しています。
+**いまは自分の位置から導出します。** インストールされたフックは
+`<claude home>/hooks/guard-config.*` に置かれるので、そこから1つ上が「Claude Code がいま
+読んでいる home」です。
+
+- `AIWF_CLAUDE_HOME`（PowerShell 版は `-ClaudeHome`）は明示的な上書きとして残っています。
+  指定するとその home だけを守ります（テストが一時ディレクトリに固定するための経路）
+- 指定が無いときは、**導出した home と `~/.claude` の両方**を守ります。守る範囲を広げるのは
+  安全ですが、黙って狭めるのは危険なので、チェックアウトから直接登録されたコピーが
+  `~/.claude` を守らなくなる事態は避けています
+- ブロック時のメッセージは、一致した方の home を名指しします
+
+[hook-013](../data/pitfalls/hook-013.json) に記録しています。`probe-guards` は、
+`AIWF_CLAUDE_HOME` が別の場所を指しているときだけ不一致として警告し、`incomplete` にします。
 
 ```powershell
 node kit/scripts/test-doctor.mjs

@@ -262,6 +262,55 @@ if (-not (Test-Path -LiteralPath (Join-Path $sessionHome 'known-good\settings.js
 }
 Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# The hook decides what to protect from where it is installed, not from
+# $HOME\.claude alone (hook-013). Every case above passes -ClaudeHome, which is
+# the explicit override, so the derived path needs its own section: a copy of
+# the hook placed in a throwaway home, invoked with no override at all.
+Write-Host ''
+Write-Host 'installed elsewhere (no -ClaudeHome, no AIWF_CLAUDE_HOME):' -ForegroundColor White
+$installedHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-installed-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $installedHome 'hooks') -Force | Out-Null
+$installedHook = Join-Path $installedHome 'hooks\guard-config.ps1'
+Copy-Item -LiteralPath $Hook -Destination $installedHook
+
+function Invoke-InstalledHook([string] $FilePath) {
+    $json = @{
+        session_id      = 'test'
+        hook_event_name = 'PreToolUse'
+        cwd             = (Get-Location).Path
+        tool_name       = 'Edit'
+        tool_input      = @{ file_path = $FilePath }
+    } | ConvertTo-Json -Depth 5 -Compress
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $json | & $pwshExe -NoProfile -File $installedHook 2>&1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+}
+
+# Before this was fixed, both of these were allowed: the hook sat in this home,
+# was registered by this home's settings.json, and protected another directory.
+Assert-Result 'the settings.json of the home it was installed into' $BLOCK (Invoke-InstalledHook (Join-Path $installedHome 'settings.json'))
+Assert-Result 'a hook inside the home it was installed into' $BLOCK (Invoke-InstalledHook (Join-Path $installedHome 'hooks\guard-sql.ps1'))
+# Widening what is refused is safe; narrowing it silently is not.
+Assert-Result 'the default home stays protected as well' $BLOCK (Invoke-InstalledHook (Join-Path (Join-Path $HOME '.claude') 'settings.json'))
+Assert-Result 'an ordinary file is still allowed' $ALLOW (Invoke-InstalledHook (Join-Path ([System.IO.Path]::GetTempPath()) 'aiwf-cfg-ordinary-notes.txt'))
+
+$named = Invoke-InstalledHook (Join-Path $installedHome 'settings.json')
+if ($named.Output.Contains($installedHome)) {
+    Write-Host '  PASS  the block message names the matched home' -ForegroundColor Green
+    $script:pass++
+} else {
+    Write-Host '  FAIL  the block message names the matched home' -ForegroundColor Red
+    $script:fail++
+}
+
+Remove-Item -LiteralPath $installedHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Remove-Item -LiteralPath $ClaudeHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''

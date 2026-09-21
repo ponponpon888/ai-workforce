@@ -11,8 +11,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -206,6 +206,56 @@ console.log('\nSessionStart:');
     else { console.log('  PASS  missing startup_type still records a baseline'); pass++; }
     rmSync(home, { recursive: true, force: true });
   }
+}
+
+// The hook decides what to protect from where it is installed, not from
+// ~/.claude alone (hook-013). Every case above sets AIWF_CLAUDE_HOME, which is
+// the explicit override, so the derived path needs its own section: a copy of
+// the hook placed in a throwaway home, invoked with no override at all.
+console.log('\ninstalled elsewhere (no AIWF_CLAUDE_HOME):');
+{
+  const installedHome = mkdtempSync(join(tmpdir(), 'aiwf-cfg-installed-'));
+  mkdirSync(join(installedHome, 'hooks'), { recursive: true });
+  const installedHook = join(installedHome, 'hooks', 'guard-config.mjs');
+  cpSync(HOOK, installedHook);
+
+  const callInstalled = (filePath) => {
+    const env = { ...process.env };
+    delete env.AIWF_CLAUDE_HOME;
+    const r = spawnSync(process.execPath, [installedHook], {
+      input: JSON.stringify({
+        session_id: 'test',
+        hook_event_name: 'PreToolUse',
+        cwd: process.cwd(),
+        tool_name: 'Edit',
+        tool_input: { file_path: filePath },
+      }),
+      encoding: 'utf8',
+      env,
+    });
+    return { code: r.status, out: (r.stderr || '') + (r.stdout || '') };
+  };
+
+  // Before this was fixed, both of these were allowed: the hook sat in this
+  // home, was registered by this home's settings.json, and protected a
+  // different directory entirely.
+  assert('the settings.json of the home it was installed into', BLOCK,
+    callInstalled(join(installedHome, 'settings.json')));
+  assert('a hook inside the home it was installed into', BLOCK,
+    callInstalled(join(installedHome, 'hooks', 'guard-sql.mjs')));
+  // Widening what is refused is safe; narrowing it silently is not. The
+  // default home stays protected, which is what the hook did before.
+  assert('the default home stays protected as well', BLOCK,
+    callInstalled(join(homedir(), '.claude', 'settings.json')));
+  assert('an ordinary file is still allowed', ALLOW,
+    callInstalled(join(tmpdir(), 'aiwf-cfg-ordinary-notes.txt')));
+  // The block message has to name the home that matched, or a person reading
+  // it cannot tell which of the two directories they are being stopped from.
+  const named = callInstalled(join(installedHome, 'settings.json'));
+  if (named.out.includes(installedHome)) { console.log('  PASS  the block message names the matched home'); pass++; }
+  else { console.log('  FAIL  the block message names the matched home'); fail++; }
+
+  rmSync(installedHome, { recursive: true, force: true });
 }
 
 rmSync(CLAUDE_HOME, { recursive: true, force: true });

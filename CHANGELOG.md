@@ -11,6 +11,27 @@
 
 ## 未リリース
 
+- `kit/scripts/probe-guards.mjs` を追加。`settings.json` に登録されているガードを**そのままの綴りで
+  起動し**、止めるべき入力と通すべき入力を渡して終了コードを確かめる。`doctor.mjs` は「設定に
+  書かれたコマンドを実行しない」ことが help・docs/09・テストで保証された契約なので、実行する側は
+  別スクリプトに分けた（`docs/09` が「無害な対照入力でフックが呼ばれることを確認してください」と
+  人手に投げていた部分）。パスの間違い・コピーし損ねたフック・Node版とPowerShell版の取り違え・
+  matcher の穴・編集して壊れたフックは、静的検査では static-pass に見えるがここで落ちる。
+  通す側の検査が半分を占める（全部止めるフックは、何も止めないフックと同じくらい壊れているため）。
+  ペイロードの中のコマンドは実行せず、DBにも繋がず、ファイルも書かない。SessionStart は
+  known-good の基準を書き込む経路なので送らない。終了コードは 0 probe-pass / 1 error /
+  2 incomplete。テストは `test-probe-guards.mjs`（10件、`--target ps` でも同じ10件）で、
+  骨抜きにしたフック・全部止めるフック・消したフック・登録を外した状態・壊れたJSON・
+  ホーム不一致を、それぞれ別の結果として報告することを固定している。`verify-installers` の
+  `core` にも入れ、CI の Ubuntu / Windows / macOS（Windows PowerShell 5.1 を含む）で回す。
+- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)、status: open_recorded）。
+  **`guard-config` は自分がインストールされた場所ではなく `~/.claude`（または `AIWF_CLAUDE_HOME`）を
+  守る。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
+  実際に使われている `settings.json` は保護対象に入らない。`AIWF_CLAUDE_HOME` はテストからしか
+  設定されておらず、文書にも載っていない。直し方（フック自身の位置から導出する）は分かって
+  いるが、Node版とPowerShell版の両方と既存テストの見直しを伴うため別PRに分け、まず
+  `probe-guards` が実行時に検出して警告し incomplete として報告する形を入れた。
+
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
   残り、Claude Code を起動していない間の書き換えは検知すらできなかった

@@ -211,10 +211,24 @@ node kit/scripts/install.mjs
 ```powershell
 node kit/scripts/doctor.mjs --template  # 配布設定の静的チェック
 node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを確認
+node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に入力を渡して、止まるか確かめる
 ```
 
-設定や登録されたコマンドは変更・実行しません。結果は `static-pass` / `error` /
+`doctor` は設定や登録されたコマンドを変更・実行しません。結果は `static-pass` / `error` /
 `incomplete` に分かれます。**静的チェックの成功は、Claude Code本体での動作確認を意味しません。**
+
+**`probe-guards` は逆で、登録されているコマンドをそのままの綴りで起動します。** 止めるべき入力
+（`drop table`、`cat .env`、`bash -c 'rm -rf …'`）と通すべき入力（`select 1`、`npm run build`）を渡して、
+終了コードを見ます。パスの間違い、コピーし損ねたフック、Node版とPowerShell版の取り違え、
+編集して壊れたフック — 静的検査では `static-pass` に見えるものが、ここで落ちます。
+**ペイロードの中のコマンドは実行しません**（読むだけのフックに渡す文字列です）。DBにも繋がず、
+ファイルも書きません。
+
+最初に流したときに1つ見つかりました。**`guard-config` が守るのは「インストールされた場所」では
+なく `~/.claude` です。** 標準以外の場所へ入れると、フックは置かれて登録もされるのに、実際に
+使われている設定は無防備でした（[hook-013](data/pitfalls/hook-013.json)）。`probe-guards` は
+この食い違いを見つけたら警告して `incomplete` にします。
+
 判定範囲と終了コードは [診断の説明](docs/09-settings-doctor.md) に記載しています。
 
 ---

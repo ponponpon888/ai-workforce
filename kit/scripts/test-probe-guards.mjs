@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scripts = dirname(fileURLToPath(import.meta.url));
@@ -54,13 +54,16 @@ function homeCopy(name) {
   const home = join(root, name);
   cpSync(installed, home, { recursive: true });
   const settings = join(home, 'settings.json');
-  // Rewrite the paths in the parsed object, not in the raw text. On Windows a
-  // path inside JSON is escaped ("D:\\a\\...\\hooks"), so a string replace of
-  // the plain path matches nothing, the copy keeps pointing at the original
-  // home, and every guard comes back unverified -- which is how this suite
-  // passed on Linux and failed on Windows.
+  // Rebuild each registered command from the new home instead of replacing the
+  // old path inside it. Two Windows-only spellings broke the replace approach:
+  // the path is escaped inside JSON ("D:\\a\\...\\hooks"), and tmpdir() hands
+  // back the 8.3 short form (C:\Users\RUNNER~1\...) while the installer writes
+  // the long one. Matching a path by string is the problem; the guard file name
+  // is all this actually needs, and the home it belongs to is already known.
   const parsed = JSON.parse(readFileSync(settings, 'utf8'));
-  const retarget = value => typeof value === 'string' ? value.replaceAll(installed, home) : value;
+  const retarget = value => typeof value === 'string'
+    ? value.replace(/"([^"]+)"\s*$/, (_, path) => `"${join(home, 'hooks', basename(path))}"`)
+    : value;
   for (const event of Object.values(parsed.hooks ?? {})) {
     for (const entry of Array.isArray(event) ? event : []) {
       for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) hook.command = retarget(hook.command);
@@ -72,6 +75,13 @@ function homeCopy(name) {
   const rewritten = readFileSync(settings, 'utf8');
   assert.ok(rewritten.includes(name), `the copied settings.json does not point at ${home}`);
   assert.ok(!rewritten.includes('home-installed'), 'the copied settings.json still points at the original home');
+  // The probe recognizes a registration by comparing the command against the
+  // exact spelling the installers write. Prove the rebuild produced that
+  // spelling here, rather than discovering it as four "unverified" guards.
+  for (const guard of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) {
+    assert.ok(rewritten.includes(JSON.stringify(join(home, 'hooks', `${guard}.${extension}`)).slice(1, -1)),
+      `the copied settings.json does not register ${guard} under ${home}`);
+  }
   return home;
 }
 
@@ -192,6 +202,31 @@ try {
     // known-good/ is written by the installer, not by this tool. The snapshot
     // above is what proves the probe left it exactly as it found it -- the
     // SessionStart path that writes a baseline is never sent a payload.
+  });
+
+  // The Windows failure this suite hit twice, in a form every platform can run:
+  // the path inside settings.json is spelled differently from the string the
+  // test holds (there, tmpdir()'s 8.3 short form against the installer's long
+  // one). Anything that retargets by replacing the old path matches nothing and
+  // leaves the copy pointing at the original home.
+  test('a differently spelled path in the source settings still retargets', () => {
+    const source = join(installed, 'settings.json');
+    const original = readFileSync(source, 'utf8');
+    try {
+      // Built by hand, not with join(): join() normalizes the detour away, and
+      // an unchanged fixture would quietly test nothing.
+      const escape = value => JSON.stringify(value).slice(1, -1);
+      const from = escape(installed) + escape(sep) + 'hooks';
+      const spelled = original.replaceAll(from, escape(installed) + escape(sep) + '.' + escape(sep) + 'hooks');
+      assert.notEqual(spelled, original, 'the fixture must actually change the spelling');
+      writeFileSync(source, spelled);
+      const home = homeCopy('home-respelled');
+      const { status, report } = runProbe(home);
+      assert.equal(status, 0, JSON.stringify(report?.findings));
+      for (const guard of report.guards) assert.equal(guard.result, 'pass', guard.guard);
+    } finally {
+      writeFileSync(source, original);
+    }
   });
 
   test('--help explains itself and exits 0 without probing', () => {

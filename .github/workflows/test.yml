@@ -83,6 +83,7 @@ jobs:
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target sh
+          node kit/scripts/test-probe-guards.mjs
 
       - name: Test PowerShell implementations under pwsh
         shell: pwsh
@@ -97,6 +98,8 @@ jobs:
           node kit/scripts/test-guard-destructive.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-pull-all.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-probe-guards.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test installers
@@ -197,6 +200,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-pull-all.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-probe-guards.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test PowerShell implementations under pwsh
         shell: pwsh
@@ -211,6 +216,8 @@ jobs:
           node kit/scripts/test-guard-destructive.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node kit/scripts/test-pull-all.mjs --target ps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node kit/scripts/test-probe-guards.mjs --target ps
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Windows PowerShell 5.1
@@ -230,6 +237,8 @@ jobs:
           node ./kit/scripts/test-pull-all.mjs --target ps --pwsh powershell.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node ./kit/scripts/test-guard-secrets.mjs --target ps --pwsh powershell.exe
+          node ./kit/scripts/test-probe-guards.mjs --target ps --pwsh powershell.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node ./kit/scripts/test-guard-destructive.mjs --target ps --pwsh powershell.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -319,6 +328,8 @@ jobs:
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target ps
           node kit/scripts/test-pull-all.mjs --target sh
+          node kit/scripts/test-probe-guards.mjs
+          node kit/scripts/test-probe-guards.mjs --target ps
       - name: Run the core suite via verify-installers
         shell: bash
         run: node kit/scripts/verify-installers.mjs --suite core --target node --json

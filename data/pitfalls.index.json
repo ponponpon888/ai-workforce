@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 24,
+    "total": 25,
     "by_set": {
-      "pitfalls": 24
+      "pitfalls": 25
     },
     "by_confidence": {
-      "measured": 17,
+      "measured": 18,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
       "closed": 16,
-      "open_recorded": 2,
+      "open_recorded": 3,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 15,
+      "trap": 16,
       "limitation": 5,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 13,
+      "hook": 14,
       "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 12,
+      "unknown_version": 13,
       "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 13
+    "checkable": 14
   },
   "checks": [
     {
@@ -122,6 +122,15 @@
       "pattern": "DIALECT_FILE_ROUTE_RES",
       "expect": "present",
       "message": "ファイル経路をクライアントごとに分けている定義。1本のパターン一式に戻すと、mysql の -f（--force）を psql の --file として読んで正しいSQLを落とす誤検知が戻る。",
+      "severity": "medium"
+    },
+    {
+      "id": "hook-013",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-config.mjs",
+      "pattern": "process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude')",
+      "expect": "present",
+      "message": "guard-config の保護対象がまだ環境変数とホームディレクトリだけで決まっている（インストール先を見ていない）ことを示す。この行を変えて自分の位置から導出する形にしたら、このレコードの status と fix を同時に更新すること。",
       "severity": "medium"
     },
     {
@@ -479,6 +488,32 @@
         "sqlite",
         "false-positive",
         "dialect"
+      ]
+    },
+    {
+      "id": "hook-013",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-013.json",
+      "title": "guard-configは自分がインストールされた場所ではなく~/.claudeを守るため、標準以外の場所へ入れると実際に使われている設定が無防備になる",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "unknown_version",
+      "origin": "docs/09-settings-doctor.md#guard-config-が守るのは入れた場所ではありません",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-006",
+        "hook-009"
+      ],
+      "tags": [
+        "guard-config",
+        "install",
+        "claude-home",
+        "false-sense-of-security",
+        "probe-guards"
       ]
     },
     {

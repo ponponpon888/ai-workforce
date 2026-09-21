@@ -9,6 +9,7 @@ const suites = {
   'guard-secrets': { file: './test-guard-secrets.mjs', scope: 'guard-secrets-tests-on-this-machine' },
   'guard-sql': { file: './test-guard-sql.mjs', psFile: './test-guard-sql.ps1', scope: 'guard-sql-tests-on-this-machine' },
   'sql-boundaries': { file: './test-sql-boundaries.mjs', scope: 'sql-boundaries-tests-on-this-machine' },
+  'probe-guards': { file: './test-probe-guards.mjs', scope: 'probe-guards-tests-on-this-machine' },
 };
 const args = process.argv.slice(2);
 let suiteName = 'installers';
@@ -29,7 +30,7 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 function usage() {
-  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite core|installed-approval|installers|pull-all|guard-secrets|guard-sql|sql-boundaries] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
+  console.error('Usage: node kit/scripts/verify-installers.mjs [--suite core|installed-approval|installers|pull-all|guard-secrets|guard-sql|sql-boundaries|probe-guards] [--target all|node|powershell-7|windows-powershell-5.1] [--json]');
   process.exit(2);
 }
 const selectedSuites = suiteName === 'core' ? Object.keys(suites) : [suiteName];

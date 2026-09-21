@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 23,
+    "total": 24,
     "by_set": {
-      "pitfalls": 23
+      "pitfalls": 24
     },
     "by_confidence": {
-      "measured": 16,
+      "measured": 17,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
-      "closed": 15,
+      "closed": 16,
       "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 14,
+      "trap": 15,
       "limitation": 5,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 12,
+      "hook": 13,
       "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 11,
+      "unknown_version": 12,
       "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 12
+    "checkable": 13
   },
   "checks": [
     {
@@ -113,6 +113,15 @@
       "pattern": "function checkSessionStartBaseline()",
       "expect": "present",
       "message": "known-good/settings.jsonとの比較を行うSessionStartの検知本体。これが無くなると、Claude Codeを起動していない間のsettings.json書き換えに気づく手段が無くなる。",
+      "severity": "medium"
+    },
+    {
+      "id": "hook-012",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-sql.mjs",
+      "pattern": "DIALECT_FILE_ROUTE_RES",
+      "expect": "present",
+      "message": "ファイル経路をクライアントごとに分けている定義。1本のパターン一式に戻すと、mysql の -f（--force）を psql の --file として読んで正しいSQLを落とす誤検知が戻る。",
       "severity": "medium"
     },
     {
@@ -444,6 +453,32 @@
         "settings-json",
         "known-good",
         "cannot-block"
+      ]
+    },
+    {
+      "id": "hook-012",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-012.json",
+      "title": "guard-sqlがpsqlの読み方を全クライアントに当てていたため、mysql -f（--force）をファイル指定と誤読して正しいSELECTを落としていた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#mysql-と-sqlite-は同じ文字列を別の意味で読みます",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-005",
+        "hook-010"
+      ],
+      "tags": [
+        "guard-sql",
+        "mysql",
+        "sqlite",
+        "false-positive",
+        "dialect"
       ]
     },
     {

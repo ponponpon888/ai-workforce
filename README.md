@@ -86,23 +86,29 @@ AI で開発した話は無数にあります。動いている本番プロダ�
 - `DROP` / `TRUNCATE`
 - `WHERE` のない `UPDATE` / `DELETE`
 - DDL 全般（内容を提示して承認を取るまで実行させない。フックは接続先を見ないので、開発 DB でも同じく落ちます）
+- 方言固有の取り消せない文（MySQL の `RENAME TABLE` / `REPLACE` / `LOAD DATA` / `FLUSH` / `RESET` / `PURGE ... LOGS` / `OPTIMIZE` / `REPAIR` / `SET PASSWORD`、SQLite の `ATTACH` / `DETACH` / 状態を変える `PRAGMA` / `INSERT OR REPLACE`）
+
+読み方はクライアントごとに変えています。`-f` は psql では `--file`、mysql では `--force` で、
+psql の読み方を当てていたときは `mysql -f app -e "select 1"` という**ただの SELECT を落として**
+いました（[hook-012](data/pitfalls/hook-012.json)）。`#` も、MySQL では行コメント、Postgres では
+演算子です。`delete from t # where id = 1` は MySQL ではテーブルが空になります。
 
 DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る」。
 文が 1 文字違えば通りません。
 
 誤検知しないことの方が大事なので、テストは「止まるべきもの」と
-「止まってはいけないもの」を両方見ています（合計 47 ケース: 落とす 20 / 既知の制約として残した
-誤検知 2（[hook-010](data/pitfalls/hook-010.json)） / 通す 16 / 承認トークン関連 9）。
+「止まってはいけないもの」を両方見ています（合計 87 ケース: 落とす 42（うち MySQL 12 / SQLite 10） /
+既知の制約として残した誤検知 2（[hook-010](data/pitfalls/hook-010.json)） / 通す 32 / 承認トークン関連 11）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 47   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 87   fail: 0
 ```
 
 同じ形のフックが、あと 3 つあります。**4 つとも、止める理由も、テストの形も同じです。**
 
 | フック | 何を止めるか | テスト |
 |---|---|---|
-| `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL | 47 |
+| `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL。Postgres / MySQL / SQLite を読み分け、方言固有の取り消せない文（`RENAME TABLE`・`REPLACE`・`ATTACH`・状態を変える `PRAGMA` など）も承認対象にする | 87 |
 | `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた | 65 |
 | `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象。`settings.json` は起動していない間の書き換えも `SessionStart` で検知（警告のみ） | 45 |
 | `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など。あわせて、`deny` には無いが同じく取り消せない `find -delete`、`git stash drop` / `clear`、`gh repo sync --force`、`gh repo delete` | 219 |
@@ -117,7 +123,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 47   fail: 0
 （[perm-006](data/pitfalls/perm-006.json)）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs           # pass: 47    fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 87    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 45    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0

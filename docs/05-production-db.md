@@ -1,5 +1,7 @@
 # 05. 本番 DB の取り決め
 
+English: [05-production-db.en.md](05-production-db.en.md)
+
 AI に本番の Supabase を触らせるかどうかは、この構成でいちばん怖い部分です。
 触らせないのが一番安全ですが、それだと運用が回りません。
 

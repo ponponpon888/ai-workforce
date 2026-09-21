@@ -1,5 +1,7 @@
 # 07. GitHub と Vercel の穴
 
+English: [07-github-vercel.en.md](07-github-vercel.en.md)
+
 [06](06-supabase-mcp.md) で Supabase を塞いだので、チャット側に残っているのはこの 2 つです。
 
 先に結論を書くと、**GitHub は思っていたより細かく絞れました。Vercel は絞りきれていません。**

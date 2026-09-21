@@ -79,6 +79,16 @@
   `probe-guards` の不一致判定も新しい挙動に合わせ、`AIWF_CLAUDE_HOME` が別の場所を指している
   ときだけ警告して incomplete にする（12件）。
 
+- `docs/01`（2 層の CLAUDE.md）・`docs/03`（役割分担）・`docs/05`（本番 DB の取り決め）・
+  `docs/06`（チャット側の穴を塞ぐ）・`docs/07`（GitHub と Vercel の穴）の英訳を追加。これで
+  **4 本柱のうち 1・2・3 と、チャット側の穴を塞ぐ話が一式、英語で読める**ようになった
+  （`docs/04`・`08` は日本語のみ）。`docs/07` は「fine-grained PAT のスコープでは force-push も
+  ブランチ削除も止められない（止めるのは ruleset）」という、このリポジトリで一番引用される
+  発見を含むので、英語で読めない状態が一番もったいなかった。
+  英語版どうしのリンクも英語版を指すように直した（`docs/03` の英語版から `docs/06` への
+  リンクが日本語ページに落ちていた）。README / README.en のドキュメント表と
+  CONTRIBUTING の翻訳状況も更新。日本語が正本であることは変えていない。
+
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
   残り、Claude Code を起動していない間の書き換えは検知すらできなかった

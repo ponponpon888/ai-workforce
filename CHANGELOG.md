@@ -27,9 +27,12 @@
   （止める 42 / 既知の制約 2 / 通す 32 / 承認トークン 11）で、増えた 40 件のうち 16 件は
   「止まってはいけない」側。判断と理由は [ROADMAP.md](ROADMAP.md) と
   [`docs/02`](docs/02-guardrails.md)（英語版にも同じ節）に記録。
-  **検証状況**: Node 版は Linux / Node v22.22.2 で 87/87、PowerShell 版は PowerShell 7.4.6 /
-  Linux で 87/87。`--target ps` の sql-boundaries（33）・pull-all（60）・guard-secrets（65）も
-  同じ環境で成功。**Windows PowerShell 5.1 と Windows 上の Node は未検証。**
+  **検証状況**: 手元（Linux / Node v22.22.2）で Node 版 87/87、PowerShell 7.4.6 で PowerShell 版
+  87/87、`--target ps` の sql-boundaries（33）・pull-all（60）・guard-secrets（65）も成功。
+  CI（[PR #38](https://github.com/ponponpon888/ai-workforce/pull/38)）は Ubuntu / Windows /
+  macOS の3ジョブとも成功し、Windows ジョブの `shell: powershell`（**Windows PowerShell 5.1**、
+  実際の出力は `5.1.26100.6584`）でも `test-guard-sql.ps1` が 87/87。Claude Code 本体に
+  接続しての実地確認は未実施。
 
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま

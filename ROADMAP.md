@@ -183,8 +183,12 @@ BLOCK  mysql -f app -e "select 1"            <- ただの SELECT（-f は --forc
 
 テストは 47 → 87 件。増えた 40 件のうち 16 件は「止まってはいけない」側（`mysql -f`、
 `replace()` 関数、`source` という名前の列、読み取りの `PRAGMA`、Postgres の `#` 演算子など）。
-Node 版は Linux / Node v22.22.2 で 87/87、PowerShell 版は **PowerShell 7.4.6 / Linux** で 87/87。
-**Windows PowerShell 5.1 と Windows 上の Node は未検証**（この作業をした環境に Windows が無い）。
+手元（Linux / Node v22.22.2）で Node 版 87/87、**PowerShell 7.4.6 / Linux** で PowerShell 版 87/87。
+作業環境に Windows が無いため 5.1 は CI に任せ、[PR #38](https://github.com/ponponpon888/ai-workforce/pull/38)
+で Ubuntu / Windows / macOS の3ジョブとも成功した。Windows ジョブの `shell: powershell`
+（**Windows PowerShell 5.1**、出力は `5.1.26100.6584`）でも `test-guard-sql.ps1` 87/87、
+guard-config 45、sql-boundaries 33、pull-all 60、guard-secrets 65、guard-destructive 218。
+残るのは Claude Code 本体に接続しての実地確認。
 
 ## 基本開発で完了したこと
 
@@ -331,8 +335,8 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 
 ## 基本版以降
 
-- pull-all の shell 版、案件別テンプレート。MySQL / SQLite の SQL 検査は実装した（上記）。
-  残っているのは Windows PowerShell 5.1 / Windows の Node での実機確認。
+- pull-all の shell 版、案件別テンプレート。MySQL / SQLite の SQL 検査は実装し、CI で
+  Windows PowerShell 5.1 まで通った（上記）。残っているのは Claude Code 本体での実地確認。
 - 落とし穴レコードの追加、Issue からの受け入れ手順、残りの英訳。
 - Vercel の権限調査と開発速度の実測。
 - 前身 `ai-workforce-os` のログ整理は別リポジトリの作業として扱う。今回は削除していない。

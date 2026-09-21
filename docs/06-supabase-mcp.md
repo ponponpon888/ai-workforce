@@ -1,5 +1,7 @@
 # 06. チャット側の穴を塞ぐ（Supabase MCP）
 
+English: [06-supabase-mcp.en.md](06-supabase-mcp.en.md)
+
 このリポジトリでいちばん大きい穴でした。塞ぎ方が分かったので書き直します。
 
 ---

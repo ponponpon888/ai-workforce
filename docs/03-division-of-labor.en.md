@@ -92,7 +92,7 @@ The chat side has **almost no mechanical guardrails**. `guard-sql` and the `deny
 local Claude Code, so Supabase / GitHub / Vercel called from chat walk straight past them.
 
 For Supabase I found the way to close it: put `read_only=true` and `project_ref` in the connection
-URL, and do not connect the production project → [06](06-supabase-mcp.md) (Japanese).
+URL, and do not connect the production project → [06](06-supabase-mcp.en.md).
 
 I looked at GitHub and Vercel too → [07](07-github-vercel.md) (Japanese).
 

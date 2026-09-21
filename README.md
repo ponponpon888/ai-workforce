@@ -228,8 +228,8 @@ node kit/scripts/doctor.mjs             # ~/.claude の登録とファイルを�
 | [02 機械的な歯止め](docs/02-guardrails.md) | フック・deny リスト・承認モードの設計（[EN](docs/02-guardrails.en.md)） |
 | [03 役割分担](docs/03-division-of-labor.md) | チャット / Claude Code / MCP の使い分け（[EN](docs/03-division-of-labor.en.md)） |
 | [04 複数案件運用](docs/04-multi-project.md) | 自動 pull、絶対パス指定、命名規約 |
-| [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き |
-| [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション |
+| [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き（[EN](docs/05-production-db.en.md)） |
+| [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション（[EN](docs/06-supabase-mcp.en.md)） |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話 |
 | [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |

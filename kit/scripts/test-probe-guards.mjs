@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scripts = dirname(fileURLToPath(import.meta.url));
@@ -213,13 +213,26 @@ try {
     const source = join(installed, 'settings.json');
     const original = readFileSync(source, 'utf8');
     try {
-      // Built by hand, not with join(): join() normalizes the detour away, and
-      // an unchanged fixture would quietly test nothing.
-      const escape = value => JSON.stringify(value).slice(1, -1);
-      const from = escape(installed) + escape(sep) + 'hooks';
-      const spelled = original.replaceAll(from, escape(installed) + escape(sep) + '.' + escape(sep) + 'hooks');
-      assert.notEqual(spelled, original, 'the fixture must actually change the spelling');
-      writeFileSync(source, spelled);
+      // Respell the command strings themselves, not the file's raw text. The
+      // installer writes the path with forward slashes even on Windows, so a
+      // needle built out of sep matches nothing there and the fixture would go
+      // in unchanged -- which is exactly what happened, and what the count
+      // below now refuses to let happen quietly. join() is avoided for the
+      // same reason as before: it normalizes the detour away.
+      const settings = JSON.parse(original);
+      let respelled = 0;
+      for (const event of Object.values(settings.hooks ?? {})) {
+        for (const entry of Array.isArray(event) ? event : []) {
+          for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) {
+            if (typeof hook.command !== 'string') continue;
+            const detoured = hook.command.replace(/([\\/])hooks([\\/])/g, (_, before, after) => `${before}.${before}hooks${after}`);
+            if (detoured !== hook.command) respelled += 1;
+            hook.command = detoured;
+          }
+        }
+      }
+      assert.ok(respelled > 0, 'the fixture must actually change the spelling');
+      writeFileSync(source, JSON.stringify(settings, null, 2));
       const home = homeCopy('home-respelled');
       const { status, report } = runProbe(home);
       assert.equal(status, 0, JSON.stringify(report?.findings));

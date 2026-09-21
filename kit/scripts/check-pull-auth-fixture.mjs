@@ -63,10 +63,11 @@ process.stdin.resume();
     const before = git('rev-parse', 'HEAD');
     const mainBefore = git('rev-parse', 'main');
     const here = dirname(fileURLToPath(import.meta.url));
-    const executable = target === 'ps' ? pwshExe : process.execPath;
-    const args = target === 'ps'
-      ? ['-NoProfile', '-File', join(here, 'pull-all.ps1'), '-Root', repos]
-      : [join(here, 'pull-all.mjs'), '--root', repos, '--quiet'];
+    const [executable, args] = target === 'ps'
+      ? [pwshExe, ['-NoProfile', '-File', join(here, 'pull-all.ps1'), '-Root', repos]]
+      : target === 'sh'
+        ? ['sh', [join(here, 'pull-all.sh'), '--root', repos, '--quiet']]
+        : [process.execPath, [join(here, 'pull-all.mjs'), '--root', repos, '--quiet']];
     const result = await new Promise((resolve, reject) => {
       const child = spawn(executable, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
       let output = '';

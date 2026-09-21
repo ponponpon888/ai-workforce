@@ -1,0 +1,41 @@
+{
+  "id": "shell-003",
+  "title": "PowerShellのGet-ChildItem -Directoryは、Unixのドット始まりフォルダとWindowsの隠しフォルダを既定で返さない",
+  "summary": "pull-all.ps1のリポジトリ探索は Get-ChildItem -LiteralPath $Root -Directory で $Root の直下を列挙していた。PowerShellはUnixでドットで始まる項目を、Windowsで隠し属性の項目を、-Force を付けない限り返さない。同じ処理を行うNode版（readdirSync）とPOSIXシェル版（find -maxdepth 1 -type d）は両方とも返すため、`.dotfiles` のような名前のリポジトリフォルダが PowerShell 版でだけ更新されない状態になっていた。3つ目の実装（pull-all.sh）を同じフィクスチャに通す過程で、実装間の対象集合の差として見つかった。危険な操作をする方向の不具合ではなく「やるべき更新をしない」方向の取りこぼしだが、無人で走らせる前提のスクリプトでは気づく機会が無い。",
+  "layer": "runtime",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "origin": "docs/04-multi-project.md#移植して見つかったこと-powershell-版だけがドット始まりのフォルダを飛ばしていました",
+
+  "measured_on": "2026-09-21",
+  "environment": {
+    "os": "Linux",
+    "shell": "PowerShell",
+    "shell_version": "7.4.6",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "bare origin を1つ作り、そこから .dotrepo / 'has space' / plain の3つをクローンしたルートディレクトリを用意する（すべて1コミット目で止め、origin だけ2コミット目に進めておく）",
+    "同じルートのコピーに対して pull-all.mjs / pull-all.sh / pull-all.ps1 をそれぞれ実行し、各クローンの HEAD が2コミット目になったかを比べる",
+    "結果: node は .dotrepo=updated / has space=updated / plain=updated、sh も同じ。pwsh 7.4.6 だけ .dotrepo=STALE（1コミット目のまま）で、他の2つは updated",
+    "pull-all.ps1 の探索行が Get-ChildItem -LiteralPath $Root -Directory であり、-Force が無いことを確認した",
+    "-Force を足して同じ比較を再実行すると3実装とも .dotrepo=updated になる"
+  ],
+
+  "status": "closed",
+  "fix": "pull-all.ps1 の探索を Get-ChildItem -LiteralPath $Root -Directory -Force に変更し、ドット始まり・隠し属性のフォルダもNode版・シェル版と同じく対象にした。あわせて test-pull-all.mjs に「ドットで始まるリポジトリフォルダが更新される」ケースを追加し、3つのターゲット（node / ps / sh）すべてで実行されるようにした。",
+
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/scripts/pull-all.ps1",
+    "pattern": "-Directory -Force",
+    "expect": "present",
+    "message": "-Force を外すと、Unixのドット始まりフォルダとWindowsの隠しフォルダがリポジトリ探索から消え、PowerShell版だけが対象を取りこぼす状態に戻る。"
+  },
+
+  "related": ["shell-002"],
+  "tags": ["pull-all", "powershell", "get-childitem", "portability", "dotfiles"]
+}

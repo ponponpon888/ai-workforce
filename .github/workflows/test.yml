@@ -82,6 +82,7 @@ jobs:
           node kit/scripts/test-sql-boundaries.mjs
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
+          node kit/scripts/test-pull-all.mjs --target sh
 
       - name: Test PowerShell implementations under pwsh
         shell: pwsh
@@ -317,6 +318,7 @@ jobs:
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target ps
+          node kit/scripts/test-pull-all.mjs --target sh
       - name: Run the core suite via verify-installers
         shell: bash
         run: node kit/scripts/verify-installers.mjs --suite core --target node --json

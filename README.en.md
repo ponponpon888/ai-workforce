@@ -183,7 +183,11 @@ destroys nothing:            (excerpt — full output in docs/04)
   PASS  diverged main: local commit not discarded
 ```
 
-→ [docs/04](docs/04-multi-project.md) · [pull-all.mjs](kit/scripts/pull-all.mjs)
+Three implementations — Node, PowerShell and POSIX shell — run against the same fixture, so they
+cannot drift. Adding the third one is how I found that the PowerShell twin alone skipped
+dot-prefixed repository directories ([shell-003](data/pitfalls/shell-003.json)).
+
+→ [docs/04](docs/04-multi-project.md) · [pull-all.mjs](kit/scripts/pull-all.mjs) · [pull-all.sh](kit/scripts/pull-all.sh)
 
 ---
 
@@ -332,7 +336,7 @@ Available for product and platform work, in Japan and internationally.
 
 Yes, please — especially:
 
-- A POSIX port of `pull-all` (Node version exists; a shell version would be welcome)
+- Ports of `pull-all` to other runtimes (Node, PowerShell and POSIX shell exist)
 - `guard-sql` support for MySQL and SQLite
 - **A pitfall you hit yourself.** Those are the most valuable thing in this repository.
 

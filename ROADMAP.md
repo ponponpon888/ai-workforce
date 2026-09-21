@@ -289,7 +289,9 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 
 ## 基本版以降
 
-- MySQL / SQLite の SQL 検査、pull-all の shell 版、案件別テンプレート。
+- MySQL / SQLite の SQL 検査、案件別テンプレート。pull-all の shell 版は実装した
+  （POSIX シェル版。Node 版と同じフィクスチャで 73/73。移植の過程で、PowerShell 版だけが
+  ドット始まりのリポジトリフォルダを取りこぼしていたこと（shell-003）が見つかって直した）。
 - 落とし穴レコードの追加、Issue からの受け入れ手順、残りの英訳。
 - Vercel の権限調査と開発速度の実測。
 - 前身 `ai-workforce-os` のログ整理は別リポジトリの作業として扱う。今回は削除していない。

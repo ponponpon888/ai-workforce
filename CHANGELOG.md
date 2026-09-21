@@ -11,6 +11,20 @@
 
 ## 未リリース
 
+- `pull-all` の **POSIX シェル版**（`kit/scripts/pull-all.sh`）を追加。Node 版と同じオプション・
+  同じログ行・同じ終了コードで、`/bin/sh` と `git` / `find` / `sed` / `tr` だけで動く。ログイン経路に
+  Node を置きたくない、あるいは Node が入っていない機械向け。テストは既存のフィクスチャを
+  そのまま使い、`node kit/scripts/test-pull-all.mjs --target sh` で同じ 73 件を当てる
+  （実装が3つに分かれても挙動がずれないようにするため。`--target` の許可値はスイートごとに
+  指定する形にしたので、シェル版を持たないスイートは今までどおり node / ps のみ）。
+  意図的な差は1点だけで、古いログの削除が `find -mtime` による日単位判定になる
+  （Node 版はミリ秒比較。POSIX の範囲で「今から N 日前」を portable に計算できないため）。
+- 移植の過程で **PowerShell 版だけがドット始まりのリポジトリフォルダを飛ばしていた**ことが
+  分かったので直した（[shell-003](data/pitfalls/shell-003.json)）。`Get-ChildItem -Directory` は
+  Unix のドット始まり・Windows の隠し属性を既定で返さず、Node の `readdirSync` と
+  シェル版の `find` は返す。`-Force` を足して揃え、3実装すべてに当たるテストを追加した
+  （pull-all のテスト件数: Node / sh 72 → 73、ps 60 → 61）。
+
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
   残り、Claude Code を起動していない間の書き換えは検知すらできなかった

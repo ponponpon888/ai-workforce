@@ -94,7 +94,7 @@ local Claude Code, so Supabase / GitHub / Vercel called from chat walk straight 
 For Supabase I found the way to close it: put `read_only=true` and `project_ref` in the connection
 URL, and do not connect the production project → [06](06-supabase-mcp.en.md).
 
-I looked at GitHub and Vercel too → [07](07-github-vercel.md) (Japanese).
+I looked at GitHub and Vercel too → [07](07-github-vercel.en.md).
 
 GitHub can be constrained more finely than I expected (the MCP server's `--read-only`,
 `--exclude-tools` and `--lockdown-mode`, fine-grained PATs, rulesets). One finding is worth

@@ -204,7 +204,7 @@ merge" is expressible), and `--lockdown-mode`. And the finding that surprised me
 fine-grained PAT cannot stop force-push or branch deletion.** Normal push, force-push and ref
 deletion all require exactly `Contents (write)` — there is no finer grain. Rulesets stop those,
 not tokens.
-→ [docs/07](docs/07-github-vercel.md)
+→ [docs/07](docs/07-github-vercel.en.md)
 
 Both documents also cover prompt injection, which lands hard on any product with a user-writable
 text field: a contact form, a profile bio, a review, an application message. Every one of those
@@ -265,7 +265,7 @@ usable as-is; translations are welcome.
 | [04 Multi-project operation](docs/04-multi-project.md) | Auto-pull, absolute paths, naming |
 | [05 Production database](docs/05-production-db.en.md) — EN | Where the line sits with Supabase |
 | [06 Closing the chat-side hole](docs/06-supabase-mcp.en.md) — EN | Supabase MCP `read_only` / `project_ref`, prompt injection |
-| [07 GitHub and Vercel](docs/07-github-vercel.md) | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
+| [07 GitHub and Vercel](docs/07-github-vercel.en.md) — EN | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
 | [08 Pitfall records](docs/08-pitfall-records.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
 | [Case studies](docs/case-studies/) | Excerpts from products that are actually running |
 | [99 FAQ](docs/99-faq.md) | |

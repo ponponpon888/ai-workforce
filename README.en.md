@@ -93,7 +93,7 @@ constantly, and safety rules living in it slowly rot and drift apart between pro
 brand new project starts with no safety rules at all — and a brand new project is exactly where
 mistakes happen.
 
-→ [docs/01](docs/01-two-layer-claude-md.md)
+→ [docs/01](docs/01-two-layer-claude-md.en.md)
 
 ### 2. Mechanical guardrails
 
@@ -162,7 +162,7 @@ The same model is good at different things depending on where it runs.
 | Local Claude Code | Files, git, builds, tests, implementation | Decide the spec on its own |
 | GitHub MCP | Open, review and merge pull requests | — |
 
-→ [docs/03](docs/03-division-of-labor.md)
+→ [docs/03](docs/03-division-of-labor.en.md)
 
 ### 4. Multi-project operation
 
@@ -200,7 +200,7 @@ over MCP walks straight past it. Two documents cover what actually closes those:
 developer credentials and goes over any `GRANT`. What works is the connection URL:
 `read_only=true` switches the server to a read-only Postgres user, and `project_ref=<id>` limits
 it to one project. Supabase's own docs say not to connect production at all.
-→ [docs/06](docs/06-supabase-mcp.md)
+→ [docs/06](docs/06-supabase-mcp.en.md)
 
 **GitHub** — the MCP server has `--read-only` (which overrides toolset selection, so a
 misconfiguration cannot open a hole), `--exclude-tools` (highest precedence — "open PRs but never
@@ -208,7 +208,7 @@ merge" is expressible), and `--lockdown-mode`. And the finding that surprised me
 fine-grained PAT cannot stop force-push or branch deletion.** Normal push, force-push and ref
 deletion all require exactly `Contents (write)` — there is no finer grain. Rulesets stop those,
 not tokens.
-→ [docs/07](docs/07-github-vercel.md)
+→ [docs/07](docs/07-github-vercel.en.md)
 
 Both documents also cover prompt injection, which lands hard on any product with a user-writable
 text field: a contact form, a profile bio, a review, an application message. Every one of those
@@ -263,13 +263,13 @@ usable as-is; translations are welcome.
 | | |
 |---|---|
 | [00 Principles](docs/00-principles.en.md) — EN | Why it looks like this. Includes the project I killed after 14 days, and the four things it taught me |
-| [01 Two-layer CLAUDE.md](docs/01-two-layer-claude-md.md) | Splitting shared safety rules from per-project config |
+| [01 Two-layer CLAUDE.md](docs/01-two-layer-claude-md.en.md) — EN | Splitting shared safety rules from per-project config |
 | [02 Mechanical guardrails](docs/02-guardrails.en.md) — EN | Hooks, deny lists, the DDL approval token, the PowerShell encoding trap |
-| [03 Division of labor](docs/03-division-of-labor.md) | Chat vs local Claude Code vs MCP |
+| [03 Division of labor](docs/03-division-of-labor.en.md) — EN | Chat vs local Claude Code vs MCP |
 | [04 Multi-project operation](docs/04-multi-project.md) | Auto-pull, absolute paths, naming |
-| [05 Production database](docs/05-production-db.md) | Where the line sits with Supabase |
-| [06 Closing the chat-side hole](docs/06-supabase-mcp.md) | Supabase MCP `read_only` / `project_ref`, prompt injection |
-| [07 GitHub and Vercel](docs/07-github-vercel.md) | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
+| [05 Production database](docs/05-production-db.en.md) — EN | Where the line sits with Supabase |
+| [06 Closing the chat-side hole](docs/06-supabase-mcp.en.md) — EN | Supabase MCP `read_only` / `project_ref`, prompt injection |
+| [07 GitHub and Vercel](docs/07-github-vercel.en.md) — EN | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
 | [08 Pitfall records](docs/08-pitfall-records.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
 | [Case studies](docs/case-studies/) | Excerpts from products that are actually running |
 | [99 FAQ](docs/99-faq.md) | |

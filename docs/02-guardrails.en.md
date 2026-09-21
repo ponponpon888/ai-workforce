@@ -161,7 +161,7 @@ dangerous SQL through. This very paragraph is why it can recur: it puts `psql` a
 guard-destructive has (actually tokenizing Bash as POSIX shell, PowerShell as PowerShell) to pull
 out only the argument actually handed to the SQL client. A single regex, or applying SQL
 neutralization to shell text, risks repeating the exact "smarter but it opened a hole" mistake
-above. Recorded as [hook-010](data/pitfalls/hook-010.json).
+above. Recorded as [hook-010](../data/pitfalls/hook-010.json).
 
 ### MySQL and SQLite read the same string differently
 
@@ -1051,7 +1051,7 @@ pass: 87   fail: 0
 ```
 
 Two of the must-block cases are a known, deliberately unfixed false positive
-([hook-010](data/pitfalls/hook-010.json)): shell-grammar text is never neutralized (see below), so
+([hook-010](../data/pitfalls/hook-010.json)): shell-grammar text is never neutralized (see below), so
 a shell command that only *mentions* an SQL client and a DDL keyword as plain text — not SQL
 actually sent to that client — still gets blocked. Fixing that safely needs the same real
 per-grammar lexer guard-destructive has; a quick regex here once reopened a worse hole, letting

@@ -31,8 +31,9 @@ English follows the Japanese. 日本語・英語どちらでも構いません�
 
 ### 4. 翻訳
 
-日本語が正本です。英語版は README と `docs/00` `docs/02`（中身の核 2 本）。
-残りの `docs/` の英訳は歓迎します。
+日本語が正本です。英語版は README と `docs/00` `docs/01` `docs/02` `docs/03`（4 本柱の説明）、
+`docs/05` `docs/06` `docs/07`（本番 DB とチャット側の穴）。
+残りの `docs/`（04・08）の英訳は歓迎します。
 
 ---
 
@@ -119,7 +120,8 @@ In order of value:
 3. **Ports** — `pull-all` on another runtime (Node, PowerShell and POSIX shell exist),
    corrections to the MySQL/SQLite rules in `guard-sql` from someone who actually runs
    those engines, more per-project `CLAUDE.md` templates.
-4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/02` exist in English.
+4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/01` / `docs/02` /
+   `docs/03` / `docs/05` / `docs/06` / `docs/07` exist in English. `docs/04` and `08` do not.
 
 ## What is not welcome
 

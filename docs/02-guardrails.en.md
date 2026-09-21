@@ -104,6 +104,8 @@ The real file: [kit/claude/hooks/guard-sql.mjs](../kit/claude/hooks/guard-sql.mj
 | `DELETE FROM` with no `WHERE` | Refused |
 | `UPDATE ... SET` with no `WHERE` | Refused |
 | `CREATE` / `ALTER` / `GRANT` / `REVOKE` / `REINDEX` / `VACUUM` | **Only with an approval token** |
+| MySQL: `RENAME TABLE` / `REPLACE` / `LOAD DATA` / `FLUSH` / `RESET` / `PURGE ... LOGS` / `OPTIMIZE` / `REPAIR` / `SET PASSWORD` | **Only with an approval token** |
+| SQLite: `ATTACH` / `DETACH` / a `PRAGMA` that sets state / `INSERT OR REPLACE` / `.restore` / `.import` | **Only with an approval token** |
 
 ### Neutralize strings and comments first
 
@@ -160,6 +162,61 @@ guard-destructive has (actually tokenizing Bash as POSIX shell, PowerShell as Po
 out only the argument actually handed to the SQL client. A single regex, or applying SQL
 neutralization to shell text, risks repeating the exact "smarter but it opened a hole" mistake
 above. Recorded as [hook-010](data/pitfalls/hook-010.json).
+
+### MySQL and SQLite read the same string differently
+
+The first version only knew Postgres. `mysql` and `sqlite3` were already recognized as database
+clients, so a file route like `mysql app < x.sql` was read. What was not decided was **which
+client's grammar the text is then read under**. Three places where that matters, all measured:
+
+**1. `-f` is `--file` to psql and `--force` to mysql.**
+
+```bash
+mysql -f app -e "select 1"     # was BLOCKED before the fix
+```
+
+Reading it the way psql does made the hook treat `app` (a database name) as a file, fail to read
+it, and refuse a plain `SELECT`. **A guard that fires on correct SQL gets switched off**, so file
+routes are per client now ([hook-012](../data/pitfalls/hook-012.json)).
+
+**2. `#` is a line comment in MySQL and an operator in Postgres.**
+
+```sql
+delete from t # where id = 1
+```
+
+MySQL runs that as a `DELETE` with no `WHERE` — the table is empty afterwards. The guard saw the
+word `WHERE` and read it as filtered.
+
+The policy of not neutralizing a shell command line (previous section) is unchanged. Instead the
+statement is read **a second time with `#` to end-of-line removed**, and refused if that reading
+is unfiltered. It can only add a refusal — `DROP` and `TRUNCATE` are still matched against the
+text exactly as it arrived, so nothing can be hidden behind a `#` that was not caught before.
+It is applied only when the dialect is MySQL or unknown: treating `#` as a comment in Postgres
+would hide a `WHERE` that follows it and **refuse a correct UPDATE**.
+
+**3. The statements you cannot undo have different names.**
+
+For the same reason Postgres's `VACUUM` and `REINDEX` are gated, MySQL's `RENAME TABLE`,
+`REPLACE` (which deletes the row it replaces), `LOAD DATA`, `FLUSH`, `RESET`, `PURGE BINARY LOGS`,
+`OPTIMIZE` / `REPAIR TABLE` and `SET PASSWORD`, and SQLite's `ATTACH` / `DETACH`, state-setting
+`PRAGMA`, `INSERT OR REPLACE`, `.restore` and `.import` now need the same approval token. No
+second mechanism was added.
+
+`PRAGMA` counts only when it sets something: `PRAGMA table_info(t)` and a bare `PRAGMA
+journal_mode` read state and are allowed. `REPLACE` followed by `(` is the string function
+`replace(col,'a','b')` and is allowed. Both are pinned by tests on the allow side.
+
+There are three include commands too — psql's `\i`, MySQL's `source`, SQLite's `.read`. A
+command-only approval cannot bind the contents of a file it never saw, so all three are refused
+inside a scanned file.
+
+**An ambiguous client stays ambiguous.** `prisma db` and `drizzle-kit` can be pointed at either
+engine, and picking one would switch off the other one's rules. For those, **every dialect's rules
+apply and nothing is neutralized** — the conservative side of both.
+
+Tests: 47 -> 87 (42 refuse / 2 known limitation / 32 allow / 11 approval token). 16 of the 40 new
+cases are on the must-not-block side.
 
 ### The DDL approval token
 
@@ -955,8 +1012,8 @@ node kit/scripts/test-guard-sql.mjs      # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1         # if you use the PowerShell hook
 ```
 
-47 cases in total (20 must block, 2 known-limitation still-block, 16 must allow, 9
-approval-token). Both halves matter — the false-positive half is what keeps this guard from
+87 cases in total (42 must block — 12 of them MySQL and 10 SQLite, 2 known-limitation
+still-block, 32 must allow, 11 approval-token). Both halves matter — the false-positive half is what keeps this guard from
 getting switched off.
 
 ```
@@ -988,9 +1045,9 @@ approval token:
   PASS  approved DDL passes
   PASS  token is single use
   PASS  approved blind file route passes
-  (excerpt; approval token has 9 cases)
+  (excerpt; approval token has 11 cases)
 
-pass: 47   fail: 0
+pass: 87   fail: 0
 ```
 
 Two of the must-block cases are a known, deliberately unfixed false positive

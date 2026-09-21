@@ -36,6 +36,11 @@ const DROP_SQL = sqlFile('bad.sql', 'drop table users;\n');
 const DDL_SQL = sqlFile('ddl.sql', 'create table a (id int);\n');
 const QUOTED_SQL = sqlFile('quoted.sql', "insert into notes (body) values ('drop the old flow');\n");
 const MISSING_SQL = join(SQL_DIR, 'not-written.sql');
+const RENAME_SQL = sqlFile('rename.sql', 'rename table a to b;\n');
+// psql has \i, MySQL has source, SQLite has .read. All three hide a file the
+// approval never covered, so all three are refused inside a scanned file.
+const MYSQL_INCLUDE_SQL = sqlFile('wrapper-mysql.sql', `source ${DROP_SQL}\n`);
+const SQLITE_INCLUDE_SQL = sqlFile('wrapper-sqlite.sql', `.read ${DROP_SQL}\n`);
 
 const BLOCK = 2;
 const ALLOW = 0;
@@ -79,6 +84,8 @@ function approve(sql) {
 }
 
 const SB = 'mcp__Supabase__execute_sql';
+const MY = 'mcp__planetscale__execute_sql'; // PlanetScale speaks MySQL
+const LITE = 'mcp__sqlite__query';
 
 console.log('\nguard-sql test suite (node)\n');
 
@@ -117,6 +124,57 @@ assert('unapproved DDL inside a file', BLOCK, callHook('Bash', { command: `psql 
 // unknown statement and is blocked even when the command has an approval.
 assert('a file route with nothing readable behind it', BLOCK,
   callHook('Bash', { command: `npx supabase db push --file ${MISSING_SQL}` }));
+
+console.log('\nmust block (MySQL):');
+// None of these exist in Postgres, so the Postgres keyword list never saw them.
+// Each one is as hard to undo as the DDL that was already gated, so each goes
+// through the same human approval rather than being blocked outright.
+assert('RENAME TABLE', BLOCK, callHook('Bash', { command: 'mysql app -e "rename table a to b"' }));
+assert('REPLACE INTO (deletes the row it replaces)', BLOCK,
+  callHook('Bash', { command: 'mysql app -e "replace into t (id) values (1)"' }));
+assert('LOAD DATA INFILE', BLOCK,
+  callHook('Bash', { command: "mysql app -e \"load data infile '/tmp/a.csv' replace into table t\"" }));
+assert('FLUSH TABLES WITH READ LOCK', BLOCK,
+  callHook('Bash', { command: 'mysql app -e "flush tables with read lock"' }));
+assert('RESET MASTER', BLOCK, callHook('Bash', { command: 'mysql app -e "reset master"' }));
+assert('PURGE BINARY LOGS', BLOCK,
+  callHook('Bash', { command: "mysql app -e \"purge binary logs before '2020-01-01'\"" }));
+assert('OPTIMIZE TABLE', BLOCK, callHook('Bash', { command: 'mysql app -e "optimize table t"' }));
+assert('SET PASSWORD', BLOCK,
+  callHook('Bash', { command: "mysql app -e \"set password for u@'%' = 'x'\"" }));
+// MySQL reads # to the end of the line as a comment, so this is an unfiltered
+// DELETE to the database and looked like a filtered one to the guard.
+assert('WHERE hidden behind a # comment', BLOCK,
+  callHook('Bash', { command: 'mysql app -e "delete from t # where id = 1"' }));
+assert('RENAME TABLE in a file fed to mysql', BLOCK,
+  callHook('Bash', { command: `mysql app < ${RENAME_SQL}` }));
+assert('source include inside a file fed to mysql', BLOCK,
+  callHook('Bash', { command: `mysql app < ${MYSQL_INCLUDE_SQL}` }));
+assert('RENAME TABLE over a MySQL MCP server', BLOCK, callHook(MY, { query: 'rename table a to b' }));
+
+console.log('\nmust block (SQLite):');
+assert('ATTACH DATABASE', BLOCK,
+  callHook('Bash', { command: 'sqlite3 app.db "attach database \'other.db\' as o"' }));
+assert('PRAGMA writable_schema = ON', BLOCK,
+  callHook('Bash', { command: 'sqlite3 app.db "pragma writable_schema = on"' }));
+assert('PRAGMA foreign_keys = OFF', BLOCK,
+  callHook('Bash', { command: 'sqlite3 app.db "pragma foreign_keys = off"' }));
+assert('INSERT OR REPLACE', BLOCK,
+  callHook('Bash', { command: 'sqlite3 app.db "insert or replace into t values (1)"' }));
+assert('.restore over the open database', BLOCK,
+  callHook('Bash', { command: 'sqlite3 app.db ".restore backup.db"' }));
+assert('DROP in a file read with .read', BLOCK,
+  callHook('Bash', { command: `sqlite3 app.db ".read ${DROP_SQL}"` }));
+assert('DROP in a file loaded with -init', BLOCK,
+  callHook('Bash', { command: `sqlite3 -init ${DROP_SQL} app.db` }));
+assert('.read include inside a file fed to sqlite3', BLOCK,
+  callHook('Bash', { command: `sqlite3 app.db < ${SQLITE_INCLUDE_SQL}` }));
+assert('PRAGMA writable_schema over a SQLite MCP server', BLOCK,
+  callHook(LITE, { query: 'pragma writable_schema = on' }));
+// An ORM CLI can be pointed at either engine, so no dialect is assumed and
+// every dialect's rules apply.
+assert('MySQL statement through an ambiguous client', BLOCK,
+  callHook('Bash', { command: 'npx prisma db execute --command "replace into t (id) values (1)"' }));
 
 console.log('\nknown limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):');
 // Shell-grammar text is never neutralized (see the block comment on neutralize()),
@@ -159,6 +217,47 @@ assert('an -f that belongs to another command', ALLOW,
 assert('harmless here-document', ALLOW,
   callHook('Bash', { command: "psql <<'EOF'\nselect 1;\nEOF" }));
 
+console.log('\nmust allow (MySQL / SQLite):');
+// The half that matters more. -f is --file to psql and --force to mysql:
+// reading it as psql does made the hook demand a file named `app`, fail to
+// read it, and block a SELECT (data/pitfalls/hook-012.json).
+assert('mysql -f is --force, not a file', ALLOW,
+  callHook('Bash', { command: 'mysql -f app -e "select 1"' }));
+assert('mysql --force with a real file route', ALLOW,
+  callHook('Bash', { command: `mysql -f app < ${OK_SQL}` }));
+assert('REPLACE the string function', ALLOW,
+  callHook('Bash', { command: 'mysql app -e "select replace(name, \'a\', \'b\') from t"' }));
+assert('REPLACE the string function, space before the paren', ALLOW,
+  callHook('Bash', { command: 'mysql app -e "select replace (name, \'a\', \'b\') from t"' }));
+assert('a column named source is not an include', ALLOW,
+  callHook('Bash', { command: 'mysql app -e "select source from t"' }));
+assert('# inside a string is not a comment boundary', ALLOW,
+  callHook('Bash', { command: 'mysql app -e "delete from t where note = \'#1\'"' }));
+assert('MySQL DELETE with WHERE', ALLOW,
+  callHook('Bash', { command: 'mysql app -e "delete from t where id = 1"' }));
+// # is an operator in Postgres, not a comment. Reading it as MySQL would hide
+// the WHERE that follows it and block a filtered UPDATE.
+assert('# as a Postgres operator, WHERE after it', ALLOW,
+  callHook('Bash', { command: 'psql $DB -c "update t set flags = flags # 3 where id = 1"' }));
+assert('MySQL rules do not leak into psql', ALLOW,
+  callHook('Bash', { command: 'psql $DB -c "select replace(name, \'a\', \'b\') from t"' }));
+assert('backtick identifier is quoting, not a statement', ALLOW,
+  callHook(MY, { query: 'select `drop` from t where id = 1' }));
+assert('SQLite read-only PRAGMA', ALLOW,
+  callHook('Bash', { command: 'sqlite3 app.db "pragma table_info(t)"' }));
+assert('SQLite PRAGMA read back, not set', ALLOW,
+  callHook('Bash', { command: 'sqlite3 app.db "pragma journal_mode"' }));
+assert('SQLite plain SELECT', ALLOW, callHook('Bash', { command: 'sqlite3 app.db "select 1"' }));
+// Over MCP this is SQL, so the string is neutralized and the keyword inside it
+// is inert. On a command line it is not: shell-grammar text is never
+// neutralized, which is the documented trade-off recorded in hook-010.
+assert('dialect keyword inside a string', ALLOW,
+  callHook(LITE, { query: "select * from t where kind = 'attach database'" }));
+assert('harmless file read with .read', ALLOW,
+  callHook('Bash', { command: `sqlite3 app.db ".read ${OK_SQL}"` }));
+assert('harmless file loaded with -init', ALLOW,
+  callHook('Bash', { command: `sqlite3 -init ${OK_SQL} app.db` }));
+
 console.log('\napproval token:');
 
 // hook-005: the "Statement:" text shown for an unapproved DDL call must be
@@ -198,6 +297,12 @@ assert('multi-statement token is single use too', BLOCK, callHook(SB, { query: M
 approve(MULTI);
 assert('DROP still blocked inside an approved batch', BLOCK,
   callHook(SB, { query: 'create table a (id int); drop table b' }));
+
+// The dialect statements are gated by the same token, not a second mechanism.
+const RENAME = 'rename table orders to orders_old';
+approve(RENAME);
+assert('approved RENAME TABLE passes', ALLOW, callHook(MY, { query: RENAME }));
+assert('RENAME TABLE token is single use too', BLOCK, callHook(MY, { query: RENAME }));
 
 // An unreadable file route is refused for lack of knowledge, not because it is
 // known to be bad, but unread content cannot be bound to a command-only approval.

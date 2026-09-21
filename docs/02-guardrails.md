@@ -103,6 +103,8 @@ English: [02-guardrails.en.md](02-guardrails.en.md)
 | `DELETE FROM` に `WHERE` なし | 拒否 |
 | `UPDATE ... SET` に `WHERE` なし | 拒否 |
 | `CREATE` / `ALTER` / `GRANT` / `REVOKE` / `REINDEX` / `VACUUM` | **承認トークンがある場合のみ通す** |
+| MySQL: `RENAME TABLE` / `REPLACE` / `LOAD DATA` / `FLUSH` / `RESET` / `PURGE ... LOGS` / `OPTIMIZE` / `REPAIR` / `SET PASSWORD` | **承認トークンがある場合のみ通す** |
+| SQLite: `ATTACH` / `DETACH` / 状態を変える `PRAGMA` / `INSERT OR REPLACE` / `.restore` / `.import` | **承認トークンがある場合のみ通す** |
 
 ### 文字列とコメントを先に無害化する
 
@@ -160,6 +162,64 @@ SQL クライアントに渡っている**実際の引数だけ**を取り出し
 正規表現や SQL 文法の無害化をシェル文字列に当てる形で済ませようとすると、上と同じ
 「賢くしたせいで空く」失敗を繰り返しかねません。[hook-010](../data/pitfalls/hook-010.json) に
 記録しています。
+
+### MySQL と SQLite は、同じ文字列を別の意味で読みます
+
+最初の実装は Postgres だけを見ていました。`mysql` と `sqlite3` は「SQL クライアントかどうか」
+の判定には入っていたので、`mysql app < x.sql` のようなファイル経路は読んでいます。
+読んでいなかったのは、**その先の文字列を、どのクライアントの文法として読むか**です。
+
+同じ文字列が、クライアントによって別の意味になります。実測で確認した3か所です。
+
+**1. `-f` は psql では `--file`、mysql では `--force`。**
+
+```bash
+mysql -f app -e "select 1"     # BLOCK されていた（修正前）
+```
+
+psql の読み方をそのまま当てていたため、`-f` の次のトークン（`app`）をファイルだと解釈し、
+読めないので「中身を確認できない」として落としていました。ただの `SELECT` です。
+**誤検知でフックを落とすと、人はフックを外します。** ファイル経路はクライアントごとに
+分けました（[hook-012](../data/pitfalls/hook-012.json)）。
+
+**2. `#` は MySQL では行コメント、Postgres では演算子。**
+
+```sql
+delete from t # where id = 1
+```
+
+MySQL はこれを「`WHERE` のない `DELETE`」として実行します。テーブルが空になります。
+guard-sql は `WHERE` の文字列が見えているので、フィルタ済みだと読んでいました。
+
+シェルのコマンド行を無害化しない方針（前節）は変えていません。代わりに、
+**`#` から行末を外した読み方でもう一度**だけ `WHERE` の有無を見て、そちらが「`WHERE` なし」なら
+落とします。ブロックを1つ足す方向にしかならない検査です（`DROP` / `TRUNCATE` は今までどおり
+届いた文字列そのものに対して判定しているので、`#` の後ろに何かを隠せるようにはなりません）。
+MySQL だと分かっているときと、判別できないときだけ適用します。Postgres と分かっているときに
+`#` をコメント扱いすると、その後ろの `WHERE` が見えなくなって**正しい UPDATE を落とす**ので、
+そちらには当てません。
+
+**3. 取り消せない文の名前が違う。**
+
+Postgres の `VACUUM` / `REINDEX` を承認対象にしているのと同じ理由で、
+MySQL の `RENAME TABLE`・`REPLACE`（一致した行を消してから入れる）・`LOAD DATA`・`FLUSH`・
+`RESET`・`PURGE BINARY LOGS`・`OPTIMIZE` / `REPAIR TABLE`・`SET PASSWORD`、
+SQLite の `ATTACH` / `DETACH`・状態を変える `PRAGMA`・`INSERT OR REPLACE`・`.restore` / `.import`
+を、同じ承認トークンの対象にしました。DDL と別の仕組みは足していません。
+
+`PRAGMA` は「設定しているとき」だけです。`PRAGMA table_info(t)` や、値を書かない
+`PRAGMA journal_mode` は読み取りなので通します。`REPLACE` は直後が `(` なら文字列関数
+`replace(col,'a','b')` なので通します。どちらも、通ってほしい側をテストで固定しています。
+
+include も3つあります。psql の `\i`、MySQL の `source`、SQLite の `.read`。
+どれもコマンドだけを見た承認では中身を縛れないので、走査したファイルの中にあれば拒否します。
+
+**判別できないクライアントは、判別できないものとして扱います。** `prisma db` や `drizzle-kit` は
+Postgres にも MySQL にも向けられるので、どちらかに決めつけると決めなかった側の規則が
+丸ごと外れます。この場合は**全方言の規則を当て、無害化は一切しません**（両方の安全側）。
+
+テストは 47 → 87 件（止める 42 / 既知の制約 2 / 通す 32 / 承認トークン 11）。
+増えた 40 件のうち 16 件は「止まってはいけない」側です。
 
 ### DDL の承認トークン
 
@@ -915,7 +975,7 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 47 ケース（落とす 20 / 既知の制約として残した誤検知 2 / 通す 16 / 承認トークン関連 9）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。既知の制約として残した誤検知 2 件は「シェル経由のコマンドは無害化していません（既知の誤検知）」（上）と [hook-010](../data/pitfalls/hook-010.json) を参照してください。
+合計 87 ケース（落とす 42（うち MySQL 12 / SQLite 10） / 既知の制約として残した誤検知 2 / 通す 32 / 承認トークン関連 11）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。既知の制約として残した誤検知 2 件は「シェル経由のコマンドは無害化していません（既知の誤検知）」（上）と [hook-010](../data/pitfalls/hook-010.json) を参照してください。
 
 ```
 guard-sql test suite (node)
@@ -947,9 +1007,9 @@ approval token:
   PASS  approved DDL passes
   PASS  token is single use
   PASS  approved blind file route passes
-  (抜粋。承認トークン関連は 9 件)
+  (抜粋。承認トークン関連は 11 件)
 
-pass: 47   fail: 0
+pass: 87   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。

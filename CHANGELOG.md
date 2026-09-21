@@ -11,6 +11,26 @@
 
 ## 未リリース
 
+- `guard-sql` が SQL の方言（Postgres / MySQL / SQLite）を読み分けるようになった。着手前に修正前の
+  フックで実測したところ、MySQL の `RENAME TABLE` / `REPLACE INTO` / `LOAD DATA` / `FLUSH` /
+  `RESET` / `PURGE BINARY LOGS` / `OPTIMIZE` / `SET PASSWORD`、SQLite の `ATTACH DATABASE` /
+  `PRAGMA writable_schema=on` / `INSERT OR REPLACE` がいずれも素通りし、MySQL の `#` 行コメントで
+  `WHERE` を隠した `delete from t # where id = 1`（MySQL では全行削除）も通っていた。さらに
+  **正しい SQL を落とす誤検知**が1件あり、`mysql -f app -e "select 1"` が
+  「SQL file is unreadable」で落ちていた（`-f` は psql では `--file`、mysql では `--force`。
+  [hook-012](data/pitfalls/hook-012.json)）。ファイル経路・承認が要る文・include・無害化の4つを
+  クライアントごとに分け、判別できないクライアント（`prisma db` / `drizzle-kit` など）は
+  全方言の規則を当てて無害化しない扱いにした。`#` はコマンド行を無害化しない方針を変えずに、
+  「`#` から行末を外した読み方でもう一度 `WHERE` の有無を見る」検査を足して塞いだ（ブロックを
+  足す方向にしかならないので、`#` の後ろに隠せるようにはならない）。MCP のツール名も
+  `mysql` / `mariadb` / `sqlite` を含むものが検査対象に入った。テストは 47 → 87 件
+  （止める 42 / 既知の制約 2 / 通す 32 / 承認トークン 11）で、増えた 40 件のうち 16 件は
+  「止まってはいけない」側。判断と理由は [ROADMAP.md](ROADMAP.md) と
+  [`docs/02`](docs/02-guardrails.md)（英語版にも同じ節）に記録。
+  **検証状況**: Node 版は Linux / Node v22.22.2 で 87/87、PowerShell 版は PowerShell 7.4.6 /
+  Linux で 87/87。`--target ps` の sql-boundaries（33）・pull-all（60）・guard-secrets（65）も
+  同じ環境で成功。**Windows PowerShell 5.1 と Windows 上の Node は未検証。**
+
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま
   残り、Claude Code を起動していない間の書き換えは検知すらできなかった

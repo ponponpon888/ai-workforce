@@ -54,7 +54,24 @@ function homeCopy(name) {
   const home = join(root, name);
   cpSync(installed, home, { recursive: true });
   const settings = join(home, 'settings.json');
-  writeFileSync(settings, readFileSync(settings, 'utf8').replaceAll(installed, home));
+  // Rewrite the paths in the parsed object, not in the raw text. On Windows a
+  // path inside JSON is escaped ("D:\\a\\...\\hooks"), so a string replace of
+  // the plain path matches nothing, the copy keeps pointing at the original
+  // home, and every guard comes back unverified -- which is how this suite
+  // passed on Linux and failed on Windows.
+  const parsed = JSON.parse(readFileSync(settings, 'utf8'));
+  const retarget = value => typeof value === 'string' ? value.replaceAll(installed, home) : value;
+  for (const event of Object.values(parsed.hooks ?? {})) {
+    for (const entry of Array.isArray(event) ? event : []) {
+      for (const hook of Array.isArray(entry?.hooks) ? entry.hooks : []) hook.command = retarget(hook.command);
+    }
+  }
+  writeFileSync(settings, JSON.stringify(parsed, null, 2));
+  // Fail here, loudly, rather than let every guard come back "unverified"
+  // later and leave the reason to be guessed at from four assertion diffs.
+  const rewritten = readFileSync(settings, 'utf8');
+  assert.ok(rewritten.includes(name), `the copied settings.json does not point at ${home}`);
+  assert.ok(!rewritten.includes('home-installed'), 'the copied settings.json still points at the original home');
   return home;
 }
 

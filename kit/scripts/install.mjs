@@ -287,4 +287,6 @@ console.log('     up to date at login without ever touching work in progress.');
 console.log(`       node ${join(kitRoot, 'scripts', 'pull-all.mjs')} --root ~/Dev --quiet`);
 console.log('     Read it first, then add a cron line:');
 console.log('       @reboot sleep 60 && ' + `node ${join(kitRoot, 'scripts', 'pull-all.mjs')} --root ~/Dev --quiet`);
+console.log('     Without Node in the login path, the POSIX shell twin takes the same options:');
+console.log('       @reboot sleep 60 && ' + `/bin/sh ${join(kitRoot, 'scripts', 'pull-all.sh')} --root ~/Dev --quiet`);
 console.log('');

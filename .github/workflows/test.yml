@@ -82,6 +82,7 @@ jobs:
           node kit/scripts/test-sql-boundaries.mjs
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
+          node kit/scripts/test-pull-all.mjs --target sh
           node kit/scripts/test-probe-guards.mjs
 
       - name: Test PowerShell implementations under pwsh
@@ -326,6 +327,7 @@ jobs:
           node kit/scripts/test-guard-secrets.mjs
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target ps
+          node kit/scripts/test-pull-all.mjs --target sh
           node kit/scripts/test-probe-guards.mjs
           node kit/scripts/test-probe-guards.mjs --target ps
       - name: Run the core suite via verify-installers

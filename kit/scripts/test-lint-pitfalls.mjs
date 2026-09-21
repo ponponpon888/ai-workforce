@@ -67,7 +67,7 @@ test('CLI JSON, exit codes, and no target mutation', () => fixture(x => {
 }));
 test('CLI rejects missing root argument', () => assert.equal(spawnSync(process.execPath, [script, '--root']).status, 2));
 test('repository checks pass with visible uncovered records', () => {
-  const r = lint(); assert.equal(r.exit_code, 0); assert.equal(r.counts.pass, 12); assert.equal(r.uncheckable_records, 11);
+  const r = lint(); assert.equal(r.exit_code, 0); assert.equal(r.counts.pass, 14); assert.equal(r.uncheckable_records, 11);
 });
 
 for (const [name, bytes] of [

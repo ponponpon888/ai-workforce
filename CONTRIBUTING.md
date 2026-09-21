@@ -25,8 +25,8 @@ English follows the Japanese. 日本語・英語どちらでも構いません�
 
 ### 3. 移植
 
-- `pull-all` の POSIX 版（Node 版はありますが、シェル版も歓迎）
-- `guard-sql` の MySQL / SQLite 対応
+- `pull-all` の他ランタイムへの移植（Node / PowerShell / POSIX シェルの3つがあります）
+- `guard-sql` の MySQL / SQLite の規則への指摘（実際にその DB で運用している人からの誤検知報告が一番ありがたいです）
 - 案件別 `CLAUDE.md` のテンプレート（Prisma、Cloudflare Workers など）
 
 ### 4. 翻訳
@@ -51,6 +51,7 @@ English follows the Japanese. 日本語・英語どちらでも構いません�
 ```bash
 node kit/scripts/test-guard-sql.mjs
 node kit/scripts/test-pull-all.mjs
+node kit/scripts/test-pull-all.mjs --target sh   # pull-all.sh も触ったなら
 ```
 
 PowerShell 版も触ったなら:
@@ -115,8 +116,9 @@ In order of value:
 2. **Telling me a mitigation does not work.** This repository once recommended splitting Postgres
    roles to constrain Supabase MCP. It does not work. A plausible-but-useless guardrail is the
    worst state to be in, so corrections are the most valuable PRs.
-3. **Ports** — a POSIX `pull-all`, MySQL/SQLite support in `guard-sql`, more per-project
-   `CLAUDE.md` templates.
+3. **Ports** — `pull-all` on another runtime (Node, PowerShell and POSIX shell exist),
+   corrections to the MySQL/SQLite rules in `guard-sql` from someone who actually runs
+   those engines, more per-project `CLAUDE.md` templates.
 4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/02` exist in English.
 
 ## What is not welcome

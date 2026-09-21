@@ -152,6 +152,44 @@ Node 版のファイルにしか当てられない）。フック本体は
 **残り（このPRの外）:**
 
 
+## guard-sql の方言対応（MySQL / SQLite）— 実装済み、Windows は未検証
+
+**2026-09-21、「基本版以降」にあった「MySQL / SQLite の SQL 検査」に着手した。** 着手前に、
+修正前のフックへ実際にペイロードを流して何が通るかを測ったところ、想定していた「方言固有の文が
+素通りする」だけでなく、**正しい SQL を落とす誤検知が1つ**見つかった。
+
+```
+allow  mysql: RENAME TABLE / REPLACE INTO / LOAD DATA / PURGE BINARY LOGS / RESET MASTER
+allow  mysql: OPTIMIZE TABLE / SET PASSWORD
+allow  mysql: delete from t # where id = 1   <- MySQL では WHERE なしの DELETE
+allow  sqlite: ATTACH DATABASE / PRAGMA writable_schema=on / INSERT OR REPLACE
+BLOCK  mysql -f app -e "select 1"            <- ただの SELECT（-f は --force）
+```
+
+最後の1件が [hook-012](data/pitfalls/hook-012.json)。`-f` を psql の `--file` として読み、次の
+トークン（データベース名 `app`）をファイルだと解釈して「読めないので確認できない」と落として
+いた。CONTRIBUTING.md に書いてあるとおり、**誤検知でフックを外されると守るものが無くなる**ので、
+これが一番まずい。
+
+直し方は「クライアントから方言を決めて、その方言の規則だけを当てる」。ファイル経路（psql は
+`-f` / `--file` / `\i`、MySQL は `source`、SQLite は `.read` / `-init`）、承認が要る文、include、
+無害化の4つを方言ごとに分けた。判別できないクライアント（`prisma db` / `drizzle-kit`、1つの
+セグメントに複数のクライアント）は unknown として**全方言の規則を当て、無害化はしない**。
+
+`#` だけは別扱いにした。シェルのコマンド行を無害化しない方針（`--sql` ごと消えて TRUNCATE が
+視界から外れた過去の穴）は変えたくないので、**`#` から行末を外した読み方でもう一度 `WHERE` の
+有無だけを見る**形にした。ブロックを足す方向にしかならないので、`#` の後ろに何かを隠せるようには
+ならない。
+
+テストは 47 → 87 件。増えた 40 件のうち 16 件は「止まってはいけない」側（`mysql -f`、
+`replace()` 関数、`source` という名前の列、読み取りの `PRAGMA`、Postgres の `#` 演算子など）。
+手元（Linux / Node v22.22.2）で Node 版 87/87、**PowerShell 7.4.6 / Linux** で PowerShell 版 87/87。
+作業環境に Windows が無いため 5.1 は CI に任せ、[PR #38](https://github.com/ponponpon888/ai-workforce/pull/38)
+で Ubuntu / Windows / macOS の3ジョブとも成功した。Windows ジョブの `shell: powershell`
+（**Windows PowerShell 5.1**、出力は `5.1.26100.6584`）でも `test-guard-sql.ps1` 87/87、
+guard-config 45、sql-boundaries 33、pull-all 60、guard-secrets 65、guard-destructive 218。
+残るのは Claude Code 本体に接続しての実地確認。
+
 ## 基本開発で完了したこと
 
 - [x] 設定テンプレートの形式修正と、読み取り専用の doctor。
@@ -274,6 +312,14 @@ Set-Content の別名 `sc` を deny に追加しない判断も、下記の制�
 - Read の権限ルールとシェル側の秘密ファイルガードは判定範囲が異なる。ガードには文書・ソースコードの例外がある。
 - `Set-Content` の一律 deny は追加しない。将来追加する場合も `sc.exe` を巻き込む `sc` の記述を避ける。
 - SQL コマンドの引用文字列にも反応する場合がある。基本版では保守的な検査を維持し、テストペイロードはファイルと標準入力で渡す。
+- guard-sql が読み分けるのは Postgres / MySQL / SQLite の3つだけ。Oracle・SQL Server は対象外で、
+  クライアントを名指ししていないので検査そのものに入らない。
+- MySQL の `ANALYZE TABLE` は承認対象にしていない。Postgres の `ANALYZE` を承認対象にしていないのと
+  揃えた判断で、`OPTIMIZE` / `REPAIR`（実体を作り直す）とは別に扱っている。
+- 危険な `PRAGMA` は名前の一覧で判定している（`writable_schema`・`foreign_keys`・`journal_mode` など）。
+  一覧に無い PRAGMA は通る。増えたら足す。
+- シェル経由の文字列を無害化しない方針は方言を問わず同じなので、hook-010 の誤検知（クライアント名と
+  DDL キーワードを同じコマンド内に文字列として書くと落ちる）は MySQL / SQLite でも同じく残る。
 - 秘密ファイルガードはシェル言語全体を解析しない。内部エラー時の許可も含め、敵対的な回避を完全に防ぐ境界ではない。
 - 自動更新には全体のタイムアウトや排他ロックがない。任意の認証ヘルパーの停止や同時操作まで保証しない。
 - 設定の静的検査は Claude Code 本体の動作証明ではない。現在のテンプレート値と実機測定を区別する。
@@ -304,7 +350,8 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
 
 ## 基本版以降
 
-- MySQL / SQLite の SQL 検査、pull-all の shell 版、案件別テンプレート。
+- 案件別テンプレート。pull-all の shell 版（POSIX シェル版。Node 版と同じフィクスチャで 73/73）と
+  MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。残っているのは Claude Code 本体での実地確認。
 - 落とし穴レコードの追加、Issue からの受け入れ手順、残りの英訳。
 - Vercel の権限調査と開発速度の実測。
 - 前身 `ai-workforce-os` のログ整理は別リポジトリの作業として扱う。今回は削除していない。

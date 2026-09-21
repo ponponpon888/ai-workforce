@@ -59,6 +59,11 @@ $DropSql    = New-SqlFixture 'bad.sql'     "drop table users;`n"
 $DdlSql     = New-SqlFixture 'ddl.sql'     "create table a (id int);`n"
 $QuotedSql  = New-SqlFixture 'quoted.sql'  "insert into notes (body) values ('drop the old flow');`n"
 $MissingSql = Join-Path $sqlDir 'not-written.sql'
+$RenameSql  = New-SqlFixture 'rename.sql' "rename table a to b;`n"
+# psql has \i, MySQL has source, SQLite has .read. All three hide a file the
+# approval never covered, so all three are refused inside a scanned file.
+$MysqlIncludeSql  = New-SqlFixture 'wrapper-mysql.sql'  ('source ' + $DropSql + "`n")
+$SqliteIncludeSql = New-SqlFixture 'wrapper-sqlite.sql' ('.read ' + $DropSql + "`n")
 
 function Invoke-Hook {
     param([string] $ToolName, [hashtable] $ToolInput)
@@ -146,6 +151,41 @@ Assert-Result 'unapproved DDL inside a file'   $BLOCK (Invoke-Hook 'Bash' @{ com
 Assert-Result 'a file route with nothing readable behind it' $BLOCK (Invoke-Hook 'Bash' @{ command = ('npx supabase db push --file ' + $MissingSql) })
 
 Write-Host ''
+Write-Host 'must block (MySQL):' -ForegroundColor White
+# None of these exist in Postgres, so the Postgres keyword list never saw them.
+# Each one is as hard to undo as the DDL that was already gated, so each goes
+# through the same human approval rather than being blocked outright.
+Assert-Result 'RENAME TABLE' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "rename table a to b"' })
+Assert-Result 'REPLACE INTO (deletes the row it replaces)' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "replace into t (id) values (1)"' })
+Assert-Result 'LOAD DATA INFILE' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "load data infile ''/tmp/a.csv'' replace into table t"' })
+Assert-Result 'FLUSH TABLES WITH READ LOCK' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "flush tables with read lock"' })
+Assert-Result 'RESET MASTER' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "reset master"' })
+Assert-Result 'PURGE BINARY LOGS' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "purge binary logs before ''2020-01-01''"' })
+Assert-Result 'OPTIMIZE TABLE' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "optimize table t"' })
+Assert-Result 'SET PASSWORD' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "set password for u@''%'' = ''x''"' })
+# MySQL reads # to the end of the line as a comment, so this is an unfiltered
+# DELETE to the database and looked like a filtered one to the guard.
+Assert-Result 'WHERE hidden behind a # comment' $BLOCK (Invoke-Hook 'Bash' @{ command = 'mysql app -e "delete from t # where id = 1"' })
+Assert-Result 'RENAME TABLE in a file fed to mysql' $BLOCK (Invoke-Hook 'Bash' @{ command = ('mysql app < ' + $RenameSql) })
+Assert-Result 'source include inside a file fed to mysql' $BLOCK (Invoke-Hook 'Bash' @{ command = ('mysql app < ' + $MysqlIncludeSql) })
+Assert-Result 'RENAME TABLE over a MySQL MCP server' $BLOCK (Invoke-Hook 'mcp__planetscale__execute_sql' @{ query = 'rename table a to b' })
+
+Write-Host ''
+Write-Host 'must block (SQLite):' -ForegroundColor White
+Assert-Result 'ATTACH DATABASE' $BLOCK (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "attach database ''other.db'' as o"' })
+Assert-Result 'PRAGMA writable_schema = ON' $BLOCK (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "pragma writable_schema = on"' })
+Assert-Result 'PRAGMA foreign_keys = OFF' $BLOCK (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "pragma foreign_keys = off"' })
+Assert-Result 'INSERT OR REPLACE' $BLOCK (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "insert or replace into t values (1)"' })
+Assert-Result '.restore over the open database' $BLOCK (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db ".restore backup.db"' })
+Assert-Result 'DROP in a file read with .read' $BLOCK (Invoke-Hook 'Bash' @{ command = ('sqlite3 app.db ".read ' + $DropSql + '"') })
+Assert-Result 'DROP in a file loaded with -init' $BLOCK (Invoke-Hook 'Bash' @{ command = ('sqlite3 -init ' + $DropSql + ' app.db') })
+Assert-Result '.read include inside a file fed to sqlite3' $BLOCK (Invoke-Hook 'Bash' @{ command = ('sqlite3 app.db < ' + $SqliteIncludeSql) })
+Assert-Result 'PRAGMA writable_schema over a SQLite MCP server' $BLOCK (Invoke-Hook 'mcp__sqlite__query' @{ query = 'pragma writable_schema = on' })
+# An ORM CLI can be pointed at either engine, so no dialect is assumed and every
+# dialect's rules apply.
+Assert-Result 'MySQL statement through an ambiguous client' $BLOCK (Invoke-Hook 'Bash' @{ command = 'npx prisma db execute --command "replace into t (id) values (1)"' })
+
+Write-Host ''
 Write-Host 'known limitation, still BLOCK (hook-010, open_recorded -- not a bug to fix silently):' -ForegroundColor White
 # Shell-grammar text is never neutralized (see the comment on Get-NeutralizedSql), so a
 # DDL keyword that is only TEXT -- not SQL actually sent to a client -- still trips the
@@ -180,6 +220,33 @@ Assert-Result 'keyword inside a string, in a file' $ALLOW (Invoke-Hook 'Bash' @{
 Assert-Result 'an -f that belongs to another command' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && rm -f /tmp/junk' })
 $hereDocSql = "psql <<'EOF'`nselect 1;`nEOF"
 Assert-Result 'harmless here-document' $ALLOW (Invoke-Hook 'Bash' @{ command = $hereDocSql })
+
+Write-Host ''
+Write-Host 'must allow (MySQL / SQLite):' -ForegroundColor White
+# The half that matters more. -f is --file to psql and --force to mysql: reading
+# it as psql does made the hook demand a file named "app", fail to read it, and
+# block a SELECT (data/pitfalls/hook-012.json).
+Assert-Result 'mysql -f is --force, not a file' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql -f app -e "select 1"' })
+Assert-Result 'mysql --force with a real file route' $ALLOW (Invoke-Hook 'Bash' @{ command = ('mysql -f app < ' + $OkSql) })
+Assert-Result 'REPLACE the string function' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql app -e "select replace(name, ''a'', ''b'') from t"' })
+Assert-Result 'REPLACE the string function, space before the paren' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql app -e "select replace (name, ''a'', ''b'') from t"' })
+Assert-Result 'a column named source is not an include' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql app -e "select source from t"' })
+Assert-Result '# inside a string is not a comment boundary' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql app -e "delete from t where note = ''#1''"' })
+Assert-Result 'MySQL DELETE with WHERE' $ALLOW (Invoke-Hook 'Bash' @{ command = 'mysql app -e "delete from t where id = 1"' })
+# # is an operator in Postgres, not a comment. Reading it as MySQL would hide the
+# WHERE that follows it and block a filtered UPDATE.
+Assert-Result '# as a Postgres operator, WHERE after it' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql $DB -c "update t set flags = flags # 3 where id = 1"' })
+Assert-Result 'MySQL rules do not leak into psql' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql $DB -c "select replace(name, ''a'', ''b'') from t"' })
+Assert-Result 'backtick identifier is quoting, not a statement' $ALLOW (Invoke-Hook 'mcp__planetscale__execute_sql' @{ query = 'select `drop` from t where id = 1' })
+Assert-Result 'SQLite read-only PRAGMA' $ALLOW (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "pragma table_info(t)"' })
+Assert-Result 'SQLite PRAGMA read back, not set' $ALLOW (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "pragma journal_mode"' })
+Assert-Result 'SQLite plain SELECT' $ALLOW (Invoke-Hook 'Bash' @{ command = 'sqlite3 app.db "select 1"' })
+# Over MCP this is SQL, so the string is neutralized and the keyword inside it is
+# inert. On a command line it is not: shell-grammar text is never neutralized,
+# which is the documented trade-off recorded in hook-010.
+Assert-Result 'dialect keyword inside a string' $ALLOW (Invoke-Hook 'mcp__sqlite__query' @{ query = "select * from t where kind = 'attach database'" })
+Assert-Result 'harmless file read with .read' $ALLOW (Invoke-Hook 'Bash' @{ command = ('sqlite3 app.db ".read ' + $OkSql + '"') })
+Assert-Result 'harmless file loaded with -init' $ALLOW (Invoke-Hook 'Bash' @{ command = ('sqlite3 -init ' + $OkSql + ' app.db') })
 
 Write-Host ''
 Write-Host 'approval token:' -ForegroundColor White
@@ -218,6 +285,12 @@ Assert-Result 'approved multi-statement DDL passes' $ALLOW (Invoke-Hook 'mcp__Su
 Assert-Result 'multi-statement token is single use too' $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = $multi })
 & $approve -Sql $multi -ApprovalDir $ApprovalDir -Force | Out-Null
 Assert-Result 'DROP still blocked inside an approved batch' $BLOCK (Invoke-Hook 'mcp__Supabase__execute_sql' @{ query = 'create table a (id int); drop table b' })
+
+# The dialect statements are gated by the same token, not a second mechanism.
+$rename = 'rename table orders to orders_old'
+& $approve -Sql $rename -ApprovalDir $ApprovalDir -Force | Out-Null
+Assert-Result 'approved RENAME TABLE passes' $ALLOW (Invoke-Hook 'mcp__planetscale__execute_sql' @{ query = $rename })
+Assert-Result 'RENAME TABLE token is single use too' $BLOCK (Invoke-Hook 'mcp__planetscale__execute_sql' @{ query = $rename })
 
 # An unreadable file route is refused for lack of knowledge, not because it is known
 # to be bad, but unread content cannot be bound to a command-only approval.

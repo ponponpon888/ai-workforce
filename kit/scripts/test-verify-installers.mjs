@@ -140,7 +140,7 @@ test('guard-secrets selection reports its scope and preserves failures', () => f
   assert.equal(JSON.parse(failure.stdout).results[0].exit_code, 7);
 }));
 
-const coreNames = ['installed-approval', 'installers', 'pull-all', 'guard-secrets', 'guard-sql', 'sql-boundaries'];
+const coreNames = ['installed-approval', 'installers', 'pull-all', 'guard-secrets', 'guard-sql', 'sql-boundaries', 'probe-guards'];
 function writeCoreFixtures(root, failing = null) {
   for (const name of coreNames) {
     const file = name === 'installers' ? 'test-install-backups.mjs' : `test-${name}.mjs`;

@@ -11,6 +11,61 @@
 
 ## 未リリース
 
+- `guard-sql` が SQL の方言（Postgres / MySQL / SQLite）を読み分けるようになった。着手前に修正前の
+  フックで実測したところ、MySQL の `RENAME TABLE` / `REPLACE INTO` / `LOAD DATA` / `FLUSH` /
+  `RESET` / `PURGE BINARY LOGS` / `OPTIMIZE` / `SET PASSWORD`、SQLite の `ATTACH DATABASE` /
+  `PRAGMA writable_schema=on` / `INSERT OR REPLACE` がいずれも素通りし、MySQL の `#` 行コメントで
+  `WHERE` を隠した `delete from t # where id = 1`（MySQL では全行削除）も通っていた。さらに
+  **正しい SQL を落とす誤検知**が1件あり、`mysql -f app -e "select 1"` が
+  「SQL file is unreadable」で落ちていた（`-f` は psql では `--file`、mysql では `--force`。
+  [hook-012](data/pitfalls/hook-012.json)）。ファイル経路・承認が要る文・include・無害化の4つを
+  クライアントごとに分け、判別できないクライアント（`prisma db` / `drizzle-kit` など）は
+  全方言の規則を当てて無害化しない扱いにした。`#` はコマンド行を無害化しない方針を変えずに、
+  「`#` から行末を外した読み方でもう一度 `WHERE` の有無を見る」検査を足して塞いだ（ブロックを
+  足す方向にしかならないので、`#` の後ろに隠せるようにはならない）。MCP のツール名も
+  `mysql` / `mariadb` / `sqlite` を含むものが検査対象に入った。テストは 47 → 87 件
+  （止める 42 / 既知の制約 2 / 通す 32 / 承認トークン 11）で、増えた 40 件のうち 16 件は
+  「止まってはいけない」側。判断と理由は [ROADMAP.md](ROADMAP.md) と
+  [`docs/02`](docs/02-guardrails.md)（英語版にも同じ節）に記録。
+  **検証状況**: 手元（Linux / Node v22.22.2）で Node 版 87/87、PowerShell 7.4.6 で PowerShell 版
+  87/87、`--target ps` の sql-boundaries（33）・pull-all（60）・guard-secrets（65）も成功。
+  CI（[PR #38](https://github.com/ponponpon888/ai-workforce/pull/38)）は Ubuntu / Windows /
+  macOS の3ジョブとも成功し、Windows ジョブの `shell: powershell`（**Windows PowerShell 5.1**、
+  実際の出力は `5.1.26100.6584`）でも `test-guard-sql.ps1` が 87/87。Claude Code 本体に
+  接続しての実地確認は未実施。
+- `pull-all` の **POSIX シェル版**（`kit/scripts/pull-all.sh`）を追加。Node 版と同じオプション・
+  同じログ行・同じ終了コードで、`/bin/sh` と `git` / `find` / `sed` / `tr` だけで動く。ログイン経路に
+  Node を置きたくない、あるいは Node が入っていない機械向け。テストは既存のフィクスチャを
+  そのまま使い、`node kit/scripts/test-pull-all.mjs --target sh` で同じ 73 件を当てる
+  （実装が3つに分かれても挙動がずれないようにするため。`--target` の許可値はスイートごとに
+  指定する形にしたので、シェル版を持たないスイートは今までどおり node / ps のみ）。
+  意図的な差は1点だけで、古いログの削除が `find -mtime` による日単位判定になる
+  （Node 版はミリ秒比較。POSIX の範囲で「今から N 日前」を portable に計算できないため）。
+- 移植の過程で **PowerShell 版だけがドット始まりのリポジトリフォルダを飛ばしていた**ことが
+  分かったので直した（[shell-003](data/pitfalls/shell-003.json)）。`Get-ChildItem -Directory` は
+  Unix のドット始まり・Windows の隠し属性を既定で返さず、Node の `readdirSync` と
+  シェル版の `find` は返す。`-Force` を足して揃え、3実装すべてに当たるテストを追加した
+  （pull-all のテスト件数: Node / sh 72 → 73、ps 60 → 61）。
+- `kit/scripts/probe-guards.mjs` を追加。`settings.json` に登録されているガードを**そのままの綴りで
+  起動し**、止めるべき入力と通すべき入力を渡して終了コードを確かめる。`doctor.mjs` は「設定に
+  書かれたコマンドを実行しない」ことが help・docs/09・テストで保証された契約なので、実行する側は
+  別スクリプトに分けた（`docs/09` が「無害な対照入力でフックが呼ばれることを確認してください」と
+  人手に投げていた部分）。パスの間違い・コピーし損ねたフック・Node版とPowerShell版の取り違え・
+  matcher の穴・編集して壊れたフックは、静的検査では static-pass に見えるがここで落ちる。
+  通す側の検査が半分を占める（全部止めるフックは、何も止めないフックと同じくらい壊れているため）。
+  ペイロードの中のコマンドは実行せず、DBにも繋がず、ファイルも書かない。SessionStart は
+  known-good の基準を書き込む経路なので送らない。終了コードは 0 probe-pass / 1 error /
+  2 incomplete。テストは `test-probe-guards.mjs`（10件、`--target ps` でも同じ10件）で、
+  骨抜きにしたフック・全部止めるフック・消したフック・登録を外した状態・壊れたJSON・
+  ホーム不一致を、それぞれ別の結果として報告することを固定している。`verify-installers` の
+  `core` にも入れ、CI の Ubuntu / Windows / macOS（Windows PowerShell 5.1 を含む）で回す。
+- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)、status: open_recorded）。
+  **`guard-config` は自分がインストールされた場所ではなく `~/.claude`（または `AIWF_CLAUDE_HOME`）を
+  守る。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
+  実際に使われている `settings.json` は保護対象に入らない。`AIWF_CLAUDE_HOME` はテストからしか
+  設定されておらず、文書にも載っていない。直し方（フック自身の位置から導出する）は分かって
+  いるが、Node版とPowerShell版の両方と既存テストの見直しを伴うため別PRに分け、まず
+  `probe-guards` が実行時に検出して警告し incomplete として報告する形を入れた。
 - `docs/01`（2 層の CLAUDE.md）・`docs/03`（役割分担）・`docs/05`（本番 DB の取り決め）・
   `docs/06`（チャット側の穴を塞ぐ）・`docs/07`（GitHub と Vercel の穴）の英訳を追加。これで
   **4 本柱のうち 1・2・3 と、チャット側の穴を塞ぐ話が一式、英語で読める**ようになった
@@ -20,6 +75,7 @@
   英語版どうしのリンクも英語版を指すように直した（`docs/03` の英語版から `docs/06` への
   リンクが日本語ページに落ちていた）。README / README.en のドキュメント表と
   CONTRIBUTING の翻訳状況も更新。日本語が正本であることは変えていない。
+
 
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま

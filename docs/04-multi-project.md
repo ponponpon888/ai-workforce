@@ -14,6 +14,7 @@
 
 実物: [kit/scripts/pull-all.mjs](../kit/scripts/pull-all.mjs)（Windows / macOS / Linux）
 ／ [kit/scripts/pull-all.ps1](../kit/scripts/pull-all.ps1)（PowerShell 版）
+／ [kit/scripts/pull-all.sh](../kit/scripts/pull-all.sh)（POSIX シェル版）
 
 ### 絶対にやらないこと
 
@@ -63,6 +64,7 @@
 ```bash
 node kit/scripts/test-pull-all.mjs              # Node 版
 node kit/scripts/test-pull-all.mjs --target ps  # PowerShell 版（同じテスト）
+node kit/scripts/test-pull-all.mjs --target sh  # POSIX シェル版（同じテスト）
 ```
 
 git をモックしていません。**本物の bare origin と、本物のクローン 6 つ**を作って、
@@ -96,8 +98,47 @@ destroys nothing:
 「ちゃんと pull できた」より、「触ってはいけないものに触らなかった」の方が、
 朝いちばんに黙って走るスクリプトには効きます。
 
-同じテストを Node 版と PowerShell 版の両方に当てているので、
-実装が 2 つに分かれても挙動がずれません。CI で Ubuntu / macOS / Windows で回しています。
+同じテストを Node 版・PowerShell 版・POSIX シェル版の3つに当てているので、
+実装が分かれても挙動がずれません。CI で Ubuntu / macOS / Windows で回しています。
+
+### ログイン経路に Node を置きたくない場合（POSIX シェル版）
+
+`pull-all.sh` は Node 版と同じオプション・同じログ行・同じ終了コードです。
+`/bin/sh`（dash / bash / ash のいずれでも）と `git`・`find`・`sed`・`tr` だけで動きます。
+
+```bash
+sh kit/scripts/pull-all.sh --root ~/Dev --quiet
+```
+
+cron に置くならこちらです。
+
+```cron
+@reboot sleep 60 && /bin/sh ~/Dev/ai-workforce/kit/scripts/pull-all.sh --root ~/Dev --quiet
+```
+
+**意図的に違うのは1点だけです。** 古いログの削除に `find -mtime` を使っているため、
+削除の判定が「日単位」になります（Node 版はミリ秒で比較）。同じ日には消えますが、
+同じ分には消えません。POSIX の範囲で「今から N 日前」を portable に計算する方法が無く、
+ログの掃除は実行を失敗させてまで守る価値のある処理ではない（Node 版のコメントにもそう
+書いてあります）ため、この差は残す判断をしました。
+
+### 移植して見つかったこと: PowerShell 版だけがドット始まりのフォルダを飛ばしていました
+
+3つ目の実装を同じフィクスチャに通したところ、`.dotfiles` のような**ドットで始まる
+リポジトリフォルダ**を PowerShell 版だけが更新していませんでした。
+
+```
+node    .dotrepo=updated  has space=updated  plain=updated
+sh      .dotrepo=updated  has space=updated  plain=updated
+pwsh    .dotrepo=STALE    has space=updated  plain=updated
+```
+
+原因は `Get-ChildItem -Directory` が、Unix ではドット始まり、Windows では隠し属性の
+項目を既定で返さないことです。Node の `readdirSync` は両方返すので、実装間で
+対象リポジトリの集合がずれていました。`-Force` を足して揃え、3実装すべてに当たる
+テストとして固定しています（[shell-003](../data/pitfalls/shell-003.json)）。
+
+実装を2つから3つに増やす価値の半分は、こういう「1つだけ違う」が見えることでした。
 
 ### 登録
 
@@ -118,6 +159,8 @@ Register-ScheduledTask -TaskName "AIWF pull-all" -Action $a -Trigger $t
 ```cron
 @reboot sleep 60 && /usr/bin/node ~/Dev/ai-workforce/kit/scripts/pull-all.mjs --root ~/Dev --quiet
 ```
+
+Node を入れていない機械なら、同じ行を `pull-all.sh` に置き換えてください（上記）。
 
 同じ理由で `sleep 60` を入れています。
 

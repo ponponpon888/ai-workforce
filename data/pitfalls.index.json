@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 22,
+    "total": 25,
     "by_set": {
-      "pitfalls": 22
+      "pitfalls": 25
     },
     "by_confidence": {
-      "measured": 15,
+      "measured": 18,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
-      "closed": 14,
-      "open_recorded": 2,
+      "closed": 16,
+      "open_recorded": 3,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 13,
+      "trap": 16,
       "limitation": 5,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 12,
-      "runtime": 2,
+      "hook": 14,
+      "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 11,
-      "ok": 4,
+      "unknown_version": 13,
+      "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 11
+    "checkable": 14
   },
   "checks": [
     {
@@ -116,6 +116,24 @@
       "severity": "medium"
     },
     {
+      "id": "hook-012",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-sql.mjs",
+      "pattern": "DIALECT_FILE_ROUTE_RES",
+      "expect": "present",
+      "message": "ファイル経路をクライアントごとに分けている定義。1本のパターン一式に戻すと、mysql の -f（--force）を psql の --file として読んで正しいSQLを落とす誤検知が戻る。",
+      "severity": "medium"
+    },
+    {
+      "id": "hook-013",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-config.mjs",
+      "pattern": "process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude')",
+      "expect": "present",
+      "message": "guard-config の保護対象がまだ環境変数とホームディレクトリだけで決まっている（インストール先を見ていない）ことを示す。この行を変えて自分の位置から導出する形にしたら、このレコードの status と fix を同時に更新すること。",
+      "severity": "medium"
+    },
+    {
       "id": "install-001",
       "kind": "file-content",
       "target": "kit/scripts/install.mjs",
@@ -141,6 +159,15 @@
       "expect": "present",
       "message": "guard-destructive の PreToolUse 登録が消えると、bash -c や /bin/rm で呼ばれた破壊系コマンドを止めるものがなくなる。",
       "severity": "high"
+    },
+    {
+      "id": "shell-003",
+      "kind": "file-content",
+      "target": "kit/scripts/pull-all.ps1",
+      "pattern": "-Directory -Force",
+      "expect": "present",
+      "message": "-Force を外すと、Unixのドット始まりフォルダとWindowsの隠しフォルダがリポジトリ探索から消え、PowerShell版だけが対象を取りこぼす状態に戻る。",
+      "severity": "low"
     }
   ],
   "records": [
@@ -438,6 +465,58 @@
       ]
     },
     {
+      "id": "hook-012",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-012.json",
+      "title": "guard-sqlがpsqlの読み方を全クライアントに当てていたため、mysql -f（--force）をファイル指定と誤読して正しいSELECTを落としていた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#mysql-と-sqlite-は同じ文字列を別の意味で読みます",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-005",
+        "hook-010"
+      ],
+      "tags": [
+        "guard-sql",
+        "mysql",
+        "sqlite",
+        "false-positive",
+        "dialect"
+      ]
+    },
+    {
+      "id": "hook-013",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-013.json",
+      "title": "guard-configは自分がインストールされた場所ではなく~/.claudeを守るため、標準以外の場所へ入れると実際に使われている設定が無防備になる",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "unknown_version",
+      "origin": "docs/09-settings-doctor.md#guard-config-が守るのは入れた場所ではありません",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-006",
+        "hook-009"
+      ],
+      "tags": [
+        "guard-config",
+        "install",
+        "claude-home",
+        "false-sense-of-security",
+        "probe-guards"
+      ]
+    },
+    {
       "id": "install-001",
       "set": "pitfalls",
       "file": "data/pitfalls/install-001.json",
@@ -676,6 +755,31 @@
         "arrays",
         "strictmode",
         "guard-destructive"
+      ]
+    },
+    {
+      "id": "shell-003",
+      "set": "pitfalls",
+      "file": "data/pitfalls/shell-003.json",
+      "title": "PowerShellのGet-ChildItem -Directoryは、Unixのドット始まりフォルダとWindowsの隠しフォルダを既定で返さない",
+      "layer": "runtime",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/04-multi-project.md#移植して見つかったこと-powershell-版だけがドット始まりのフォルダを飛ばしていました",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "shell-002"
+      ],
+      "tags": [
+        "pull-all",
+        "powershell",
+        "get-childitem",
+        "portability",
+        "dotfiles"
       ]
     }
   ]

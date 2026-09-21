@@ -1,0 +1,41 @@
+{
+  "id": "hook-012",
+  "title": "guard-sqlがpsqlの読み方を全クライアントに当てていたため、mysql -f（--force）をファイル指定と誤読して正しいSELECTを落としていた",
+  "summary": "guard-sql.mjs / .ps1 のファイル経路検出は、SQLクライアントを起動するコマンドセグメントに対して常に同じパターン一式を当てていた。その中の /(?:^|\\s)(?:-f|--file)[=\\s]+(\\S+)/ は psql の --file を想定したものだが、MySQLのクライアントでは -f は --force（エラーが出ても続行）であってファイル指定ではない。このため mysql -f app -e \"select 1\" のようなコマンドでは -f の次のトークン（データベース名 app）をSQLファイルのパスとして読み、読み取れないため「SQL file is unreadable; cannot verify its contents.」でexit 2になっていた。危険な文を通す方向の穴ではなく、正しいSQLを落とす誤検知だが、CONTRIBUTING.mdが書いているとおり誤検知でフックを外されると守るものが無くなる。あわせて、方言固有の取り消せない文（MySQLのRENAME TABLE / REPLACE / LOAD DATA / FLUSH / RESET / PURGE ... LOGS / OPTIMIZE / REPAIR / SET PASSWORD、SQLiteのATTACH / DETACH / 状態を変えるPRAGMA / INSERT OR REPLACE / .restore / .import）が承認対象に入っておらず素通りしていたこと、MySQLの # 行コメントでWHEREを隠した DELETE が「WHEREあり」と読まれて通っていたことも同時に実測した。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#mysql-と-sqlite-は同じ文字列を別の意味で読みます",
+
+  "measured_on": "2026-09-21",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "修正前の guard-sql.mjs に tool_name=Bash, tool_input.command = 'mysql -f app -e \"select 1\"' をJSONで渡す",
+    "exit 2。stderrは [guard-sql] BLOCKED: SQL file is unreadable; cannot verify its contents. 実行されるのはSELECT 1だけで、-f はMySQLでは --force、app はデータベース名であってファイルではない",
+    "比較のため 'mysql --force app -e \"select 1\"' を渡すと exit 0 で通る。--force という綴りは -f/--file のパターンに一致しないため、同じ意味のコマンドで結果が変わっていた",
+    "同じ修正前のフックに 'mysql app -e \"delete from t # where id = 1\"' を渡すと exit 0。MySQLは # から行末をコメントとして読むので、実際にはWHEREなしのDELETEが実行される",
+    "同じく 'mysql app -e \"rename table a to b\"'、'sqlite3 app.db \"attach database \\'other.db\\' as o\"'、'sqlite3 app.db \"pragma writable_schema=on\"' はいずれも exit 0 で素通りした（承認対象の語がCREATE/ALTER/GRANT/REVOKE/REINDEX/VACUUMのみだったため）"
+  ],
+
+  "status": "closed",
+  "fix": "クライアントからSQLの方言（postgres / mysql / sqlite / unknown）を判定し、ファイル経路・承認対象・include・無害化をその方言のものだけ当てる形にした。-f / --file はpostgresのみ、MySQLは source、SQLiteは .read と -init。方言を判別できないクライアント（prisma db / drizzle-kit、または1セグメントに複数のクライアント）はunknownとして全方言の規則を当て、無害化は行わない。MySQLの # コメントは、コマンド行を無害化しない方針を変えずに「# から行末を外した読み方でもう一度WHEREの有無を見る」検査を足して塞いだ（ブロックを足す方向にしかならないため、# の後ろに何かを隠せるようにはならない）。テストは47→87件（止める42 / 既知の制約2 / 通す32 / 承認トークン11）で、増えた40件のうち16件は「止まってはいけない」側。",
+
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-sql.mjs",
+    "pattern": "DIALECT_FILE_ROUTE_RES",
+    "expect": "present",
+    "message": "ファイル経路をクライアントごとに分けている定義。1本のパターン一式に戻すと、mysql の -f（--force）を psql の --file として読んで正しいSQLを落とす誤検知が戻る。"
+  },
+
+  "related": ["hook-005", "hook-010"],
+  "tags": ["guard-sql", "mysql", "sqlite", "false-positive", "dialect"]
+}

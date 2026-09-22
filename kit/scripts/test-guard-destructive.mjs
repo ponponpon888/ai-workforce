@@ -33,7 +33,8 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const { target: targetArg, pwsh: pwshExe } = readTestTargetOptions();
 
-const HOOK_MJS = resolve(here, '..', 'claude', 'hooks', 'guard-destructive.mjs');
+const HOOKS_DIR = resolve(here, '..', 'claude', 'hooks');
+const HOOK_MJS = join(HOOKS_DIR, 'guard-destructive.mjs');
 const HOOK_PS1 = resolve(here, '..', 'claude', 'hooks', 'guard-destructive.ps1');
 
 if (targetArg === 'ps' && !existsSync(HOOK_PS1)) {
@@ -340,6 +341,13 @@ if (targetArg !== 'ps') {
     const linked = join(root, 'linked');
     mkdirSync(real);
     copyFileSync(HOOK_MJS, join(real, 'guard-destructive.mjs'));
+    // The lexer travels with the hook. A copy without it does not fail loudly:
+    // an unresolved import exits 1, and Claude Code treats any non-2 exit as an
+    // error it reports but does not act on -- so the guard would stop blocking
+    // while still looking installed. That is what the installers copy lib/ for,
+    // what doctor checks, and what probe-guards catches at run time.
+    mkdirSync(join(real, 'lib'));
+    copyFileSync(join(HOOKS_DIR, 'lib', 'shell-lex.mjs'), join(real, 'lib', 'shell-lex.mjs'));
     symlinkSync(real, linked, process.platform === 'win32' ? 'junction' : 'dir');
     const r = spawnSync(process.execPath, [join(linked, 'guard-destructive.mjs')], {
       input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: "bash -c 'rm -rfv build'" } }),

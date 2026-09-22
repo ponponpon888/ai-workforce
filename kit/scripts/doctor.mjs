@@ -17,6 +17,21 @@ const guards = [
   { name: 'guard-destructive', token: '{{GUARD_DESTRUCTIVE_COMMAND}}', tools: ['Bash', 'PowerShell'] },
 ];
 
+/**
+ * Files a hook imports at load time, relative to the hook itself.
+ *
+ * Only the Node guard-destructive has one today: the shell lexer it shares
+ * with guard-sql. Listed here so a copy that is missing it is an error the
+ * report names, rather than a guard that looks installed and quietly stops
+ * blocking (an unresolved import exits 1, and Claude Code reports a non-2
+ * exit rather than acting on it).
+ */
+const DEPENDENCIES = {
+  'guard-destructive.mjs': ['lib/shell-lex.mjs'],
+};
+
+const extensionOf = (path) => path.slice(path.lastIndexOf('.') + 1);
+
 export function inspectSettings(settings, { template = false, claudeHome = join(homedir(), '.claude') } = {}) {
   const findings = [];
   const add = (level, id, message) => findings.push({ level, id, message });
@@ -84,6 +99,15 @@ export function inspectSettings(settings, { template = false, claudeHome = join(
       if (file) {
         try { if (!statSync(file).isFile()) throw new Error(); }
         catch { add('error', `${guard.name}.file`, 'The registered kit hook file is missing or is not a regular file.'); }
+        // A hook that imports the shared lexer cannot run without it. The
+        // import fails before the hook reads anything, and a non-2 exit is
+        // reported rather than acted on -- so the guard would look installed
+        // and stop blocking. Static check only; probe-guards is what proves
+        // the hook actually starts.
+        for (const dependency of DEPENDENCIES[`${guard.name}.${extensionOf(file)}`] ?? []) {
+          try { if (!statSync(join(dirname(file), dependency)).isFile()) throw new Error(); }
+          catch { add('error', `${guard.name}.dependency`, `The hook needs ${dependency}, which is missing or is not a regular file.`); }
+        }
       }
       for (const tool of guard.tools) if (entry.regex.test(tool)) covered.add(tool);
     }

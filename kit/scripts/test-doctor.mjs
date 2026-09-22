@@ -50,11 +50,22 @@ try {
   test('null document rejected', () => assert.equal(inspectSettings(null).status, 'error'));
   mkdirSync(join(temp, 'hooks'));
   for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) writeFileSync(join(temp, 'hooks', n + '.mjs'), '// intentionally not executed\n');
+  // guard-destructive imports the shared lexer. An installed home without it
+  // is not a working install, so the fixture has to carry it too.
+  mkdirSync(join(temp, 'hooks', 'lib'));
+  writeFileSync(join(temp, 'hooks', 'lib', 'shell-lex.mjs'), '// intentionally not executed\n');
   const installed = clone();
   for (const n of ['guard-sql', 'guard-secrets', 'guard-config', 'guard-destructive']) hookOf(installed, n).command = `node "${join(temp, 'hooks', n + '.mjs')}"`;
   setConfigEventHooks(installed, `node "${join(temp, 'hooks', 'guard-config.mjs')}"`);
   test('standard installed commands with spaces recognized', () => assert.equal(inspectSettings(installed, { claudeHome: temp }).status, 'static-pass'));
   test('installed placeholders rejected', () => assert(inspectSettings(clone(), { claudeHome: temp }).findings.some(f => f.id === 'hooks.placeholder')));
+  // An unresolved import exits 1, and a non-2 exit is reported rather than
+  // acted on, so a hook missing this file looks installed and stops blocking.
+  test('missing shared lexer rejected', () => {
+    rmSync(join(temp, 'hooks', 'lib', 'shell-lex.mjs'));
+    assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-destructive.dependency'));
+    writeFileSync(join(temp, 'hooks', 'lib', 'shell-lex.mjs'), '// stub');
+  });
   test('missing registered file rejected', () => { rmSync(join(temp, 'hooks', 'guard-sql.mjs')); assert(inspectSettings(installed, { claudeHome: temp }).findings.some(f => f.id === 'guard-sql.file')); writeFileSync(join(temp, 'hooks', 'guard-sql.mjs'), '// stub'); });
   test('SessionStart matcher not covering startup|resume is caught', () => { const s = structuredClone(installed); s.hooks.SessionStart[0].matcher = 'clear'; assert(inspectSettings(s, { claudeHome: temp }).findings.some(f => f.id === 'guard-config.sessionstart.registration')); });
   test('missing SessionStart registration is not silently passed', () => { const s = structuredClone(installed); delete s.hooks.SessionStart; assert(inspectSettings(s, { claudeHome: temp }).findings.some(f => f.id === 'guard-config.sessionstart.registration')); });

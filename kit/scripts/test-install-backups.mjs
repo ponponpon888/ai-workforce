@@ -148,7 +148,7 @@ if (!ps) for (const name of ['home-$&', 'home-{{GUARD_SQL_COMMAND}}']) {
 
 test('identical reinstall preserves timestamps and creates no backups', () => fixture(({ root, run }) => {
   const home = join(root, 'home'); run(home);
-  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'scripts/approve-ddl.mjs', 'scripts/record-settings-baseline.mjs', 'known-good/settings.json'];
+  const files = ['CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'hooks/lib/shell-lex.mjs', 'scripts/approve-ddl.mjs', 'scripts/record-settings-baseline.mjs', 'known-good/settings.json'];
   const before = new Map();
   for (const file of files) {
     const path = join(home, file); utimesSync(path, 1000000000, 1000000000);

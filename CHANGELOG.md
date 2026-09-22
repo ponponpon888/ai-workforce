@@ -11,6 +11,26 @@
 
 ## 未リリース
 
+- `guard-destructive` が持っていた**シェルのレクサーを `kit/claude/hooks/lib/shell-lex.mjs` に
+  切り出した**。中身は一行も変えていない（680行がそのまま。足したのは `export` と冒頭の説明だけで、
+  抽出後に元の範囲と行単位で一致することを確認している）。`guard-destructive` のテスト219件は
+  すべて成功し、挙動が変わっていないことの担保になっている。
+  切り出した理由は [hook-010](data/pitfalls/hook-010.json) で、`guard-sql` が同じものを必要とする
+  ため。シェルの引用規則をもう1つ書くのは、この種の中で最も確実に食い違う書き方になる。
+  公開している名前は `Word` / `lexPosix` / `lexPs` / `lexCmd` / `newCommand` の5つだけで、
+  レクサー側から解析側への参照は0本だった（境界がもともと綺麗だった）。
+  **危険と分かったことも書いておく。** 単体ファイルだったフックに、初めて実行時の依存が増えた。
+  依存が見つからないと import が失敗し、フックは入力を読む前に**exit 1**で終わる。Claude Code は
+  2以外の終了コードを「報告するが従わない」扱いにするので、**登録されたまま、ファイルも在るのに、
+  何も止めないフック**になる — このキットが避けようとしている形そのもの。実際、既存の
+  「リンク経由で起動しても止まること」のテスト（hook-008 の回帰テスト）が、フックだけコピーして
+  lib を置いていかなかったために落ちて教えてくれた。3層で塞いだ:
+  インストーラが `lib/` も置く、`doctor` が依存の不在を名指しする（新しい検査 `*.dependency`）、
+  `probe-guards` が実行時に落とす（`guard-destructive` が `expected block (exit 2), it exited 1`
+  で fail になることを実測し、テストに固定した）。`guard-config` の保護対象は `hooks` の前方一致
+  なので `hooks/lib/` も既に守られている（Edit も rm も exit 2 になることを確認）。
+  PowerShell 版のレクサー切り出しは別PRにする（dot-source という別の仕組みで、約900行あるため）。
+
 - `guard-sql` が SQL の方言（Postgres / MySQL / SQLite）を読み分けるようになった。着手前に修正前の
   フックで実測したところ、MySQL の `RENAME TABLE` / `REPLACE INTO` / `LOAD DATA` / `FLUSH` /
   `RESET` / `PURGE BINARY LOGS` / `OPTIMIZE` / `SET PASSWORD`、SQLite の `ATTACH DATABASE` /

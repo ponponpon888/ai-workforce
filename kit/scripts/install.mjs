@@ -125,6 +125,13 @@ install(readFileSync(join(srcClaude, 'hooks', 'guard-config.mjs'), 'utf8'), conf
 const destructiveDest = join(claudeHome, 'hooks', 'guard-destructive.mjs');
 install(readFileSync(join(srcClaude, 'hooks', 'guard-destructive.mjs'), 'utf8'), destructiveDest);
 
+// The shell lexer guard-destructive imports. It has to land with the hook: an
+// unresolved import exits 1, and Claude Code reports a non-2 exit rather than
+// acting on it, so a hook missing this file would look installed and stop
+// blocking. doctor checks it is there; probe-guards catches it at run time.
+const lexDest = join(claudeHome, 'hooks', 'lib', 'shell-lex.mjs');
+install(readFileSync(join(srcClaude, 'hooks', 'lib', 'shell-lex.mjs'), 'utf8'), lexDest);
+
 // JSON escaping and shell quoting are separate layers. Inside POSIX double
 // quotes these four characters still have shell meaning.
 const quoteHookPath = (path) => '"' + (process.platform === 'win32'

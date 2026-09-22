@@ -11,7 +11,10 @@ import { fileURLToPath } from 'node:url';
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const modes = ['default', 'manual', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];
 const guards = [
-  { name: 'guard-sql', token: '{{GUARD_SQL_COMMAND}}', tools: ['Bash', 'PowerShell', 'mcp__supabase__execute_sql', 'mcp__postgres__query', 'mcp__neon__query', 'mcp__planetscale__query'] },
+  // One representative tool name per product the matcher is meant to route.
+  // kit/scripts/test-sql-tool-matcher.mjs is what keeps this list, the matcher
+  // and both hooks naming the same products.
+  { name: 'guard-sql', token: '{{GUARD_SQL_COMMAND}}', tools: ['Bash', 'PowerShell', 'mcp__supabase__execute_sql', 'mcp__postgres__query', 'mcp__neon__query', 'mcp__planetscale__query', 'mcp__mysql__query', 'mcp__mariadb__query', 'mcp__sqlite__query'] },
   { name: 'guard-secrets', token: '{{GUARD_SECRETS_COMMAND}}', tools: ['Bash', 'PowerShell'] },
   { name: 'guard-config', token: '{{GUARD_CONFIG_COMMAND}}', tools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash', 'PowerShell'] },
   { name: 'guard-destructive', token: '{{GUARD_DESTRUCTIVE_COMMAND}}', tools: ['Bash', 'PowerShell'] },

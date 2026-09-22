@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -299,9 +299,13 @@ console.log('\ninstalled behind a symlink:');
     // one an agent is handed, so it is the one that has to be refused.
     assert('the spelling this hook was invoked by', BLOCK,
       callVia(viaLink, join(linkHome, 'settings.json')));
-    // And the path it resolves to, which names the same file.
+    // And the canonical path, which names the same file. realpathSync, not
+    // realHome: mkdtemp does not hand back a canonical path either. On macOS
+    // it is under /var/folders, itself a symlink to /private/var/folders, so
+    // asserting on realHome tests a third spelling the hook never claimed --
+    // which is exactly how this assertion failed in CI the first time.
     assert('the spelling it resolves to', BLOCK,
-      callVia(viaLink, join(realHome, 'settings.json')));
+      callVia(viaLink, join(realpathSync(realHome), 'settings.json')));
     assert('an ordinary file behind the symlink is still allowed', ALLOW,
       callVia(viaLink, join(linkHome, 'notes.txt')));
     rmSync(linkHome, { recursive: true, force: true });

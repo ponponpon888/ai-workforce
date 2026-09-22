@@ -131,6 +131,25 @@ jobs:
             test -f "$RUNNER_TEMP/fake-claude-ps/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
 
+      # macOS and Windows both hand back a temp directory whose spelling is not
+      # the canonical one (/var -> /private/var; 8.3 short names), and Node's
+      # ESM loader resolves import.meta.url while argv[1] keeps the spelling it
+      # was invoked by. guard-config protects paths by matching text, so that
+      # gap let it guard a home nobody was using -- caught only by the macOS and
+      # Windows jobs, twice. A symlinked TMPDIR reproduces both here, in the
+      # cheapest job, so the next one fails in seconds instead of minutes.
+      - name: Guards still protect a home reached through a symlink
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/canonical"
+          ln -s canonical "$RUNNER_TEMP/aliased"
+          export TMPDIR="$RUNNER_TEMP/aliased"
+          test "$(node -e 'console.log(require("fs").realpathSync(require("os").tmpdir()))')" \
+            != "$(node -e 'console.log(require("os").tmpdir())')" \
+            || { echo "::error::TMPDIR is not actually aliased; this check would prove nothing"; exit 1; }
+          node kit/scripts/test-guard-config.mjs
+          node kit/scripts/test-probe-guards.mjs
+
       - name: Validate pitfall records and committed index
         shell: bash
         run: |

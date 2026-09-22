@@ -287,3 +287,12 @@ node -e "const j=require('./data/pitfalls.index.json'); console.log(j.counts)"
 
 A number written into prose can be a lie the day after it is written. That is the same reason
 `measured_on` was not made a hand-written "last confirmed on".
+
+**A measurement recorded with its date and the commit it ran against is a different thing.**
+[17. Integration status](17-integration-status.md) (Japanese) records "measured on this date,
+against this commit, in this environment", so it is not a lie when today's counts differ.
+Rewriting those numbers would destroy the record instead.
+
+The distinction is whether the sentence says "how many there are now" or "how many there were
+when this was measured". Leave the first to the generated file; freeze the second with its date
+and its subject.

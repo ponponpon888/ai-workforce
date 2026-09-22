@@ -120,8 +120,8 @@ In order of value:
 3. **Ports** — `pull-all` on another runtime (Node, PowerShell and POSIX shell exist),
    corrections to the MySQL/SQLite rules in `guard-sql` from someone who actually runs
    those engines, more per-project `CLAUDE.md` templates.
-4. **Translation.** Japanese is canonical; the README and `docs/00` / `docs/01` / `docs/02` /
-   `docs/03` / `docs/05` / `docs/06` / `docs/07` exist in English. `docs/04` and `08` do not.
+4. **Translation.** Japanese is canonical; the README and `docs/00` through `docs/08` exist in
+   English. `docs/09` and later -- the tool-by-tool pages -- do not.
 
 ## What is not welcome
 

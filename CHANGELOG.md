@@ -81,13 +81,65 @@
   骨抜きにしたフック・全部止めるフック・消したフック・登録を外した状態・壊れたJSON・
   ホーム不一致を、それぞれ別の結果として報告することを固定している。`verify-installers` の
   `core` にも入れ、CI の Ubuntu / Windows / macOS（Windows PowerShell 5.1 を含む）で回す。
-- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)、status: open_recorded）。
+- 最初に流して1件見つけた（[hook-013](data/pitfalls/hook-013.json)）。
   **`guard-config` は自分がインストールされた場所ではなく `~/.claude`（または `AIWF_CLAUDE_HOME`）を
-  守る。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
+  守っていた。** `--claude-home` で標準以外の場所へ入れると、フックはその場所に置かれ登録もされるのに、
   実際に使われている `settings.json` は保護対象に入らない。`AIWF_CLAUDE_HOME` はテストからしか
-  設定されておらず、文書にも載っていない。直し方（フック自身の位置から導出する）は分かって
-  いるが、Node版とPowerShell版の両方と既存テストの見直しを伴うため別PRに分け、まず
-  `probe-guards` が実行時に検出して警告し incomplete として報告する形を入れた。
+  設定されておらず、文書にも載っていなかった。`probe-guards` は実行時にこれを検出して警告し、
+  incomplete として報告する。ガード本体の修正は次の項目（別PRで入れた）。
+
+- `guard-config` が、保護対象の claude home を**自分の位置から導出する**ようになった。
+  インストールされたフックは `<claude home>/hooks/guard-config.*` に置かれるので、そこから
+  1つ上が「Claude Code がいま読んでいる home」になる。従来は実行時に `AIWF_CLAUDE_HOME`
+  （未設定なら `~/.claude`）だけで決めていたため、`--claude-home` で標準以外の場所へ入れると
+  **フックは登録されているのに、実際に使われている `settings.json` が無防備**だった
+  （[hook-013](data/pitfalls/hook-013.json) / status: closed）。`AIWF_CLAUDE_HOME`
+  （PowerShell 版は `-ClaudeHome`）は明示的な上書きとして残し、指定時はその home だけを守る。
+  指定が無いときは導出した home と `~/.claude` の両方を守る（守る範囲を広げるのは安全だが、
+  黙って狭めるのは危険なため）。ブロック時のメッセージは一致した方の home を名指しする。
+  テストは Node 版 45 → 53 件、PowerShell 版 45 → 52 件で、修正前の実装では増やした分の
+  うち4件が落ちることも確認した。`probe-guards` の不一致判定も新しい挙動に合わせ、
+  `AIWF_CLAUDE_HOME` が別の場所を指しているときだけ警告して incomplete にする（12件）。
+- 上の修正を macOS の CI が落として、**もう1段の穴**が出た。これは新種ではなく
+  [hook-008](data/pitfalls/hook-008.json) と同じ class の再発で、あちらは
+  `guard-destructive` で一度閉じている（「直接起動されたときだけ動く」判定が、
+  シンボリックリンク経由だと成立せず、フックが何も見ずに exit 0 した）。あのときも
+  落ちたのは macOS のジョブだけだった。**1つのフックを直しただけで、class に対する
+  回帰テストを足していなかった**ので、同じ仕組みが guard-config では「保護対象の home を
+  どう決めるか」という別の形で戻ってきた。下の CI ステップは、本来 hook-008 を閉じた
+  ときに足すべきものだった。
+  Node の ESM ローダーは
+  `import.meta.url` のシンボリックリンクを解決するので、自分の位置から導出した home は常に
+  正規化後の綴りになる。macOS の `tmpdir()` は `/var/...`（`/private/var/...` へのリンク）
+  なので、**`settings.json` に登録されている綴り＝エージェントが実際に渡してくる綴りが、
+  保護対象と一致しない**。起動されたパス（`process.argv[1]`）からも home を導出し、両方の
+  綴りを守るようにした。シンボリックリンク経由で登録した home で再現するテストを足し、
+  修正前の実装で落ちることも確認した（プラットフォームに依存しない形なので Linux でも回る）。
+- 再現手段が無いまま CI に投げて2往復したので、**Linux で両方を再現できる形**にして CI に
+  入れた。`TMPDIR` をシンボリックリンク経由のディレクトリに向けるだけで、macOS の
+  `/var` → `/private/var` と同じ条件になる。修正前のフックをこの条件で回すと、
+  `test-guard-config` が macOS の CI と同じ3件、`test-probe-guards` が Windows の CI と
+  同じ 6 pass / 6 fail で落ちる。Ubuntu ジョブに1ステップ足したので、次に同じ壊れ方を
+  したときは数十秒で分かる（macOS / Windows ジョブの完走を待たずに済む）。ステップ自体が
+  「TMPDIR が本当にリンク経由になっているか」を先に確かめてから走る（条件が崩れた状態で
+  緑になるのは、テストが無いのと同じなので）。
+- **PowerShell 版にも同じ不具合があった。** 最初はそう書いていなかった（「`$PSCommandPath` は
+  リンクを解決しないので元から無い」）が、それは Linux の pwsh 7.4.6 で測っただけの話を
+  Windows へ一般化した誤りで、Windows の CI が落として分かった。**Windows の PowerShell は
+  8.3 短縮名（`C:\Users\RUNNER~1\...`）を長い形へ展開する**ので、`$PSCommandPath` から
+  導出した home は登録された綴りと食い違う。Node の `import.meta.url` と同じ壊れ方が、
+  別の仕組みで起きていた。`[Environment]::GetCommandLineArgs()` は `-File` に渡された生の
+  引数を返す（`process.argv[1]` 相当）ので、そこからも導出して両方の綴りを守るようにした。
+  テストは、起動パスに `/./` の迂回を入れる形にした。PowerShell は `$PSCommandPath` から
+  これを落とし、生の引数には残すので、**8.3 と同じ食い違いがどのプラットフォームでも作れる**。
+  修正前の実装ではこのケースが落ちることを確認済み（PowerShell 版 52 → 55 件）。
+  `test-guard-config.ps1` は Ubuntu でも回しているので、次は最安のジョブで捕まる。
+- 残る差は1点だけ: Linux / macOS の pwsh では、**シンボリックリンクを解決した先の綴り**を
+  PowerShell 版が保護しない（Node 版は保護する）。祖先のリンクまで解決するには
+  `ResolveLinkTarget`（.NET 6+）が要り、CI が回している Windows PowerShell 5.1 には無い。
+  [hook-014](data/pitfalls/hook-014.json) に、両ランタイムの綴りの食い違いとしてまとめ直した
+  （status: closed。残差は `fix` の中に明記）。
+
 - `docs/01`（2 層の CLAUDE.md）・`docs/03`（役割分担）・`docs/05`（本番 DB の取り決め）・
   `docs/06`（チャット側の穴を塞ぐ）・`docs/07`（GitHub と Vercel の穴）の英訳を追加。これで
   **4 本柱のうち 1・2・3 と、チャット側の穴を塞ぐ話が一式、英語で読める**ようになった
@@ -97,7 +149,6 @@
   英語版どうしのリンクも英語版を指すように直した（`docs/03` の英語版から `docs/06` への
   リンクが日本語ページに落ちていた）。README / README.en のドキュメント表と
   CONTRIBUTING の翻訳状況も更新。日本語が正本であることは変えていない。
-
 
 - `guard-config` に `SessionStart` イベント（`startup|resume`）を追加。ConfigChange は
   実行中セッションへの反映を止めるだけでディスク上の `settings.json` は書き換わったまま

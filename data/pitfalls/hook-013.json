@@ -6,8 +6,7 @@
   "kind": "trap",
   "severity": "medium",
   "confidence": "measured",
-  "origin": "docs/09-settings-doctor.md#guard-config-が守るのは入れた場所ではありません",
-
+  "origin": "docs/09-settings-doctor.md#guard-config-が守るのは入れた場所です以前は違いました",
   "measured_on": "2026-09-21",
   "environment": {
     "os": "Linux",
@@ -24,19 +23,25 @@
     "AIWF_CLAUDE_HOME=/tmp/claude-0/probe-home を設定して1つ目のペイロードを再実行すると exit 2 になる。guard-config.mjs の const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude')) と一致する",
     "grep -rn AIWF_CLAUDE_HOME で、この環境変数を設定しているのは test-guard-config.mjs と test-install-backups.mjs だけで、README・docs・インストーラのいずれにも記載が無いことを確認した"
   ],
-
-  "status": "open_recorded",
-  "why_not_closed": "直し方は分かっている。フック自身の位置（インストールされると <claude home>/hooks/guard-config.*）から claude home を導出し、AIWF_CLAUDE_HOME を上書き用に残せばよい。ただしNode版とPowerShell版の両方の解決処理を変えることになり、AIWF_CLAUDE_HOME を前提に組まれている既存テスト（test-guard-config の45件、test-install-backups）の見直しも伴う。「ガードを1つ直すPR」として独立させた方が差分を読みやすいため、このPRでは probe-guards.mjs が実行時にこの食い違いを検出して警告し、incomplete（終了コード2）として報告する形を先に入れた。塞ぐまでのあいだ、標準以外の場所へインストールした利用者には AIWF_CLAUDE_HOME を設定する回避策がある（docs/09に記載）。",
-
+  "status": "closed",
   "detection": {
     "checkable": true,
     "kind": "file-content",
     "target": "kit/claude/hooks/guard-config.mjs",
-    "pattern": "process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude')",
+    "pattern": "const OWN_HOME = resolve(dirname(fileURLToPath(import.meta.url)), '..')",
     "expect": "present",
-    "message": "guard-config の保護対象がまだ環境変数とホームディレクトリだけで決まっている（インストール先を見ていない）ことを示す。この行を変えて自分の位置から導出する形にしたら、このレコードの status と fix を同時に更新すること。"
+    "message": "guard-config が保護対象の home を自分の位置から導出している行。これを消して環境変数とホームディレクトリだけで決める形に戻すと、標準以外の場所へインストールしたときに実際に使われている設定が無防備に戻る。"
   },
-
-  "related": ["hook-006", "hook-009"],
-  "tags": ["guard-config", "install", "claude-home", "false-sense-of-security", "probe-guards"]
+  "related": [
+    "hook-006",
+    "hook-009"
+  ],
+  "tags": [
+    "guard-config",
+    "install",
+    "claude-home",
+    "false-sense-of-security",
+    "probe-guards"
+  ],
+  "fix": "guard-config.mjs / .ps1 が、保護対象の claude home を自分の位置から導出するようにした。インストールされたフックは <claude home>/hooks/guard-config.* に置かれるので、そこから1つ上が「Claude Code がいま読んでいる home」になる。AIWF_CLAUDE_HOME（PowerShell 版は -ClaudeHome）は明示的な上書きとして残し、指定されたときはその home だけを守る（テストが一時ディレクトリに固定するための経路）。指定が無いときは、導出した home と既定の ~/.claude の両方を守る。守る範囲を広げるのは安全だが、黙って狭めるのは危険なため、チェックアウトから直接登録されたコピーが ~/.claude を守らなくなる事態を避けている。ブロック時のメッセージは、一致した方のhome を名指しする。テストは test-guard-config.mjs / .ps1 に「環境変数なしでコピーを一時 home に置いて起動する」節を追加し、両版とも 45 -> 50 件。修正前の実装ではこの5件のうち3件が落ちることも確認した。probe-guards も、フックが実際に守る home の判定を新しい挙動に合わせた（環境変数が別の場所を指しているときだけ不一致として incomplete にする）。"
 }

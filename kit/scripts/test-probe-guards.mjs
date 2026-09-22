@@ -85,12 +85,12 @@ function homeCopy(name) {
   return home;
 }
 
-// AIWF_CLAUDE_HOME is what guard-config reads to decide what it protects, so
-// the probe of a temporary home only means something with it set. Running
-// without it is its own test below.
-function runProbe(home, { withClaudeHomeEnv = true, args = [] } = {}) {
+// guard-config derives the home it protects from where it is installed
+// (hook-013), so probing a copied home needs no environment variable. Setting
+// one to a different directory is the exception the mismatch case covers.
+function runProbe(home, { claudeHomeEnv = null, args = [] } = {}) {
   const env = { ...process.env };
-  if (withClaudeHomeEnv) env.AIWF_CLAUDE_HOME = home; else delete env.AIWF_CLAUDE_HOME;
+  if (claudeHomeEnv) env.AIWF_CLAUDE_HOME = claudeHomeEnv; else delete env.AIWF_CLAUDE_HOME;
   const r = spawnSync(process.execPath, [join(scripts, 'probe-guards.mjs'), '--claude-home', home, '--json', ...args],
     { encoding: 'utf8', env, timeout: 120000 });
   return { status: r.status, report: r.stdout.trim() ? JSON.parse(r.stdout) : null, stderr: r.stderr };
@@ -177,13 +177,25 @@ try {
     assert.ok(!JSON.stringify(report).includes('oops'));
   });
 
-  test('probing a home guard-config does not protect is incomplete, not a pass', () => {
+  test('an installed home is probed without any environment variable', () => {
+    // The plain case after hook-013: nothing is exported, the hook still
+    // protects the home it was installed into, and the probe says so.
+    const home = homeCopy('home-derived');
+    const { status, report } = runProbe(home);
+    assert.equal(status, 0, JSON.stringify(report?.findings));
+    assert.equal(report.claudeHome, report.protectedHome);
+    assert.equal(guardOf(report, 'guard-config').result, 'pass');
+  });
+
+  test('an AIWF_CLAUDE_HOME pointing elsewhere is incomplete, not a pass', () => {
     const home = homeCopy('home-mismatch');
-    const { status, report } = runProbe(home, { withClaudeHomeEnv: false });
+    const elsewhere = homeCopy('home-elsewhere');
+    const { status, report } = runProbe(home, { claudeHomeEnv: elsewhere });
     assert.equal(status, 2);
     assert.equal(report.status, 'incomplete');
     assert.ok(report.findings.some(f => f.id === 'guard-config.home'),
       'the report must name the directory guard-config actually protects');
+    assert.equal(report.protectedHome, elsewhere);
     assert.notEqual(report.claudeHome, report.protectedHome);
   });
 

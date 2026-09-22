@@ -24,18 +24,61 @@
 
 [CmdletBinding()]
 param(
-    [string] $ClaudeHome = $(
-        if ($env:AIWF_CLAUDE_HOME) { $env:AIWF_CLAUDE_HOME }
-        else { Join-Path $HOME '.claude' }
-    )
+    [string] $ClaudeHome
 )
 
 Set-StrictMode -Version Latest
 
+# The claude home this hook belongs to.
+#
+# Installed, this file sits at <claude home>\hooks\guard-config.ps1, so its own
+# location names the home Claude Code is reading when it invokes the hook.
+# Deciding from $HOME\.claude alone meant that installing anywhere else left
+# the settings.json actually in use unprotected, while the hook was registered
+# and every static check still passed. See data/pitfalls/hook-013.json.
+#
+# Resolved here rather than in a param() default: Windows PowerShell 5.1 leaves
+# $PSCommandPath and $PSScriptRoot empty inside a param() default when
+# [CmdletBinding()] is present.
+$ownHome = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+
+# The spelling this hook was INVOKED by, which is what settings.json holds and
+# what an agent is handed. $PSCommandPath above is normalized by PowerShell: on
+# Windows an 8.3 short path (C:\Users\RUNNER~1\...) comes back expanded to the
+# long form, so on its own it does not match the registered spelling and the
+# home in actual use goes unprotected. Node's twin has the same split between
+# import.meta.url and process.argv[1]. Both spellings are protected; widening
+# what is refused is safe, narrowing it silently is not.
+# See data/pitfalls/hook-014.json and hook-008.json.
+$invokedHome = $null
+try {
+    $scriptArg = $null
+    foreach ($arg in [Environment]::GetCommandLineArgs()) {
+        if ($arg -and $arg.ToLowerInvariant().EndsWith('.ps1')) { $scriptArg = $arg }
+    }
+    if ($scriptArg) { $invokedHome = Split-Path -Parent (Split-Path -Parent $scriptArg) }
+} catch {
+    $invokedHome = $null
+}
+
+$defaultHome = Join-Path $HOME '.claude'
+$explicitHome = $PSBoundParameters.ContainsKey('ClaudeHome') -or [bool] $env:AIWF_CLAUDE_HOME
+if (-not $ClaudeHome) {
+    $ClaudeHome = if ($env:AIWF_CLAUDE_HOME) { $env:AIWF_CLAUDE_HOME } else { $ownHome }
+}
+
+# Every home this hook refuses to let an agent rewrite. An explicit -ClaudeHome
+# or AIWF_CLAUDE_HOME means "protect this and nothing else", which is how the
+# tests pin behaviour to a throwaway directory. Without one, the default home
+# is protected alongside the installed one: a copy registered straight from a
+# checkout would otherwise stop protecting $HOME\.claude, which it does today.
+$script:ProtectedHomes = if ($explicitHome) { @($ClaudeHome) }
+    else { @($ClaudeHome, $invokedHome, $defaultHome) | Where-Object { $_ } | Select-Object -Unique }
+
 # Windows paths are case-insensitive end to end; C:\Users\X\.claude and
 # c:\users\x\.claude name the same directory. Normalize case only for the
 # home prefix itself, not the subpath names chosen below.
-$script:HomeNorm = ($ClaudeHome -replace '\\', '/').ToLowerInvariant()
+$script:HomeNorms = @($script:ProtectedHomes | ForEach-Object { ($_ -replace '\\', '/').ToLowerInvariant() })
 
 # Directories and files inside the claude home that this hook protects.
 # known-good/ holds the SessionStart baseline: it needs the same protection
@@ -51,8 +94,14 @@ $script:InstalledSettings = Join-Path $ClaudeHome 'settings.json'
 # The protected subpath a piece of text names, or $null.
 function Get-ProtectedSubpath([string] $Text) {
     $norm = ($Text -replace '\\', '/').ToLowerInvariant()
-    foreach ($sub in $script:ProtectedSubpaths) {
-        if ($norm.Contains("$script:HomeNorm/$($sub.ToLowerInvariant())")) { return $sub }
+    for ($i = 0; $i -lt $script:HomeNorms.Count; $i++) {
+        foreach ($sub in $script:ProtectedSubpaths) {
+            # The home comes back with the subpath so the block message names
+            # the directory that actually matched, not whichever is first.
+            if ($norm.Contains("$($script:HomeNorms[$i])/$($sub.ToLowerInvariant())")) {
+                return [pscustomobject]@{ Sub = $sub; Home = $script:ProtectedHomes[$i] }
+            }
+        }
     }
     return $null
 }
@@ -115,17 +164,17 @@ function Get-Segments([string] $Command) {
 # Why this segment counts as a write to a protected path, or $null.
 function Get-WriterHit([string] $Segment) {
     foreach ($m in [regex]::Matches($Segment, $script:OutputRedirectPattern)) {
-        $sub = Get-ProtectedSubpath $m.Groups[1].Value
-        if ($sub) { return [pscustomobject]@{ Sub = $sub; Via = 'output redirection' } }
+        $hit = Get-ProtectedSubpath $m.Groups[1].Value
+        if ($hit) { return [pscustomobject]@{ Sub = $hit.Sub; Home = $hit.Home; Via = 'output redirection' } }
     }
     if ($Segment -match $script:InplaceEditPattern) {
-        $sub = Get-ProtectedSubpath $Segment
-        if ($sub) { return [pscustomobject]@{ Sub = $sub; Via = 'in-place edit (sed/perl -i)' } }
+        $hit = Get-ProtectedSubpath $Segment
+        if ($hit) { return [pscustomobject]@{ Sub = $hit.Sub; Home = $hit.Home; Via = 'in-place edit (sed/perl -i)' } }
     }
     $word = Get-CommandWord $Segment
     if ($script:WriteCommands -contains $word) {
-        $sub = Get-ProtectedSubpath $Segment
-        if ($sub) { return [pscustomobject]@{ Sub = $sub; Via = $word } }
+        $hit = Get-ProtectedSubpath $Segment
+        if ($hit) { return [pscustomobject]@{ Sub = $hit.Sub; Home = $hit.Home; Via = $word } }
     }
     return $null
 }
@@ -134,7 +183,7 @@ function Deny-PreToolUse($Hit, [string] $Detail) {
     $lines = @(
         "[guard-config] BLOCKED: this call would modify or delete this kit's own guardrails."
         ''
-        "Protected path : $ClaudeHome/$($Hit.Sub)"
+        "Protected path : $($Hit.Home)/$($Hit.Sub)"
         "Matched by     : $($Hit.Via)"
     )
     if ($Detail) { $lines += "Command/target : $Detail" }
@@ -270,8 +319,8 @@ try {
             [string] $toolInput.file_path
         } else { '' }
         if ($filePath) {
-            $sub = Get-ProtectedSubpath $filePath
-            if ($sub) { Deny-PreToolUse ([pscustomobject]@{ Sub = $sub; Via = "$toolName tool" }) $filePath }
+            $hit = Get-ProtectedSubpath $filePath
+            if ($hit) { Deny-PreToolUse ([pscustomobject]@{ Sub = $hit.Sub; Home = $hit.Home; Via = "$toolName tool" }) $filePath }
         }
     } elseif ($toolName -match '^(Bash|PowerShell)$') {
         $command = if ($toolInput -and ($toolInput.PSObject.Properties.Name -contains 'command')) {

@@ -1,0 +1,48 @@
+{
+  "id": "doc-001",
+  "title": "散文がレコードの status を引用したまま古くなり、塞いだ穴を「まだ空いている」と伝え続けていた",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "summary": "ドキュメントはレコードをインラインで引用する（例: [hook-010](data/pitfalls/hook-010.json)（`status: open_recorded`））。この引用を誰も照合していなかったため、レコードが変わった時点でずれた。hook-010 を塞いで status を closed にしたとき、docs/02 は日英とも直したのに ROADMAP.md は open_recorded のまま残り、読む人に「その穴はまだ空いている」と伝え続けていた。レコード側は正しく、リンクも生きていて、check-doc-links も通る。壊れているのは引用した値だけなので、既存のどの検査にも引っかからない。hook-004・hook-014・hook-015 と同じ形で、人間への注意書きとして書いた事実がずれた。layer は instruction にした。enum に docs は無く、これは「読む人に事実を伝える層」の落とし穴だから。",
+  "origin": "docs/08-pitfall-records.md#散文がレコードについて言うことも検査します",
+  "measured_on": "2026-09-22",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "data/pitfalls/hook-010.json は status: closed、confidence: measured（PR #45 で塞いだ）",
+    "docs/02-guardrails.md と docs/02-guardrails.en.md はどちらも status: closed と書いている",
+    "ROADMAP.md の同じ箇所は `status: open_recorded` と書いたままだった",
+    "check-doc-links / check-doc-todos / validate-pitfalls / lint-pitfalls はいずれも 0 件・exit 0。値の食い違いを見ている検査が1つも無かった",
+    "kit/scripts/check-pitfall-claims.mjs を修正前の ROADMAP.md に対して走らせると ROADMAP.md:395: hook-010 status: says \"open_recorded\", the record says \"closed\" で exit 1、修正後は exit 0"
+  ],
+  "status": "closed",
+  "fix": "kit/scripts/check-pitfall-claims.mjs を追加し、docs.yml から走らせる。括弧（() でも （） でも）の中に書かれた kind / status / confidence / severity / layer の引用を、同じ段落で直前に名前が出たレコードの実値と突き合わせる。ROADMAP.md の該当箇所も直した。括弧の外は検査しない: docs/02 の hook-007 と hook-011 を対比する段落では、kind: behaviour が説明相手より前に、status: open_recorded が別レコードの後ろに出てくるため、近さで結びつけると正しい2文を違反と報告してしまう。曖昧なところでは黙り、飛ばした件数を出す。CHANGELOG.md のリリース済みの節も対象外で、あれは「そのリリース時点で何が真だったか」の記録であり、いまのレコードに合わせて書き換えたら記録のほうが壊れる。docs.yml の paths に data/pitfalls/** を入れてあるのは、レコードだけが変わったコミットが、一度も触っていないファイルの文を偽にしうるため。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": ".github/workflows/docs.yml",
+    "pattern": "check-pitfall-claims",
+    "expect": "present",
+    "message": "docs ワークフローから check-pitfall-claims.mjs の実行が消えると、散文がレコードの値を引用したまま古くなる状態に戻る。paths の data/pitfalls/** も一緒に必要で、それが無いとレコードだけを変えたコミットで検査が走らない。"
+  },
+  "related": [
+    "hook-004",
+    "hook-010",
+    "hook-014",
+    "hook-015"
+  ],
+  "tags": [
+    "docs",
+    "drift",
+    "pitfall-records",
+    "ci",
+    "recurrence"
+  ]
+}

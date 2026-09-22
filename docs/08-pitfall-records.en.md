@@ -256,6 +256,49 @@ validator that failed everything with "something is wrong" would otherwise pass 
 
 ---
 
+## Prose that quotes a record is checked too
+
+The docs quote records inline:
+
+```md
+[hook-010](../data/pitfalls/hook-010.json) (`status: closed`)
+```
+
+Nothing looked at those quotes, so **they drifted the moment a record changed**. That is not
+hypothetical: when `hook-010` was closed and its `status` became `closed`, both copies of
+`docs/02` were updated and ROADMAP.md was not. It went on telling readers
+"`status: open_recorded`" -- that the hole was still open.
+
+It is the same failure this repository keeps finding (`hook-004`, `hook-014`, `hook-015`).
+**A fact recorded as a note to humans drifts; one recorded as a machine check holds.** The
+records are the source of truth, so the prose is made to answer to them.
+
+```
+node kit/scripts/check-pitfall-claims.mjs
+```
+
+It checks five fields -- `kind`, `status`, `confidence`, `severity` and `layer` -- and only
+where they are quoted **inside brackets**, either ASCII `()` or Japanese `（）`. Such a quote
+is taken to be about the record named last before it in the same paragraph.
+
+Quotes outside brackets are left alone. `docs/02` has a passage contrasting `hook-007` with
+`hook-011` where `kind: behaviour` comes **before** the record it describes and
+`status: open_recorded` comes **after a different one**. Attributing those by proximity would
+report two correct sentences as wrong -- and a checker that cries wolf gets silenced by
+mangling the prose instead. So it stays quiet where the prose is genuinely ambiguous, and
+**says how many quotes it skipped**.
+
+Released sections of CHANGELOG.md are not checked either. Those say what was true at that
+release, not what is true now -- the same distinction as
+[why counts are not written on this page](#why-counts-are-not-written-on-this-page). Rewriting
+them to match today's records would destroy the record. The unreleased section is a claim
+about what is about to ship, so it is checked.
+
+`stale_risk` is out of scope: it is computed into `data/pitfalls.index.json` rather than stored
+on a record, so there is nothing to compare it against.
+
+---
+
 ## Things to state plainly
 
 - **The docs have not kept up with the data.** There are always some records whose `origin` is

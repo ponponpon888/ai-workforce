@@ -11,6 +11,34 @@
 
 ## 未リリース
 
+- **散文がレコードの値を引用したまま古くなっていた**のを直し、同じずれを機械で縛った
+  （[doc-001](data/pitfalls/doc-001.json)）。ドキュメントは
+  `[hook-010](data/pitfalls/hook-010.json)（status: ...）` の形でレコードを引用するが、
+  この引用を照合する検査が無かった。`hook-010` を塞いで `status` を `closed` にしたとき、
+  `docs/02` は日英とも直したのに ROADMAP.md は `open_recorded` のまま残り、読む人に
+  「その穴はまだ空いている」と伝え続けていた。レコードもリンクも正しく、
+  `check-doc-links` も `validate-pitfalls` も `lint-pitfalls` も 0 件で通る。
+  壊れているのは引用した**値**だけなので、どの検査にも引っかからなかった。
+- **`kit/scripts/check-pitfall-claims.mjs` を追加した**（`docs` ワークフローから実行）。
+  括弧（`()` でも `（）` でも）の中に書かれた `kind` / `status` / `confidence` / `severity` /
+  `layer` の引用を、同じ段落で直前に名前が出たレコードの実値と突き合わせる。
+  **括弧の外は検査しない。** `docs/02` には `hook-007` と `hook-011` を対比する段落があり、
+  そこでは `kind: behaviour` が説明相手より前に、`status: open_recorded` が別レコードの後ろに
+  出てくる。近さで結びつけると、この2文は正しいのに違反として報告されてしまう。曖昧な
+  ところでは黙り、**飛ばした件数を出す**。CHANGELOG のリリース済みの節も対象外で、あれは
+  「そのリリース時点で何が真だったか」の記録なので、いまのレコードに合わせて書き換えたら
+  記録のほうが壊れる（`docs/08`「件数をここに書かない理由」と同じ区別）。
+  `docs.yml` の `paths` に `data/pitfalls/**` を入れたのは、レコードだけが変わったコミットが、
+  一度も触っていないファイルの文を偽にしうるため。
+- **ROADMAP.md の古くなった3項目を直した。** `hook-010` は「既知の制約として残す」という
+  2026-09-18 の判断のままだったが、その判断自身が挙げていた条件（guard-destructive 相当の
+  レクサーとテスト網羅）は PR #44 / #45 で満たされ、実際に塞がれている。
+  英訳の残り（`docs/04`・`08`）は PR #48 で、Actions の Node 20 警告は PR #47 で解消済み。
+- **`test-lint-pitfalls.mjs` の決め打ちの件数を生成物から導く形にした。**
+  レコードを1件足すたびに落ちる literal で、`hook-004`・`hook-015`・`doc-001` の3回とも
+  「バグではない唯一の理由」で赤くなっていた。`data/pitfalls.index.json` は生成物で、
+  CI が古ければ落とすので、そこから導く。検査が本当に壊れたときは赤くなることを、
+  index の `checks` を1件壊して確認した。
 - **`guard-sql` が MCP 経由の MySQL / SQLite を一度も検査していなかった**のを直した
   （[hook-015](data/pitfalls/hook-015.json)）。方言対応を入れたとき、`guard-sql.mjs` と
   `guard-sql.ps1` のツール名検査には `mcp__.*[Mm]ysql` / `[Mm]ariadb` / `[Ss]qlite` を足したが、

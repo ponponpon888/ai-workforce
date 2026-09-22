@@ -66,8 +66,21 @@ test('CLI JSON, exit codes, and no target mutation', () => fixture(x => {
   }
 }));
 test('CLI rejects missing root argument', () => assert.equal(spawnSync(process.execPath, [script, '--root']).status, 2));
+// The two counts are derived, not written here. Hand-written copies of them
+// have gone stale three times now -- when hook-004, hook-015 and doc-001 were
+// added -- and each time the test failed for the one reason that is never a
+// bug: a record was added. data/pitfalls.index.json is generated, and CI fails
+// on a stale one, so it is the honest source for "how many there are now"
+// (docs/08, "why counts are not written on this page").
 test('repository checks pass with visible uncovered records', () => {
-  const r = lint(); assert.equal(r.exit_code, 0); assert.equal(r.counts.pass, 16); assert.equal(r.uncheckable_records, 11);
+  const index = JSON.parse(readFileSync(fileURLToPath(new URL('../../data/pitfalls.index.json', import.meta.url)), 'utf8'));
+  const checkable = index.records.filter(r => r.checkable).length;
+  const r = lint();
+  assert.equal(r.exit_code, 0);
+  assert.equal(r.counts.violation, 0);
+  assert.equal(r.counts.unknown, 0);
+  assert.equal(r.counts.pass, checkable);
+  assert.equal(r.uncheckable_records, index.records.length - checkable);
 });
 
 for (const [name, bytes] of [

@@ -20,7 +20,8 @@ const guards = [
 /**
  * Files a hook imports at load time, relative to the hook itself.
  *
- * guard-sql and guard-destructive, in both flavours, share the shell lexer. Listed here so a copy that is missing it is an error the
+ * guard-sql and guard-destructive, in both flavours, share the shell lexer.
+ * Listed here so a copy that is missing it is an error the
  * report names, rather than a guard that looks installed and quietly stops
  * blocking (an unresolved import exits 1, and Claude Code reports a non-2
  * exit rather than acting on it).

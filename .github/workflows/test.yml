@@ -114,7 +114,7 @@ jobs:
           node kit/scripts/install.mjs --claude-home "$RUNNER_TEMP/fake-claude"
           node -e "JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP + '/fake-claude/settings.json','utf8'))"
           node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude"
-          for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs hooks/guard-config.mjs hooks/guard-destructive.mjs scripts/approve-ddl.mjs; do
+          for f in CLAUDE.md settings.json hooks/guard-sql.mjs hooks/guard-secrets.mjs hooks/guard-config.mjs hooks/guard-destructive.mjs hooks/lib/shell-lex.mjs scripts/approve-ddl.mjs; do
             test -f "$RUNNER_TEMP/fake-claude/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
 
@@ -127,7 +127,7 @@ jobs:
           pwsh -NoProfile -File ./kit/scripts/install.ps1 -ClaudeHome "$RUNNER_TEMP/fake-claude-ps" -Hook powershell
           pwsh -NoProfile -Command "Get-Content '$RUNNER_TEMP/fake-claude-ps/settings.json' -Raw | ConvertFrom-Json | Out-Null"
           node kit/scripts/doctor.mjs --claude-home "$RUNNER_TEMP/fake-claude-ps"
-          for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 hooks/guard-config.ps1 hooks/guard-destructive.ps1 scripts/approve-ddl.ps1; do
+          for f in CLAUDE.md settings.json hooks/guard-sql.ps1 hooks/guard-secrets.ps1 hooks/guard-config.ps1 hooks/guard-destructive.ps1 hooks/lib/shell-lex.ps1 scripts/approve-ddl.ps1; do
             test -f "$RUNNER_TEMP/fake-claude-ps/$f" || { echo "::error::installer did not write $f"; exit 1; }
           done
 
@@ -309,7 +309,7 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/fake-claude/settings.json" -Raw | ConvertFrom-Json | Out-Null
           node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'scripts/approve-ddl.mjs') {
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.mjs', 'hooks/guard-secrets.mjs', 'hooks/guard-config.mjs', 'hooks/guard-destructive.mjs', 'hooks/lib/shell-lex.mjs', 'scripts/approve-ddl.mjs') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude/$f")) { throw "installer did not write $f" }
           }
 
@@ -324,7 +324,7 @@ jobs:
           Get-Content "$env:RUNNER_TEMP/fake-claude-ps/settings.json" -Raw | ConvertFrom-Json | Out-Null
           node kit/scripts/doctor.mjs --claude-home "$env:RUNNER_TEMP/fake-claude-ps"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'hooks/guard-config.ps1', 'hooks/guard-destructive.ps1', 'scripts/approve-ddl.ps1') {
+          foreach ($f in 'CLAUDE.md', 'settings.json', 'hooks/guard-sql.ps1', 'hooks/guard-secrets.ps1', 'hooks/guard-config.ps1', 'hooks/guard-destructive.ps1', 'hooks/lib/shell-lex.ps1', 'scripts/approve-ddl.ps1') {
             if (-not (Test-Path -LiteralPath "$env:RUNNER_TEMP/fake-claude-ps/$f")) { throw "installer did not write $f" }
           }
 

@@ -153,6 +153,21 @@ try {
     assert.notEqual(guardOf(report, 'guard-secrets').result, 'pass');
   });
 
+  // A hook that imports the shared lexer cannot run without it, and the way it
+  // fails is quiet: the import throws before the hook reads its input, Node
+  // exits 1, and Claude Code reports a non-2 exit rather than acting on it. So
+  // the guard stays registered, its file is present, doctor's other checks
+  // pass -- and nothing is blocked. Only running it shows that.
+  test('a hook whose shared lexer is missing is reported, not silently passed', () => {
+    const home = homeCopy('home-missing-lexer');
+    const lexer = join(home, 'hooks', 'lib', `shell-lex.${extension}`);
+    if (!existsSync(lexer)) return;   // this flavour does not use it yet
+    rmSync(lexer);
+    const { status, report } = runProbe(home);
+    assert.notEqual(status, 0);
+    assert.notEqual(guardOf(report, 'guard-destructive').result, 'pass');
+  });
+
   test('an unregistered guard is unverified, not a pass', () => {
     const home = homeCopy('home-unregistered');
     const settings = join(home, 'settings.json');

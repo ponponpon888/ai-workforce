@@ -105,14 +105,62 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude'));
+/**
+ * The claude home this hook belongs to.
+ *
+ * Installed, this file sits at <claude home>/hooks/guard-config.mjs, so its
+ * own location names the home Claude Code is reading when it invokes the
+ * hook. Deciding from ~/.claude alone meant that installing anywhere else
+ * (install.mjs --claude-home, or CLAUDE_CONFIG_DIR) left the settings.json
+ * actually in use unprotected, while the hook was registered and every static
+ * check still passed -- the exact shape of "guarded, but guarding nothing"
+ * this kit exists to avoid. See data/pitfalls/hook-013.json.
+ */
+const OWN_HOME = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const DEFAULT_HOME = resolve(join(homedir(), '.claude'));
+const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || OWN_HOME);
+
+/**
+ * The home derived from the path this hook was *invoked* by, which is the
+ * spelling written into settings.json.
+ *
+ * Node's ESM loader resolves symlinks, so import.meta.url above is always the
+ * canonical path -- on macOS a home under tmpdir() is registered as
+ * /var/folders/... and arrives here as /private/var/folders/..., and on
+ * Windows an 8.3 short path arrives expanded. Since the checks below match
+ * paths as text, the spelling the agent will actually type would then match
+ * nothing. process.argv[1] keeps the path as invoked; both are protected.
+ */
+const INVOKED_HOME = process.argv[1] ? resolve(dirname(process.argv[1]), '..') : null;
+
+/**
+ * Every home this hook refuses to let an agent rewrite.
+ *
+ * With AIWF_CLAUDE_HOME set, it is exactly that one: the variable is an
+ * explicit "protect this and nothing else", which is how the tests pin
+ * behaviour to a throwaway directory.
+ *
+ * Without it, the default home is protected alongside the installed one. A
+ * copy of this hook registered straight from a checkout would otherwise stop
+ * protecting ~/.claude, which it does today -- widening what is refused is
+ * safe, narrowing it silently is not.
+ *
+ * Each home contributes every spelling that names it (see INVOKED_HOME): a
+ * path that resolves to a protected home must be refused however it is
+ * written, and listing an extra spelling of a home already protected can only
+ * refuse more.
+ */
+const PROTECTED_HOMES = [...new Set((process.env.AIWF_CLAUDE_HOME
+  ? [CLAUDE_HOME]
+  : [CLAUDE_HOME, INVOKED_HOME, DEFAULT_HOME]).filter(Boolean))];
 
 // Windows paths are case-insensitive end to end; C:\Users\X\.claude and
 // c:\users\x\.claude name the same directory. Normalize case only for the
 // home prefix itself, not the subpath names chosen below.
-const HOME_NORM = CLAUDE_HOME.replaceAll('\\', '/').toLowerCase();
+const HOME_NORMS = PROTECTED_HOMES.map(home => home.replaceAll('\\', '/').toLowerCase());
 
 /**
  * Directories and files inside the claude home that this hook protects.
@@ -133,8 +181,12 @@ const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
 /** The protected subpath a piece of text names, or null. */
 function protectedSubpathIn(text) {
   const norm = text.replaceAll('\\', '/').toLowerCase();
-  for (const sub of PROTECTED_SUBPATHS) {
-    if (norm.includes(`${HOME_NORM}/${sub.toLowerCase()}`)) return sub;
+  for (let i = 0; i < HOME_NORMS.length; i++) {
+    for (const sub of PROTECTED_SUBPATHS) {
+      // The home is reported back so the block message names the directory
+      // that was actually matched, not whichever one happens to be first.
+      if (norm.includes(`${HOME_NORMS[i]}/${sub.toLowerCase()}`)) return { sub, home: PROTECTED_HOMES[i] };
+    }
   }
   return null;
 }
@@ -202,17 +254,17 @@ function writerHitIn(segment) {
   OUTPUT_REDIRECT_RE.lastIndex = 0;
   let m;
   while ((m = OUTPUT_REDIRECT_RE.exec(segment)) !== null) {
-    const sub = protectedSubpathIn(m[1]);
-    if (sub) return { sub, via: 'output redirection' };
+    const hit = protectedSubpathIn(m[1]);
+    if (hit) return { ...hit, via: 'output redirection' };
   }
   if (INPLACE_EDIT_RE.test(segment)) {
-    const sub = protectedSubpathIn(segment);
-    if (sub) return { sub, via: 'in-place edit (sed/perl -i)' };
+    const hit = protectedSubpathIn(segment);
+    if (hit) return { ...hit, via: 'in-place edit (sed/perl -i)' };
   }
   const word = commandWord(segment);
   if (WRITE_COMMANDS.includes(word)) {
-    const sub = protectedSubpathIn(segment);
-    if (sub) return { sub, via: word };
+    const hit = protectedSubpathIn(segment);
+    if (hit) return { ...hit, via: word };
   }
   return null;
 }
@@ -220,7 +272,7 @@ function writerHitIn(segment) {
 function denyPreToolUse(hit, detail) {
   process.stderr.write(
     `[guard-config] BLOCKED: this call would modify or delete this kit's own guardrails.\n\n` +
-      `Protected path : ${CLAUDE_HOME}/${hit.sub}\n` +
+      `Protected path : ${hit.home}/${hit.sub}\n` +
       `Matched by     : ${hit.via}\n` +
       (detail ? `Command/target : ${detail}\n` : '') +
       `\nWhat to do:\n` +
@@ -381,8 +433,8 @@ try {
   if (FILE_TOOL_RE.test(toolName)) {
     const filePath = toolInput && typeof toolInput.file_path === 'string' ? toolInput.file_path : '';
     if (filePath) {
-      const sub = protectedSubpathIn(filePath);
-      if (sub) denyPreToolUse({ sub, via: `${toolName} tool` }, filePath);
+      const hit = protectedSubpathIn(filePath);
+      if (hit) denyPreToolUse({ ...hit, via: `${toolName} tool` }, filePath);
     }
   } else if (SHELL_TOOL_RE.test(toolName)) {
     const command = toolInput && typeof toolInput.command === 'string' ? toolInput.command : '';

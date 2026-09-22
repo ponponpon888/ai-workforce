@@ -1,13 +1,13 @@
 {
   "id": "hook-014",
-  "title": "PowerShell版のguard-configは、シンボリックリンクを解決した先の綴りを保護しない",
-  "summary": "guard-config は保護対象の claude home を自分の位置から導出する（hook-013）。Node 版は起動されたパス（process.argv[1]）と、それを解決した正規パス（import.meta.url は ESM ローダーが realpath するため常に正規形）の両方を保護対象に入れる。PowerShell 版は $PSCommandPath がシンボリックリンクを解決しないため、起動された綴りだけを保護し、解決先の綴りは保護しない。macOS で pwsh を使い、claude home の経路にシンボリックリンクが含まれる場合（tmpdir() の /var -> /private/var など）、エージェントが解決先の綴り（/private/var/...）でファイルパスを指定すると、PowerShell 版は同じファイルへの書き換えを許可する。Node 版は止める。実害は限定的（既定の ~/.claude はリンクを経由しない）だが、フック同士で挙動が食い違う点と、塞げていない方向がある点を記録する。",
+  "title": "guard-configが守る場所を「自分の位置」から決めるとき、パスの綴りがランタイムごとに食い違う",
+  "summary": "guard-config は保護対象の claude home を自分の位置から導出する（hook-013）。ところが「自分の位置」の綴りは、ランタイムと OS によって、settings.json に登録されている綴りと食い違う。Node: ESM ローダーが import.meta.url のシンボリックリンクを解決するので、macOS の tmpdir()（/var/folders/... は /private/var/folders/... へのリンク）経由で入れると正規化後の綴りになる。PowerShell: $PSCommandPath は Linux/macOS ではリンクを解決しないが、Windows では 8.3 短縮名（C:\\Users\\RUNNER~1\\...）を長い形へ展開する。どちらの場合も、保護判定がパスをテキストで照合しているため、エージェントが実際に渡してくる綴り（= settings.json に 登録されている綴り）が保護対象と一致せず、フックは登録されているのに実際に使われている settings.json が無防備になる。起動された綴り（Node は process.argv[1]、PowerShell は [Environment]::GetCommandLineArgs() の -File 引数）からも home を導出し、両方を守ることで塞いだ。パスの綴りが食い違って guard が無力化される問題そのものは hook-008 と同じ class で、あちらは guard-destructive で 一度閉じている。1つのフックを直しただけで class に対する回帰テストを足さなかったため、guard-config で別の形で再発した。",
   "layer": "hook",
   "kind": "limitation",
-  "severity": "low",
+  "severity": "medium",
   "confidence": "measured",
   "origin": "CHANGELOG.md#未リリース",
-  "measured_on": "2026-09-21",
+  "measured_on": "2026-09-22",
   "environment": {
     "os": "Linux",
     "shell": "pwsh",
@@ -16,31 +16,36 @@
     "node_version": "v22.22.2"
   },
   "repro": [
-    "一時ディレクトリに real/ を作り、hooks/guard-config.ps1 を置く。real/ へのシンボリックリンク link/ を作る",
-    "link/hooks/guard-config.ps1 を起動し、tool_input.file_path = link/settings.json を渡すと exit 2（ブロック）。$PSCommandPath が link/ の綴りを保持しているため",
-    "同じ起動で tool_input.file_path = real/settings.json を渡すと exit 0（許可）。解決先の綴りは保護対象に入っていない",
-    "Node 版（guard-config.mjs）で同じ2つを試すと、どちらも exit 2 になる。Node は process.argv[1] と import.meta.url の両方から home を導出するため",
-    "kit/scripts/test-guard-config.mjs の『installed behind a symlink』節が、Node 版について両方向を固定している"
+    "一時ディレクトリに real/ を作り hooks/guard-config.mjs を置く。real/ へのシンボリックリンク link/ を作る",
+    "link/hooks/guard-config.mjs を起動し tool_input.file_path = link/settings.json を渡すと、修正前は exit 0（許可）。import.meta.url が real/ に解決されるため",
+    "TMPDIR をシンボリックリンク経由のディレクトリに向けて test-guard-config.mjs を回すと、修正前の実装は3件落ちる。macOS の CI と同じ内訳",
+    "同条件で test-probe-guards.mjs を回すと 6 pass / 6 fail になる。Windows の CI と同じ内訳",
+    "PowerShell 版は Windows の CI（test-probe-guards.mjs --target ps）でのみ落ちた。pwsh -File に 8.3 短縮名のパスを渡すと $PSCommandPath が長い形で返るため",
+    "Linux の pwsh 7.4.6 では $PSCommandPath はリンクを解決しない（起動された綴りのまま返る）ので、この経路では再現しない"
   ],
-  "status": "open_recorded",
-  "why_not_closed": "祖先のシンボリックリンクまで解決するには ResolveLinkTarget（.NET 6+）が要り、Windows PowerShell 5.1 には無い。CI は Windows ジョブで 5.1 を回しているので、5.1 で動かない書き方は入れられない。ランタイムの有無で分岐する実装は書けるが、この差が実際に効くのは macOS + pwsh でシンボリックリンクを経由する home に入れた場合だけで、そこを検証できる環境が手元に無い。確かめられないものを『塞いだ』と書くよりは、差として記録して残す判断をした（2026-09-21）。Node 版が保護を広げた分には影響しない（広げる方向のみ）。",
+  "status": "closed",
   "detection": {
     "checkable": true,
     "kind": "file-content",
     "target": "kit/claude/hooks/guard-config.mjs",
     "pattern": "const INVOKED_HOME = process.argv[1]",
     "expect": "present",
-    "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンク経由で登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS の CI が実際にこれで落ちた。"
+    "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンクや 8.3 短縮名を経由して登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS と Windows の CI が実際にこれで落ちた。PowerShell 版の対応する行は [Environment]::GetCommandLineArgs() を読む箇所。"
   },
   "related": [
+    "hook-008",
     "hook-013"
   ],
   "tags": [
+    "8dot3",
     "guard-config",
-    "powershell",
-    "symlink",
+    "macos",
     "path-spelling",
+    "powershell",
+    "recurrence",
+    "symlink",
     "twin-drift",
-    "macos"
-  ]
+    "windows"
+  ],
+  "fix": "Node 版は process.argv[1]、PowerShell 版は [Environment]::GetCommandLineArgs() の .ps1 引数からも home を導出し、正規化後の綴りと合わせて両方を保護対象に入れる（和集合。広げる方向のみなので、守る範囲が狭まることはない）。class に対する回帰テストとして、TMPDIR をシンボリックリンク経由に向けて guard-config と probe-guards を回す ステップを CI の Ubuntu ジョブに追加した。これで macOS と Windows の両方の失敗が、いちばん速いジョブで再現する。残る既知の差: Linux/macOS の pwsh では、シンボリックリンクを解決した先の綴りは保護されない（祖先のリンクまで解決するには ResolveLinkTarget（.NET 6+）が要り、CI が回している Windows PowerShell 5.1 には無い）。Node 版はそちらも保護するので、この1点だけ Node の方が広い。"
 }

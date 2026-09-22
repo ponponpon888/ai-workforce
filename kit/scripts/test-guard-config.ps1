@@ -366,6 +366,52 @@ if (-not $linked) {
 }
 Remove-Item -LiteralPath $realHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# The Windows CI failure, in a form every platform can run.
+#
+# PowerShell normalizes $PSCommandPath: on Windows an 8.3 short path
+# (C:\Users\RUNNER~1\...) comes back expanded to the long form, so the home
+# derived from it does not match the spelling settings.json registered, and the
+# home actually in use went unprotected. Only the Windows job caught it.
+#
+# A "/./" detour in the invocation reproduces the same split anywhere:
+# PowerShell drops it from $PSCommandPath and keeps it in
+# [Environment]::GetCommandLineArgs(). Built by hand rather than with
+# Join-Path, which would normalize the detour away and quietly test nothing.
+Write-Host ''
+Write-Host 'invoked by a path PowerShell normalizes:' -ForegroundColor White
+$detourHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-detour-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $detourHome 'hooks') -Force | Out-Null
+Copy-Item -LiteralPath $Hook -Destination (Join-Path $detourHome 'hooks\guard-config.ps1')
+$sep = [System.IO.Path]::DirectorySeparatorChar
+$detourHook = $detourHome + $sep + '.' + $sep + 'hooks' + $sep + 'guard-config.ps1'
+$detourSettings = $detourHome + $sep + '.' + $sep + 'settings.json'
+
+function Invoke-DetouredHook([string] $FilePath) {
+    $json = @{
+        session_id      = 'test'
+        hook_event_name = 'PreToolUse'
+        cwd             = (Get-Location).Path
+        tool_name       = 'Edit'
+        tool_input      = @{ file_path = $FilePath }
+    } | ConvertTo-Json -Depth 5 -Compress
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $json | & $pwshExe -NoProfile -File $detourHook 2>&1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+}
+
+# Before this was fixed, the first of these was allowed: $PSCommandPath had
+# already lost the detour, so the spelling the caller used matched nothing.
+Assert-Result 'the spelling this hook was invoked by, detour and all' $BLOCK (Invoke-DetouredHook $detourSettings)
+Assert-Result 'the normalized spelling of the same file' $BLOCK (Invoke-DetouredHook (Join-Path $detourHome 'settings.json'))
+Assert-Result 'an ordinary file under the detour is still allowed' $ALLOW (Invoke-DetouredHook ($detourHome + $sep + '.' + $sep + 'notes.txt'))
+Remove-Item -LiteralPath $detourHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Remove-Item -LiteralPath $ClaudeHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''

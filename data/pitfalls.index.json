@@ -17,8 +17,8 @@
       "unverified": 1
     },
     "by_status": {
-      "closed": 17,
-      "open_recorded": 3,
+      "closed": 18,
+      "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
@@ -139,8 +139,8 @@
       "target": "kit/claude/hooks/guard-config.mjs",
       "pattern": "const INVOKED_HOME = process.argv[1]",
       "expect": "present",
-      "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンク経由で登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS の CI が実際にこれで落ちた。",
-      "severity": "low"
+      "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンクや 8.3 短縮名を経由して登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS と Windows の CI が実際にこれで落ちた。PowerShell 版の対応する行は [Environment]::GetCommandLineArgs() を読む箇所。",
+      "severity": "medium"
     },
     {
       "id": "install-001",
@@ -529,26 +529,30 @@
       "id": "hook-014",
       "set": "pitfalls",
       "file": "data/pitfalls/hook-014.json",
-      "title": "PowerShell版のguard-configは、シンボリックリンクを解決した先の綴りを保護しない",
+      "title": "guard-configが守る場所を「自分の位置」から決めるとき、パスの綴りがランタイムごとに食い違う",
       "layer": "hook",
       "kind": "limitation",
-      "severity": "low",
+      "severity": "medium",
       "confidence": "measured",
-      "status": "open_recorded",
+      "status": "closed",
       "stale_risk": "unknown_version",
       "origin": "CHANGELOG.md#未リリース",
       "has_prose": true,
       "checkable": true,
       "related": [
+        "hook-008",
         "hook-013"
       ],
       "tags": [
+        "8dot3",
         "guard-config",
-        "powershell",
-        "symlink",
+        "macos",
         "path-spelling",
+        "powershell",
+        "recurrence",
+        "symlink",
         "twin-drift",
-        "macos"
+        "windows"
       ]
     },
     {

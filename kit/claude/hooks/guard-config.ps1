@@ -41,6 +41,26 @@ Set-StrictMode -Version Latest
 # $PSCommandPath and $PSScriptRoot empty inside a param() default when
 # [CmdletBinding()] is present.
 $ownHome = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+
+# The spelling this hook was INVOKED by, which is what settings.json holds and
+# what an agent is handed. $PSCommandPath above is normalized by PowerShell: on
+# Windows an 8.3 short path (C:\Users\RUNNER~1\...) comes back expanded to the
+# long form, so on its own it does not match the registered spelling and the
+# home in actual use goes unprotected. Node's twin has the same split between
+# import.meta.url and process.argv[1]. Both spellings are protected; widening
+# what is refused is safe, narrowing it silently is not.
+# See data/pitfalls/hook-014.json and hook-008.json.
+$invokedHome = $null
+try {
+    $scriptArg = $null
+    foreach ($arg in [Environment]::GetCommandLineArgs()) {
+        if ($arg -and $arg.ToLowerInvariant().EndsWith('.ps1')) { $scriptArg = $arg }
+    }
+    if ($scriptArg) { $invokedHome = Split-Path -Parent (Split-Path -Parent $scriptArg) }
+} catch {
+    $invokedHome = $null
+}
+
 $defaultHome = Join-Path $HOME '.claude'
 $explicitHome = $PSBoundParameters.ContainsKey('ClaudeHome') -or [bool] $env:AIWF_CLAUDE_HOME
 if (-not $ClaudeHome) {
@@ -53,7 +73,7 @@ if (-not $ClaudeHome) {
 # is protected alongside the installed one: a copy registered straight from a
 # checkout would otherwise stop protecting $HOME\.claude, which it does today.
 $script:ProtectedHomes = if ($explicitHome) { @($ClaudeHome) }
-    else { @($ClaudeHome, $defaultHome) | Select-Object -Unique }
+    else { @($ClaudeHome, $invokedHome, $defaultHome) | Where-Object { $_ } | Select-Object -Unique }
 
 # Windows paths are case-insensitive end to end; C:\Users\X\.claude and
 # c:\users\x\.claude name the same directory. Normalize case only for the

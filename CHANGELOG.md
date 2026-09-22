@@ -78,7 +78,15 @@
   テストは Node 版 45 → 53 件、PowerShell 版 45 → 52 件で、修正前の実装では増やした分の
   うち4件が落ちることも確認した。`probe-guards` の不一致判定も新しい挙動に合わせ、
   `AIWF_CLAUDE_HOME` が別の場所を指しているときだけ警告して incomplete にする（12件）。
-- 上の修正を macOS の CI が落として、**もう1段の穴**が出た。Node の ESM ローダーは
+- 上の修正を macOS の CI が落として、**もう1段の穴**が出た。これは新種ではなく
+  [hook-008](data/pitfalls/hook-008.json) と同じ class の再発で、あちらは
+  `guard-destructive` で一度閉じている（「直接起動されたときだけ動く」判定が、
+  シンボリックリンク経由だと成立せず、フックが何も見ずに exit 0 した）。あのときも
+  落ちたのは macOS のジョブだけだった。**1つのフックを直しただけで、class に対する
+  回帰テストを足していなかった**ので、同じ仕組みが guard-config では「保護対象の home を
+  どう決めるか」という別の形で戻ってきた。下の CI ステップは、本来 hook-008 を閉じた
+  ときに足すべきものだった。
+  Node の ESM ローダーは
   `import.meta.url` のシンボリックリンクを解決するので、自分の位置から導出した home は常に
   正規化後の綴りになる。macOS の `tmpdir()` は `/var/...`（`/private/var/...` へのリンク）
   なので、**`settings.json` に登録されている綴り＝エージェントが実際に渡してくる綴りが、
@@ -93,12 +101,22 @@
   したときは数十秒で分かる（macOS / Windows ジョブの完走を待たずに済む）。ステップ自体が
   「TMPDIR が本当にリンク経由になっているか」を先に確かめてから走る（条件が崩れた状態で
   緑になるのは、テストが無いのと同じなので）。
-- PowerShell 版は `$PSCommandPath` がリンクを解決しないため、この不具合は元から無い
-  （起動された綴りを保護している）。逆に**解決先の綴りは保護しない**という差が残るので、
-  [hook-014](data/pitfalls/hook-014.json)（status: open_recorded）に記録した。祖先の
-  シンボリックリンクまで解決するには `ResolveLinkTarget`（.NET 6+）が要り、CI が回している
-  Windows PowerShell 5.1 には無い。確かめられない環境（macOS + pwsh）の話なので、塞いだ
-  ことにせず差として残す。
+- **PowerShell 版にも同じ不具合があった。** 最初はそう書いていなかった（「`$PSCommandPath` は
+  リンクを解決しないので元から無い」）が、それは Linux の pwsh 7.4.6 で測っただけの話を
+  Windows へ一般化した誤りで、Windows の CI が落として分かった。**Windows の PowerShell は
+  8.3 短縮名（`C:\Users\RUNNER~1\...`）を長い形へ展開する**ので、`$PSCommandPath` から
+  導出した home は登録された綴りと食い違う。Node の `import.meta.url` と同じ壊れ方が、
+  別の仕組みで起きていた。`[Environment]::GetCommandLineArgs()` は `-File` に渡された生の
+  引数を返す（`process.argv[1]` 相当）ので、そこからも導出して両方の綴りを守るようにした。
+  テストは、起動パスに `/./` の迂回を入れる形にした。PowerShell は `$PSCommandPath` から
+  これを落とし、生の引数には残すので、**8.3 と同じ食い違いがどのプラットフォームでも作れる**。
+  修正前の実装ではこのケースが落ちることを確認済み（PowerShell 版 52 → 55 件）。
+  `test-guard-config.ps1` は Ubuntu でも回しているので、次は最安のジョブで捕まる。
+- 残る差は1点だけ: Linux / macOS の pwsh では、**シンボリックリンクを解決した先の綴り**を
+  PowerShell 版が保護しない（Node 版は保護する）。祖先のリンクまで解決するには
+  `ResolveLinkTarget`（.NET 6+）が要り、CI が回している Windows PowerShell 5.1 には無い。
+  [hook-014](data/pitfalls/hook-014.json) に、両ランタイムの綴りの食い違いとしてまとめ直した
+  （status: closed。残差は `fix` の中に明記）。
 
 - `docs/01`（2 層の CLAUDE.md）・`docs/03`（役割分担）・`docs/05`（本番 DB の取り決め）・
   `docs/06`（チャット側の穴を塞ぐ）・`docs/07`（GitHub と Vercel の穴）の英訳を追加。これで

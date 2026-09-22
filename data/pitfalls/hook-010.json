@@ -1,14 +1,13 @@
 {
   "id": "hook-010",
   "title": "guard-sqlはシェル経由のコマンドを無害化しないため、文字列として書いてあるだけのDDLキーワードにも反応する",
-  "summary": "guard-sql.mjsのneutralize()は、grammarが'shell'（BashまたはPowerShellツールのcommandフィールド）のときは何もせずsqlをそのまま返す（if (grammar === 'shell') return sql;）。これは意図的な設計で、SQL文法の無害化（--を行コメントとして消す等）をシェルのコマンド行に当てると、npx supabase db execute --sql 'truncate bookings' のような --sql オプションごと消えてTRUNCATEが検査から外れる、より重い穴を過去に作った経緯がある（docs/02-guardrails.md「3つ目は、賢くしたせいで空きました」）。その結果として、シェル経由のコマンドはSQLクライアントを起動するかどうか（SQL_CLIENT_RE）とDROP/TRUNCATE/WHEREなしUPDATE・DELETEの出現だけを、引用符やコメントの意味を解さない生の文字列一致で判定している。SQLクライアントの名前（psql等）とDDLキーワード（DROP/TRUNCATE等）が、実行されるSQLとしてではなく単なるテキスト（コミットメッセージ、echoの引数、コメントなど）として同じシェルコマンドの中に両方出てくると、guard-sqlはブロックする。安全側に倒れる誤検知であり、危険なSQLを通す方向の穴ではない。",
+  "summary": "guard-sql は、シェル経由のコマンドについて DDL キーワードを「コマンド行の生テキスト」に対して照合していた。そのため、SQL クライアントの名前とキーワードが、実行される SQL としてではなく単なるテキスト（コミットメッセージ、echo の引数、コメント）として同じコマンド行に現れると、guard-sql はブロックした。安全側に倒れる誤検知であり、危険な SQL を通す方向の穴ではない。着手前に実測したところ、代表的な10ケース中5件が誤検知で、本物の危険4件はすべて正しく阻止していた。共有レクサー（kit/claude/hooks/lib/shell-lex.*）でコマンド行を字句解析し、クライアントに実際に渡っている引数（psql -c、mysql -e、supabase db execute --sql、sqlite3 の位置引数など）だけを取り出して検査する形に変えて塞いだ。コマンド行そのものは一切書き換えない。",
   "layer": "hook",
   "kind": "limitation",
   "severity": "low",
   "confidence": "measured",
-  "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません既知の誤検知",
-
-  "measured_on": "2026-09-18",
+  "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません誤検知は塞ぎました",
+  "measured_on": "2026-09-22",
   "environment": {
     "os": "Linux",
     "shell": "bash",
@@ -21,21 +20,28 @@
     "exit 2、stderrに [guard-sql] BLOCKED: DROP is never allowed from an agent. が出る。実際にはpsqlは実行されておらず、DROPはコミットメッセージの文字列の一部でしかない",
     "同様に tool_input.command = `psql -c \"select 1\" && echo \"note: never run DROP TABLE in prod\"` でも同じくBLOCKされる。psqlに渡っているのはselect 1だけで、DROPはechoの引数の中",
     "比較のため tool_input.command = `git log --grep=\"TRUNCATE\" --oneline`（SQLクライアントを一切起動しない）を渡すと、SQL_CLIENT_REに一致しないため exit 0 で通る",
-    "guard-sql.mjsのneutralize()を読むと、grammar==='shell'のとき早期returnでSQL文法の無害化（文字列リテラル・コメントの除去）を一切行わず、生の文字列に対して/\\bDROP\\b/等の正規表現を直接当てていることを確認した"
+    "guard-sql.mjsのneutralize()を読むと、grammar==='shell'のとき早期returnでSQL文法の無害化（文字列リテラル・コメントの除去）を一切行わず、生の文字列に対して/\\bDROP\\b/等の正規表現を直接当てていることを確認した",
+    "修正後: 同じ4つの repro すべてで exit 0。psql -c \"DROP TABLE users\" / npx supabase db execute --sql \"truncate bookings\" / mysql app -e \"delete from t\" / sqlite3 app.db \"drop table t\" は引き続き exit 2"
   ],
-
-  "status": "open_recorded",
-  "why_not_closed": "安全に塞ぐには、シェルのコマンド行を実際にトークン化し、SQLクライアントに渡っている引数（psql -c の値、mysql -e の値など）だけを取り出して検査する必要がある。guard-destructive.mjs/.ps1が持つ文法ごとのレクサー（POSIXシェル/PowerShell/cmdを実際に構文解析する）を流用すれば作れるが、1本の正規表現やSQL文法の無害化をシェル文字列に当てる形で済ませようとすると、docs/02-guardrails.mdの「3つ目は、賢くしたせいで空きました」で一度実際に踏んだのと同じ失敗（--sqlオプションごと消えてTRUNCATEが検査から外れる、より重い安全側ではない穴）を繰り返しかねない。今回の誤検知はブロック方向（安全側）で、実害は「SQLクライアント名とDDLキーワードを同じコマンド内に文字列として書くと弾かれる」という限定的な不便にとどまるため、guard-destructiveの実装と同水準のテスト網羅を用意できるまでは、既知の制約として残す判断をした（2026-09-18）。",
-
+  "status": "closed",
   "detection": {
     "checkable": true,
     "kind": "file-content",
     "target": "kit/claude/hooks/guard-sql.mjs",
-    "pattern": "if (grammar === 'shell') return sql;",
+    "pattern": "function clientCallsIn(command, grammar) {",
     "expect": "present",
-    "message": "この早期returnを外して無害化を適用すると、npx supabase db execute --sql 'truncate bookings' のようなコマンドでTRUNCATEが検査から外れる可能性がある（過去に一度実際に起きた穴）。外すときはguard-destructiveのレクサーで実際の引数を取り出す形にすること。"
+    "message": "コマンド行から「クライアントに実際に渡っている SQL」だけを取り出す関数。これを消して生テキストへの照合に戻すと、コミットメッセージや echo の引数に DDL キーワードが入っているだけでブロックする誤検知が戻る。"
   },
-
-  "related": ["hook-005", "perm-006"],
-  "tags": ["guard-sql", "false-positive", "neutralize", "shell", "known-limitation"]
+  "related": [
+    "hook-005",
+    "perm-006"
+  ],
+  "tags": [
+    "guard-sql",
+    "false-positive",
+    "neutralize",
+    "shell",
+    "known-limitation"
+  ],
+  "fix": "guard-sql.mjs の clientCallsIn() / guard-sql.ps1 の Get-ClientCall() が、共有レクサーでコマンド行を解析し、SQL クライアントの呼び出しと、それに渡された SQL テキストだけを取り出す。クライアントでないコマンドは何も寄与しない。レクサーが読めなかった場合は従来のテキスト走査に落とす（答えが減るのは許容できるが、ブロックが減るのは許容できないため）。why_not_closed が警告していた「賢くしたせいで空く」失敗（--sql オプションごと消えて TRUNCATE が検査から外れる）は、構造的に起こらない: コマンド行に無害化を当てるのをやめ、引数を取り出すだけにしたため。テストは「止まってはいけない」側と「止まるべき」側を対にして追加した（Node 87 -> 91、PowerShell 87 -> 90）。修正前の実装では、増やした allow 側が落ちることを確認済み。"
 }

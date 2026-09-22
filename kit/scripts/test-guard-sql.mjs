@@ -176,18 +176,30 @@ assert('PRAGMA writable_schema over a SQLite MCP server', BLOCK,
 assert('MySQL statement through an ambiguous client', BLOCK,
   callHook('Bash', { command: 'npx prisma db execute --command "replace into t (id) values (1)"' }));
 
-console.log('\nknown limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):');
-// Shell-grammar text is never neutralized (see the block comment on neutralize()),
-// so a DDL keyword that is only TEXT -- not SQL actually sent to a client -- still
-// trips the guard when an SQL client is invoked anywhere in the same command. This
-// is a deliberate, documented trade-off (docs/02-guardrails.md), not an oversight.
-// If a change here makes these ALLOW, that is a real fix — update hook-010.json's
-// status/fix and docs/02 in the same change, do not just adjust this test.
-assert('SQL-client name and DROP as plain text, not executed SQL', BLOCK,
+console.log('\nwas hook-010, now ALLOW (a DDL keyword that is only text):');
+// These used to block. The hook matched DDL keywords against the whole command
+// line, so a keyword that was only TEXT -- not SQL sent to a client -- tripped it
+// whenever a client was named anywhere in the same command. hook-010 recorded
+// that as a known limitation and said what closing it would take: a real lexer,
+// so the argument a client is actually handed can be told from a word that
+// merely sits in the same line. That is what clientCallsIn() does now.
+//
+// These stay here as the allow side of that fix. The must-block cases below are
+// what proves the fix did not open a hole; both halves are needed.
+assert('SQL-client name and DROP as plain text, not executed SQL', ALLOW,
   callHook('Bash', { command: 'psql -c "select 1" && echo "note: never run DROP TABLE in prod"' }));
-assert('DDL keyword only in a commit message', BLOCK, callHook('Bash', {
+assert('DDL keyword only in a commit message', ALLOW, callHook('Bash', {
   command: `git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked by guard-sql"`,
 }));
+// The same keyword, in the same shapes, when it IS the statement being run.
+assert('the same DROP, actually executed', BLOCK,
+  callHook('Bash', { command: 'psql -c "select 1" && psql -c "DROP TABLE t"' }));
+assert('a DDL keyword written into a file is not executed', ALLOW,
+  callHook('Bash', { command: `printf '%s\\n' "run psql -c 'DROP TABLE t'" > notes.md` }));
+assert('a client mentioned only inside an echo argument', ALLOW,
+  callHook('Bash', { command: `echo "psql -c 'DROP TABLE users'"` }));
+assert('DROP hidden behind a SQL comment in -c is still read', BLOCK,
+  callHook('Bash', { command: 'psql -c "select 1; drop table t"' }));
 
 console.log('\nmust allow:');
 assert('DELETE with WHERE', ALLOW, callHook(SB, { query: 'delete from bookings where id = 1' }));

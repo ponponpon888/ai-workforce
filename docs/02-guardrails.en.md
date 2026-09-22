@@ -133,7 +133,7 @@ const pattern = new RegExp([
 Splitting on `;` happens after that, so a semicolon inside a string cannot break a statement in
 two.
 
-### Shell commands are not neutralized (a known false positive)
+### Shell commands are not neutralized (the false positive is fixed)
 
 The pass above only runs on text that reached the hook **as SQL**. It does not run on the
 `command` field of the `Bash` / `PowerShell` tools — the shell command line.
@@ -144,24 +144,36 @@ option such as `--sql` as a comment, and `npx supabase db execute --sql 'truncat
 its `TRUNCATE` from view. To avoid that, shell commands are scanned **unneutralized, as raw text**
 for `DROP` / `TRUNCATE` / `UPDATE`/`DELETE` without `WHERE`.
 
-The consequence: if the name of an SQL client (`psql`, say) and `DROP` / `TRUNCATE` both appear in
-the same shell command **as plain text, not as SQL actually sent to that client**, guard-sql
-blocks it.
+That used to mean: if the name of an SQL client (`psql`, say) and `DROP` / `TRUNCATE` both appeared
+in the same shell command **as plain text, not as SQL actually sent to that client**, guard-sql
+blocked it.
 
 ```bash
-psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # only runs select 1, still BLOCKED
+psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # only ran select 1, was BLOCKED
 git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked"  # blocked by the commit message itself
 ```
 
-The only real effect is a block — a false positive on the safe side, not a hole that lets
-dangerous SQL through. This very paragraph is why it can recur: it puts `psql` and `DROP` /
-`TRUNCATE` next to each other, so quoting it verbatim in a commit message can trigger it.
+The only real effect was a block — a false positive on the safe side, not a hole that let
+dangerous SQL through. But this very paragraph shows how often it came up: it puts `psql` and
+`DROP` next to each other, so quoting it verbatim in a commit message triggered it.
 
-**This is left as a known constraint for now.** Fixing it safely needs the same per-grammar lexer
-guard-destructive has (actually tokenizing Bash as POSIX shell, PowerShell as PowerShell) to pull
-out only the argument actually handed to the SQL client. A single regex, or applying SQL
-neutralization to shell text, risks repeating the exact "smarter but it opened a hole" mistake
-above. Recorded as [hook-010](../data/pitfalls/hook-010.json).
+**This is now fixed** ([hook-010](../data/pitfalls/hook-010.json), status: closed). Measured before
+the work: five of ten representative cases were false positives, and all four genuinely dangerous
+ones were correctly blocked.
+
+The fix is what hook-010 itself said it would take. The per-grammar lexers guard-destructive had
+were moved into a shared module
+([`kit/claude/hooks/lib/shell-lex.mjs`](../kit/claude/hooks/lib/shell-lex.mjs) and `.ps1`), and
+guard-sql now lexes the command line with them and inspects **only the arguments actually handed to
+a database client** (`psql -c`, `mysql -e`, `supabase db execute --sql`, sqlite3's positional
+statement, and so on). A command that is not a client contributes nothing, so
+`git commit -m "...psql -c 'DROP TABLE x'..."` yields nothing to scan.
+
+**The command line itself is still never rewritten.** The "smarter but it opened a hole" failure
+above — an option such as `--sql` swallowed whole, taking its `TRUNCATE` out of view — cannot recur,
+because nothing neutralizes the shell line any more; the extracted SQL is what gets neutralized, as
+SQL. A command line the lexer cannot read falls back to the old raw-text scan: fewer answers is
+acceptable, fewer blocks is not.
 
 ### MySQL and SQLite read the same string differently
 
@@ -217,6 +229,8 @@ apply and nothing is neutralized** — the conservative side of both.
 
 Tests: 47 -> 87 (42 refuse / 2 known limitation / 32 allow / 11 approval token). 16 of the 40 new
 cases are on the must-not-block side.
+Note: that breakdown is as of the dialect work. [hook-010](../data/pitfalls/hook-010.json) has since been
+closed, moving those 2 known-limitation cases to the allow side and taking the total to 91.
 
 ### The DDL approval token
 
@@ -1012,9 +1026,10 @@ node kit/scripts/test-guard-sql.mjs      # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1         # if you use the PowerShell hook
 ```
 
-87 cases in total (42 must block — 12 of them MySQL and 10 SQLite, 2 known-limitation
-still-block, 32 must allow, 11 approval-token). Both halves matter — the false-positive half is what keeps this guard from
-getting switched off.
+91 cases in total for the Node version, 90 for the PowerShell one. Both halves matter -- the
+false-positive half is what keeps this guard from getting switched off, and closing
+[hook-010](../data/pitfalls/hook-010.json) added cases to both sides in pairs: a DDL keyword that is
+only text must pass, and the same shape actually executed must not.
 
 ```
 guard-sql test suite (node)
@@ -1029,7 +1044,7 @@ must block:
   PASS  a file route with nothing readable behind it
   (excerpt; must block has 20 cases)
 
-known limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):
+was hook-010, now ALLOW (a DDL keyword that is only text):
   PASS  SQL-client name and DROP as plain text, not executed SQL
   PASS  DDL keyword only in a commit message
 
@@ -1047,7 +1062,7 @@ approval token:
   PASS  approved blind file route passes
   (excerpt; approval token has 11 cases)
 
-pass: 87   fail: 0
+pass: 91   fail: 0
 ```
 
 Two of the must-block cases are a known, deliberately unfixed false positive

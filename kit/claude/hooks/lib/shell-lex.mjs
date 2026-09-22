@@ -698,3 +698,29 @@ export function lexCmd(src) {
   endCommand();
   return { commands, nested: [] };
 }
+
+/**
+ * Words after the options of a wrapper. `valued` options consume the next
+ * word unless written as `--opt=value`. `--` ends the options.
+ */
+export function afterOptions(args, valued = []) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].v;
+    if (a === '--') return args.slice(i + 1);
+    if (a.length > 1 && a.startsWith('-')) {
+      if (valued.includes(a)) i++;
+      continue;
+    }
+    return args.slice(i);
+  }
+  return [];
+}
+
+export const valueAfter = (args, names) => {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i].v;
+    if (names.includes(a)) return i + 1 < args.length ? args[i + 1] : new Word('');
+    for (const name of names) if (name.startsWith('--') && a.startsWith(name + '=')) return new Word(a.slice(name.length + 1));
+  }
+  return null;
+};

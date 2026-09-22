@@ -17,8 +17,8 @@
       "unverified": 1
     },
     "by_status": {
-      "closed": 18,
-      "open_recorded": 2,
+      "closed": 19,
+      "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
@@ -101,9 +101,9 @@
       "id": "hook-010",
       "kind": "file-content",
       "target": "kit/claude/hooks/guard-sql.mjs",
-      "pattern": "if (grammar === 'shell') return sql;",
+      "pattern": "function clientCallsIn(command, grammar) {",
       "expect": "present",
-      "message": "この早期returnを外して無害化を適用すると、npx supabase db execute --sql 'truncate bookings' のようなコマンドでTRUNCATEが検査から外れる可能性がある（過去に一度実際に起きた穴）。外すときはguard-destructiveのレクサーで実際の引数を取り出す形にすること。",
+      "message": "コマンド行から「クライアントに実際に渡っている SQL」だけを取り出す関数。これを消して生テキストへの照合に戻すと、コミットメッセージや echo の引数に DDL キーワードが入っているだけでブロックする誤検知が戻る。",
       "severity": "low"
     },
     {
@@ -431,7 +431,7 @@
       "kind": "limitation",
       "severity": "low",
       "confidence": "measured",
-      "status": "open_recorded",
+      "status": "closed",
       "stale_risk": "unknown_version",
       "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません既知の誤検知",
       "has_prose": true,

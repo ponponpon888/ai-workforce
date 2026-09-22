@@ -140,40 +140,6 @@ function Add-GdAssignment {
     return $true
 }
 
-# Words after the options of a wrapper. Valued options consume the next word
-# unless written as '--opt=value'. '--' ends the options.
-function Get-GdAfterOptions {
-    param([object[]] $Items, [string[]] $Valued = @())
-    if ($null -eq $Items) { return , @() }
-    for ($i = 0; $i -lt $Items.Count; $i++) {
-        $a = $Items[$i].V
-        if ($a -ceq '--') { return , (Get-GdSlice $Items ($i + 1)) }
-        if ($a.Length -gt 1 -and $a.StartsWith('-')) {
-            if ($Valued -ccontains $a) { $i++ }
-            continue
-        }
-        return , (Get-GdSlice $Items $i)
-    }
-    return , @()
-}
-
-function Get-GdValueAfter {
-    param([object[]] $Items, [string[]] $Names)
-    if ($null -eq $Items) { return $null }
-    for ($i = 0; $i -lt $Items.Count; $i++) {
-        $a = $Items[$i].V
-        if ($Names -ccontains $a) {
-            $next = Get-GdItem $Items ($i + 1)
-            if ($null -ne $next) { return $next }
-            return [GdWord]::new('')
-        }
-        foreach ($name in $Names) {
-            if ($name.StartsWith('--') -and $a.StartsWith($name + '=')) { return [GdWord]::new($a.Substring($name.Length + 1)) }
-        }
-    }
-    return $null
-}
-
 $script:RunnerNames = @(
     'sudo', 'doas', 'nice', 'ionice', 'timeout', 'time', 'nohup', 'command', 'builtin', 'noglob',
     'nocorrect', 'exec', 'stdbuf', 'setsid', 'chronic', 'unbuffer', 'caffeinate', 'busybox',

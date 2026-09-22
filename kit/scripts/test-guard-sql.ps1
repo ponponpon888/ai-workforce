@@ -186,14 +186,21 @@ Assert-Result 'PRAGMA writable_schema over a SQLite MCP server' $BLOCK (Invoke-H
 Assert-Result 'MySQL statement through an ambiguous client' $BLOCK (Invoke-Hook 'Bash' @{ command = 'npx prisma db execute --command "replace into t (id) values (1)"' })
 
 Write-Host ''
-Write-Host 'known limitation, still BLOCK (hook-010, open_recorded -- not a bug to fix silently):' -ForegroundColor White
-# Shell-grammar text is never neutralized (see the comment on Get-NeutralizedSql), so a
-# DDL keyword that is only TEXT -- not SQL actually sent to a client -- still trips the
-# guard when an SQL client is invoked anywhere in the same command. Deliberate, documented
-# trade-off (docs/02-guardrails.md). If a change here makes these ALLOW, that is a real
-# fix -- update hook-010.json and docs/02 in the same change, do not just adjust this test.
-Assert-Result 'SQL-client name and DROP as plain text, not executed SQL' $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && echo "note: never run DROP TABLE in prod"' })
-Assert-Result 'DDL keyword only in a commit message' $BLOCK (Invoke-Hook 'PowerShell' @{ command = 'git commit -m "docs: explain why psql -c ''DROP TABLE x'' is blocked by guard-sql"' })
+Write-Host 'was hook-010, now ALLOW (a DDL keyword that is only text):' -ForegroundColor White
+# These used to block. The hook matched DDL keywords against the whole command line, so a
+# keyword that was only TEXT -- not SQL sent to a client -- tripped it whenever a client
+# was named anywhere in the same command. hook-010 recorded that as a known limitation and
+# said what closing it would take: a real lexer, so the argument a client is actually
+# handed can be told from a word that merely sits in the same line. That is Get-ClientCall.
+#
+# These stay as the allow side of that fix; the must-block cases are what prove it did not
+# open a hole. Both halves are needed.
+Assert-Result 'SQL-client name and DROP as plain text, not executed SQL' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && echo "note: never run DROP TABLE in prod"' })
+Assert-Result 'DDL keyword only in a commit message' $ALLOW (Invoke-Hook 'PowerShell' @{ command = 'git commit -m "docs: explain why psql -c ''DROP TABLE x'' is blocked by guard-sql"' })
+# The same keyword, in the same shapes, when it IS the statement being run.
+Assert-Result 'the same DROP, actually executed' $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && psql -c "DROP TABLE t"' })
+Assert-Result 'a client mentioned only inside an echo argument' $ALLOW (Invoke-Hook 'Bash' @{ command = 'echo "psql -c ''DROP TABLE users''"' })
+Assert-Result 'DROP behind a semicolon in -c is still read' $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1; drop table t"' })
 
 Write-Host ''
 Write-Host 'must allow:' -ForegroundColor White

@@ -1141,14 +1141,15 @@ hook-007 自体には `status` を持たせられない（スキーマの R09）
 ### 動作確認
 
 ```bash
-node kit/scripts/test-guard-config.mjs     # Windows / macOS / Linux
+node kit/scripts/test-guard-config.mjs     # pass: 53   fail: 0
 ```
 
 ```powershell
 .\kit\scripts\test-guard-config.ps1        # PowerShell 版を使う場合
 ```
 
-合計 45 ケース（PreToolUse と ConfigChange で 30、SessionStart で 15）。
+そのうち SessionStart が 15 件で、残りが PreToolUse と ConfigChange です。
+合計はコマンドの隣にしか書きません。そこは `check-doc-commands.mjs` が実際に走らせて照合します。
 
 ```
 SessionStart:

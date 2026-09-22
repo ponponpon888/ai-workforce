@@ -1,0 +1,49 @@
+{
+  "id": "doc-002",
+  "title": "README がコマンドの隣に載せていた実行結果が古くなり、10箇所のうち6箇所が実際の出力と違っていた",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "summary": "README.md と README.en.md は、実行するコマンドのすぐ隣にそのコマンドの出力を書いている（node kit/scripts/test-guard-sql.mjs  # pass: 87  fail: 0）。誰も走らせていなかったので古くなった。実測時点で guard-sql は 91、guard-config は 53 を出していたのに、両 README の10箇所のうち6箇所が 87 と 45 のままだった。コマンドを実行した読者は、それを読んでいるページと違う数字を見ることになる。doc-001 のひとつ外側で、あちらは散文がレコードのフィールドを引用したまま古くなり、こちらは散文がコマンドの出力を引用したまま古くなった。あわせて測ると、壊れていたのは合計値だけで、内訳（止める 42 / 通す 32 / 承認トークン 11 など）は今も正しかった。ケースを1件足すたびに変わるのは合計値なので、合計だけが腐る。",
+  "origin": "docs/13-doc-todos.md#コマンドの隣に書いた結果が本当か",
+  "measured_on": "2026-09-22",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "node kit/scripts/test-guard-sql.mjs は pass: 91 fail: 0 を出す。README.md:104 と :126、README.en.md:118 と :143 は # pass: 87 fail: 0 と書いていた",
+    "node kit/scripts/test-guard-config.mjs は pass: 53 fail: 0 を出す。README.md:128 と README.en.md:145 は # pass: 45 fail: 0 と書いていた",
+    "guard-secrets（65）と guard-destructive（219）の4箇所は正しく、10箇所中6箇所が古い状態だった",
+    "docs/00-principles.md は guard-sql 44 ケース・pull-all 23 ケースと書いていたが、実測は 91 と 73",
+    "docs/02-guardrails.md と .en.md は guard-config を合計 45 ケースと書いていたが、実測は 53",
+    "docs/13-doc-todos.md は test-check-doc-links を26件と書いていたが、実測は 30",
+    "内訳は節ごとに数えて照合した。guard-sql は止める 42（うち MySQL 12 / SQLite 10）/ 通す 32 / 承認トークン 11 / hook-010 で通す側へ移った 6 = 91 で、hook-010 の分以外はすべて既存の記述どおりだった",
+    "kit/scripts/check-doc-commands.mjs を修正前の README に対して走らせると、6箇所を名指しして exit 1 になる"
+  ],
+  "status": "closed",
+  "fix": "kit/scripts/check-doc-commands.mjs を追加し、docs.yml と test.yml の両方から走らせる。フェンスの中の node kit/scripts/test-<name>.mjs  # pass: N  fail: N の行を見つけて、そのスイートを実際に実行し、出力と突き合わせる。新しい記法は作っていない。この書き方はリポジトリが元から使っていたもので、検査はそれを実行するだけ。実行するのは実在する kit/scripts/test-*.mjs だけで、引数を文書から取ることは決してしない（ページに書いてあるものを走らせる検査は、ページを編集すれば何でも実行できる仕組みになる。テストの大半はこの一点に割いてある）。あわせて、コマンドの隣に置けない合計値は消した: README の表のテスト件数の列（10行下のフェンスと重複していた）、docs/00 の2つ、docs/02 日英の合計。合計はコマンドの隣に一度だけ書く。スイートの出力は2種類あり（このリポジトリ独自のランナーの pass: N fail: N と、node:test の TAP）、片方しか読めない検査は残り半分を黙って検査しなくなるので両方読む。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": ".github/workflows/docs.yml",
+    "pattern": "check-doc-commands",
+    "expect": "present",
+    "message": "docs ワークフローから check-doc-commands.mjs の実行が消えると、コマンドの隣に書いた結果がまた古くなる。test.yml 側の同じ実行も要る。テストを1件足しただけで、Markdown を1行も触らずに README が偽になるため。"
+  },
+  "related": [
+    "doc-001",
+    "hook-010"
+  ],
+  "tags": [
+    "docs",
+    "drift",
+    "readme",
+    "ci",
+    "recurrence"
+  ]
+}

@@ -1,7 +1,13 @@
 # 11. 落とし穴の静的検査
 
 記録の形を検査する `validate-pitfalls.mjs` に加え、`lint-pitfalls.mjs` は
-インデックスの `checks` を対象ファイルに適用します。Node.js 20以上、追加依存なしです。
+インデックスの `checks` を対象ファイルに適用します。Node.js 22以上、追加依存なしです。
+
+20以上ではなく22以上なのは、**Node 20 が 2026-04-30 にサポート終了している**ためです
+（[nodejs/Release](https://github.com/nodejs/Release) の schedule.json）。22 は修正が
+続いている一番古い系列で、2027-04-30 までです。CI も同じ 22 で回しています。
+「20以上」と書いたまま CI も20で回していたので、**サポートの切れたランタイムで全部が緑**
+という状態が5ヶ月続いていました。
 
 ```powershell
 node kit/scripts/lint-pitfalls.mjs

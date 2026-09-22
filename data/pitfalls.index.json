@@ -6,24 +6,24 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 28,
+    "total": 29,
     "by_set": {
-      "pitfalls": 28
+      "pitfalls": 29
     },
     "by_confidence": {
       "measured": 21,
       "inferred": 3,
-      "documented": 3,
+      "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 21,
+      "closed": 22,
       "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 18,
+      "trap": 19,
       "limitation": 6,
       "behaviour": 4
     },
@@ -32,18 +32,27 @@
       "permissions": 6,
       "hook": 16,
       "runtime": 3,
-      "ci": 1,
+      "ci": 2,
       "external": 1
     },
     "by_stale_risk": {
       "unknown_version": 15,
       "ok": 6,
-      "not_applicable": 7
+      "not_applicable": 8
     },
     "without_prose": 10,
-    "checkable": 17
+    "checkable": 18
   },
   "checks": [
+    {
+      "id": "ci-002",
+      "kind": "file-content",
+      "target": ".github/workflows/test.yml",
+      "pattern": "node-version: 20",
+      "expect": "absent",
+      "message": "CI が Node 20 に戻ると、サポートの切れたランタイムでの緑に逆戻りする。これは20への退行しか見ておらず、22 の終了（2027-04-30）には気づけない。",
+      "severity": "low"
+    },
     {
       "id": "doc-001",
       "kind": "file-content",
@@ -220,6 +229,31 @@
         "billing",
         "cost-per-minute",
         "not-our-code"
+      ]
+    },
+    {
+      "id": "ci-002",
+      "set": "pitfalls",
+      "file": "data/pitfalls/ci-002.json",
+      "title": "CI が5ヶ月間、サポートの切れた Node 20 で全テストを回していた",
+      "layer": "ci",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "documented",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/11-pitfall-linter.md#11-落とし穴の静的検査",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "ci-001"
+      ],
+      "tags": [
+        "ci",
+        "node",
+        "end-of-life",
+        "false-sense-of-security",
+        "external-fact"
       ]
     },
     {

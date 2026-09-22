@@ -31,6 +31,20 @@
   報告するようになる（フックが読めるのに呼ばれない状態が残っているため）。インストーラの
   再実行が必要。新規インストールは static-pass。
 
+- GitHub Actions の Node 20 非推奨警告を解消した。毎回の CI ログに
+  「actions/checkout@v4, actions/setup-node@v4 が Node 20 を指定しているので Node 24 で
+  強制実行している」と出ていたもの。`action.yml` の `runs.using` を直接確認して、
+  **node24 を満たす最小のメジャー**に上げた（`checkout` v4 → v5、`setup-node` v4 → v5、
+  `upload-artifact` v4 → **v6**）。`upload-artifact` だけ v5 がまだ node20 だったため v6。
+- `setup-node` v5 には破壊的変更がある。`package.json` に `packageManager` があると
+  **キャッシュが自動で有効になる**。このリポジトリには `package.json` もロックファイルも
+  無く、`cache:` の指定も無いので発動しないことを確認したうえで上げた。
+- `critical-gate.yml` は SHA 固定という既存の書き方を保った。タグから commit SHA を引き、
+  **固定した SHA が本当にそのタグを指すことを独立に検証した**（最初の検証スクリプトが
+  `^{}` だけを見ていて空振りし、3件とも WRONG と出た。これらは lightweight tag で
+  `^{}` が存在しないためで、pin 側ではなく検証側の誤りだった。両方を見る形に直して確認済み）。
+
+
 - **[hook-010](data/pitfalls/hook-010.json) を塞いだ**（status: closed）。`guard-sql` が、シェル経由の
   コマンドについて DDL キーワードを**コマンド行の生テキスト**に照合していたため、SQL クライアントの
   名前とキーワードが「実行される SQL としてではなく単なるテキスト」として同じ行に出てくるだけで

@@ -50,8 +50,8 @@ jobs:
     name: test (Ubuntu)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -157,6 +157,7 @@ jobs:
           node kit/scripts/test-validate-pitfalls.mjs
           node kit/scripts/test-lint-pitfalls.mjs
           node kit/scripts/test-check-doc-todos.mjs
+          node kit/scripts/test-sql-tool-matcher.mjs
           node kit/scripts/build-pitfall-index.mjs
           changed=$(git status --porcelain -- data/pitfalls.index.json)
           if [ -n "$changed" ]; then
@@ -175,8 +176,8 @@ jobs:
     name: test (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -332,8 +333,8 @@ jobs:
     name: test (macOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
       - name: Test cross-platform entry points

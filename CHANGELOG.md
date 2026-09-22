@@ -11,6 +11,39 @@
 
 ## 未リリース
 
+- **`guard-sql` が MCP 経由の MySQL / SQLite を一度も検査していなかった**のを直した
+  （[hook-015](data/pitfalls/hook-015.json)）。方言対応を入れたとき、`guard-sql.mjs` と
+  `guard-sql.ps1` のツール名検査には `mcp__.*[Mm]ysql` / `[Mm]ariadb` / `[Ss]qlite` を足したが、
+  **`settings.json` の matcher に足し忘れていた**。Claude Code がルーティングに使うのは matcher
+  なので、フックはその文を読めるのに呼ばれない。フックへ直接ペイロードを渡す単体テストは
+  すべて通り、`doctor` も static-pass のままだった（検査する代表ツール名の一覧にも無かったため）。
+  守っているつもりで一度も呼ばれない、という形。
+- **同じドリフトを機械で縛った。** どのツールが guard-sql に届くかを決める場所は3つある
+  （`settings.json` の matcher / `guard-sql.mjs` の `SQL_TOOL_RE` / `guard-sql.ps1` の同じ検査）。
+  [hook-004](data/pitfalls/hook-004.json) が既に「matcher は2箇所にあり、片方だけ直すと効かない」を
+  記録していたが、**同期は人間への注意書きで、機械検査が無かった**。だからドリフトした。
+  `kit/scripts/test-sql-tool-matcher.mjs` を追加し、3箇所が同じ製品名を挙げていること、
+  および hook-004 が実際に踏んだコネクタ接頭辞つきの形（`mcp__claude_ai_Mysql__query`）に
+  3箇所すべてが一致することを検査する。**修正前の `settings.json` に対して走らせると、
+  両側の製品名を名指しして落ちることを確認済み。** `doctor` が matcher の網羅を確かめる
+  代表ツール名の一覧にも3つを足した。
+- この修正より前に入れたインストールは、`doctor` が `guard-sql.coverage` の error として
+  報告するようになる（フックが読めるのに呼ばれない状態が残っているため）。インストーラの
+  再実行が必要。新規インストールは static-pass。
+
+- GitHub Actions の Node 20 非推奨警告を解消した。毎回の CI ログに
+  「actions/checkout@v4, actions/setup-node@v4 が Node 20 を指定しているので Node 24 で
+  強制実行している」と出ていたもの。`action.yml` の `runs.using` を直接確認して、
+  **node24 を満たす最小のメジャー**に上げた（`checkout` v4 → v5、`setup-node` v4 → v5、
+  `upload-artifact` v4 → **v6**）。`upload-artifact` だけ v5 がまだ node20 だったため v6。
+- `setup-node` v5 には破壊的変更がある。`package.json` に `packageManager` があると
+  **キャッシュが自動で有効になる**。このリポジトリには `package.json` もロックファイルも
+  無く、`cache:` の指定も無いので発動しないことを確認したうえで上げた。
+- `critical-gate.yml` は SHA 固定という既存の書き方を保った。タグから commit SHA を引き、
+  **固定した SHA が本当にそのタグを指すことを独立に検証した**（最初の検証スクリプトが
+  `^{}` だけを見ていて空振りし、3件とも WRONG と出た。これらは lightweight tag で
+  `^{}` が存在しないためで、pin 側ではなく検証側の誤りだった。両方を見る形に直して確認済み）。
+
 - `docs/04`（複数案件運用）と `docs/08`（落とし穴の機械可読化）の英訳を追加。これで
   README と `docs/00`〜`08` が英語で読める。`CONTRIBUTING` の翻訳状況と、README.en から
   日本語ページへ落ちていたリンク（`docs/02` と `docs/04`）も直した。
@@ -28,6 +61,7 @@
   測定の記録なので、いまの値と違っても嘘ではない。書き換えたら記録が壊れる。
   「いま何件あるか」は生成物に任せ、「いつ測ったら何件だったか」は日付と対象を添えて凍結する。
   `docs/17` は変更していない。
+
 
 - **[hook-010](data/pitfalls/hook-010.json) を塞いだ**（status: closed）。`guard-sql` が、シェル経由の
   コマンドについて DDL キーワードを**コマンド行の生テキスト**に照合していたため、SQL クライアントの

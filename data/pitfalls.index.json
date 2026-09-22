@@ -433,7 +433,7 @@
       "confidence": "measured",
       "status": "closed",
       "stale_risk": "unknown_version",
-      "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません既知の誤検知",
+      "origin": "docs/02-guardrails.md#シェル経由のコマンドは無害化していません誤検知は塞ぎました",
       "has_prose": true,
       "checkable": true,
       "related": [

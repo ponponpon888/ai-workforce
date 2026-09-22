@@ -157,6 +157,7 @@ jobs:
           node kit/scripts/test-validate-pitfalls.mjs
           node kit/scripts/test-lint-pitfalls.mjs
           node kit/scripts/test-check-doc-todos.mjs
+          node kit/scripts/test-sql-tool-matcher.mjs
           node kit/scripts/build-pitfall-index.mjs
           changed=$(git status --porcelain -- data/pitfalls.index.json)
           if [ -n "$changed" ]; then

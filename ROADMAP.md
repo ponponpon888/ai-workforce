@@ -369,14 +369,21 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
   MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。残っているのは Claude Code 本体での実地確認。
 - 落とし穴レコードの追加、Issue からの受け入れ手順。英訳は `docs/01`・`docs/03`・`docs/05`・
   `docs/06`・`docs/07` を足して、4 本柱のうち 1・2・3 とチャット側の穴の話が英語で読める
-  状態にした。残りは `docs/04`・`08`。
+  状態にした。→ `docs/04`・`08` も足した（2026-09-22、
+  [PR #48](https://github.com/ponponpon888/ai-workforce/pull/48)）。これで README と
+  `docs/00`〜`08` が英語で読める。英語版が無いのは `docs/09` 以降（ツール個別のページ）と
+  `docs/17`・`docs/99`。
 - Vercel の権限調査と開発速度の実測。
 - 前身 `ai-workforce-os` のログ整理は別リポジトリの作業として扱う。今回は削除していない。
 - サブディレクトリ・dot ディレクトリの「通るはず」対照の再設計（実測第2回で対照がディレクトリ全体を
   覆う別の deny 行の中に置かれてしまい機能しなかった）。PowerShell ツール経由の書き込み
   （`Set-Content` 等）が Edit / Write ツールの deny を迂回できるかの検証も未着手。
-- `actions/checkout@v4` / `actions/setup-node@v4` が Node.js 20 廃止に伴い Node 24 に
-  強制されている旨の warning が CI に出ている（実害なし）。手が空いたときにバージョンを上げる。
+- ~~`actions/checkout@v4` / `actions/setup-node@v4` が Node.js 20 廃止に伴い Node 24 に
+  強制されている旨の warning が CI に出ている（実害なし）。手が空いたときにバージョンを上げる。~~
+  → 上げた（2026-09-22、[PR #47](https://github.com/ponponpon888/ai-workforce/pull/47)）。
+  各 action の `action.yml` の `runs.using` を確認して node24 を満たす最小のメジャーへ
+  （checkout v5 / setup-node v5 / upload-artifact v6）。`critical-gate.yml` は SHA 固定の
+  書き方を保ち、固定した SHA がそのタグを指すことを `git ls-remote` で独立に確認した。
 - ローカルの `C:\Dev\ai-workforce` チェックアウトの整理。開発は GitHub（main）が正本になり
   ローカルでは行わなくなったため、古いブランチ（`feat/pitfall-records` 上の未push2コミット、
   うち1つは意図しないマージコミット）と、残存する検証用 worktree（`ai-workforce-cg-verify` /
@@ -392,7 +399,15 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
   繰り返しかねない。誤検知は安全側（ブロック）に倒れるもので、危険な SQL を通す穴ではないため、
   guard-destructive 相当のテスト網羅を用意できるまでは塞がない。記録: `docs/02` の新設節
   「シェル経由のコマンドは無害化していません（既知の誤検知）」と
-  [hook-010](data/pitfalls/hook-010.json)（`status: open_recorded`）。
+  [hook-010](data/pitfalls/hook-010.json)。
+  → **塞いだ**（2026-09-22、[PR #45](https://github.com/ponponpon888/ai-workforce/pull/45)）。
+  上の判断は「guard-destructive 相当のテスト網羅を用意できるまでは塞がない」という条件つきで、
+  その条件が満たされた。[PR #44](https://github.com/ponponpon888/ai-workforce/pull/44) で
+  guard-destructive のレクサーを `kit/claude/hooks/lib/shell-lex.mjs` / `.ps1` として
+  共有モジュールに切り出し、PR #45 で guard-sql がそれを使ってコマンド行を読み、SQL クライアントに
+  実際に渡る引数だけを DDL 検査にかけるようにした。**コマンド行そのものは書き換えていない**ので、
+  「賢くしたせいで TRUNCATE が検査から外れる」形は避けている。レコードは
+  [hook-010](data/pitfalls/hook-010.json)（`status: closed`, `confidence: measured`）。
 - 落とし穴レコード132件の追加投入と、`checks` を回す linter 本体（linter は v0.1 で完成済みのため、
   ここは純粋にレコードのシード追加のみ）。
 - ~~競合調査で見つかったもう一つの穴（`cd /tmp && rm -rf x` 等が deny をすり抜ける）~~ → 前提の半分は

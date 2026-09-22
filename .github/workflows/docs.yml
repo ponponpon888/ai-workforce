@@ -26,6 +26,9 @@ on:
       - "kit/scripts/check-doc-todos.mjs"
       - "kit/scripts/test-check-doc-todos.mjs"
       - "kit/scripts/markdown-anchors.mjs"
+      - "kit/scripts/check-pitfall-claims.mjs"
+      - "kit/scripts/test-check-pitfall-claims.mjs"
+      - "data/pitfalls/**"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -36,6 +39,9 @@ on:
       - "kit/scripts/check-doc-todos.mjs"
       - "kit/scripts/test-check-doc-todos.mjs"
       - "kit/scripts/markdown-anchors.mjs"
+      - "kit/scripts/check-pitfall-claims.mjs"
+      - "kit/scripts/test-check-pitfall-claims.mjs"
+      - "data/pitfalls/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -58,6 +64,17 @@ jobs:
         run: |
           node kit/scripts/check-doc-links.mjs
           node kit/scripts/test-check-doc-links.mjs
+
+      # The inputs to this check are the Markdown, the records, and the
+      # checker itself -- data/pitfalls/** is in the paths filter above for
+      # that reason. A record whose status changes can falsify a sentence in a
+      # file the same commit never touches, and that is exactly how
+      # ROADMAP.md came to say hook-010 was still open after it was closed.
+      - name: Prose agrees with the pitfall records
+        shell: bash
+        run: |
+          node kit/scripts/check-pitfall-claims.mjs
+          node kit/scripts/test-check-pitfall-claims.mjs
 
       # test.yml runs these too, for pull requests that touch code. A
       # documentation-only one never reaches that workflow, so they run here as

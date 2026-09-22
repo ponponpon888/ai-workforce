@@ -28,6 +28,8 @@ on:
       - "kit/scripts/markdown-anchors.mjs"
       - "kit/scripts/check-pitfall-claims.mjs"
       - "kit/scripts/test-check-pitfall-claims.mjs"
+      - "kit/scripts/check-doc-commands.mjs"
+      - "kit/scripts/test-check-doc-commands.mjs"
       - "data/pitfalls/**"
       - ".github/workflows/docs.yml"
   pull_request:
@@ -41,6 +43,8 @@ on:
       - "kit/scripts/markdown-anchors.mjs"
       - "kit/scripts/check-pitfall-claims.mjs"
       - "kit/scripts/test-check-pitfall-claims.mjs"
+      - "kit/scripts/check-doc-commands.mjs"
+      - "kit/scripts/test-check-doc-commands.mjs"
       - "data/pitfalls/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -80,6 +84,16 @@ jobs:
         run: |
           node kit/scripts/check-pitfall-claims.mjs
           node kit/scripts/test-check-pitfall-claims.mjs
+
+      # A page that prints a suite's result next to the command is making a
+      # promise, so the suite is run and the promise checked. The other half of
+      # this is in test.yml: a change to a suite can falsify a README this
+      # workflow's paths filter never sees.
+      - name: Documented results are what the commands print
+        shell: bash
+        run: |
+          node kit/scripts/check-doc-commands.mjs
+          node kit/scripts/test-check-doc-commands.mjs
 
       # test.yml runs these too, for pull requests that touch code. A
       # documentation-only one never reaches that workflow, so they run here as

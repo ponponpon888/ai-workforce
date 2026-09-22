@@ -986,14 +986,16 @@ inability to block means a missed warning still lets the next launch through unc
 ### Running the tests
 
 ```bash
-node kit/scripts/test-guard-config.mjs     # Windows / macOS / Linux
+node kit/scripts/test-guard-config.mjs     # pass: 53   fail: 0
 ```
 
 ```powershell
 .\kit\scripts\test-guard-config.ps1        # if you use the PowerShell hook
 ```
 
-45 cases in total (30 for PreToolUse and ConfigChange, 15 for SessionStart).
+Of those, 15 are SessionStart; the rest are PreToolUse and ConfigChange.
+The total is written beside the command and nowhere else, because that is the copy
+`check-doc-commands.mjs` runs.
 
 ```
 SessionStart:

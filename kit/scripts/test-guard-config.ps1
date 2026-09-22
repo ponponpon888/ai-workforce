@@ -311,6 +311,61 @@ if ($named.Output.Contains($installedHome)) {
 
 Remove-Item -LiteralPath $installedHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# The Node twin's macOS CI failure, mirrored here. PowerShell does not resolve
+# symlinks in $PSCommandPath the way Node's ESM loader does for import.meta.url,
+# so this hook always saw the spelling it was invoked by and never had that bug.
+# The case is pinned anyway: it is the spelling an agent is handed, and a future
+# change to how the home is derived must not quietly drop it.
+#
+# Deliberate difference from the Node version, and the only one here: the Node
+# hook also refuses the path the spelling RESOLVES to, because it has that path
+# for free. This one does not -- resolving an ancestor symlink needs
+# ResolveLinkTarget, which Windows PowerShell 5.1 does not have. Recorded as
+# hook-014; the gap is a macOS/pwsh one, not a Windows one.
+Write-Host ''
+Write-Host 'installed behind a symlink:' -ForegroundColor White
+$realHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-real-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $realHome 'hooks') -Force | Out-Null
+$realHook = Join-Path $realHome 'hooks\guard-config.ps1'
+Copy-Item -LiteralPath $Hook -Destination $realHook
+$linkHome = $realHome + '-link'
+$linked = $true
+try {
+    New-Item -ItemType SymbolicLink -Path $linkHome -Target $realHome -ErrorAction Stop | Out-Null
+} catch {
+    $linked = $false
+}
+
+if (-not $linked) {
+    # Windows refuses symlinks to unprivileged users without developer mode.
+    # Skipping is honest; claiming a pass we never ran is not.
+    Write-Host '  SKIP  symlinks are not available to this user' -ForegroundColor Yellow
+} else {
+    $linkHook = Join-Path $linkHome 'hooks\guard-config.ps1'
+    function Invoke-LinkedHook([string] $FilePath) {
+        $json = @{
+            session_id      = 'test'
+            hook_event_name = 'PreToolUse'
+            cwd             = (Get-Location).Path
+            tool_name       = 'Edit'
+            tool_input      = @{ file_path = $FilePath }
+        } | ConvertTo-Json -Depth 5 -Compress
+
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $out = $json | & $pwshExe -NoProfile -File $linkHook 2>&1
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+    }
+    Assert-Result 'the spelling this hook was invoked by' $BLOCK (Invoke-LinkedHook (Join-Path $linkHome 'settings.json'))
+    Assert-Result 'an ordinary file behind the symlink is still allowed' $ALLOW (Invoke-LinkedHook (Join-Path $linkHome 'notes.txt'))
+    Remove-Item -LiteralPath $linkHome -Recurse -Force -ErrorAction SilentlyContinue
+}
+Remove-Item -LiteralPath $realHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Remove-Item -LiteralPath $ClaudeHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''

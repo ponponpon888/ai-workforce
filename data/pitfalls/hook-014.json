@@ -1,0 +1,46 @@
+{
+  "id": "hook-014",
+  "title": "PowerShell版のguard-configは、シンボリックリンクを解決した先の綴りを保護しない",
+  "summary": "guard-config は保護対象の claude home を自分の位置から導出する（hook-013）。Node 版は起動されたパス（process.argv[1]）と、それを解決した正規パス（import.meta.url は ESM ローダーが realpath するため常に正規形）の両方を保護対象に入れる。PowerShell 版は $PSCommandPath がシンボリックリンクを解決しないため、起動された綴りだけを保護し、解決先の綴りは保護しない。macOS で pwsh を使い、claude home の経路にシンボリックリンクが含まれる場合（tmpdir() の /var -> /private/var など）、エージェントが解決先の綴り（/private/var/...）でファイルパスを指定すると、PowerShell 版は同じファイルへの書き換えを許可する。Node 版は止める。実害は限定的（既定の ~/.claude はリンクを経由しない）だが、フック同士で挙動が食い違う点と、塞げていない方向がある点を記録する。",
+  "layer": "hook",
+  "kind": "limitation",
+  "severity": "low",
+  "confidence": "measured",
+  "origin": "CHANGELOG.md#未リリース",
+  "measured_on": "2026-09-21",
+  "environment": {
+    "os": "Linux",
+    "shell": "pwsh",
+    "shell_version": "7.4.6",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "一時ディレクトリに real/ を作り、hooks/guard-config.ps1 を置く。real/ へのシンボリックリンク link/ を作る",
+    "link/hooks/guard-config.ps1 を起動し、tool_input.file_path = link/settings.json を渡すと exit 2（ブロック）。$PSCommandPath が link/ の綴りを保持しているため",
+    "同じ起動で tool_input.file_path = real/settings.json を渡すと exit 0（許可）。解決先の綴りは保護対象に入っていない",
+    "Node 版（guard-config.mjs）で同じ2つを試すと、どちらも exit 2 になる。Node は process.argv[1] と import.meta.url の両方から home を導出するため",
+    "kit/scripts/test-guard-config.mjs の『installed behind a symlink』節が、Node 版について両方向を固定している"
+  ],
+  "status": "open_recorded",
+  "why_not_closed": "祖先のシンボリックリンクまで解決するには ResolveLinkTarget（.NET 6+）が要り、Windows PowerShell 5.1 には無い。CI は Windows ジョブで 5.1 を回しているので、5.1 で動かない書き方は入れられない。ランタイムの有無で分岐する実装は書けるが、この差が実際に効くのは macOS + pwsh でシンボリックリンクを経由する home に入れた場合だけで、そこを検証できる環境が手元に無い。確かめられないものを『塞いだ』と書くよりは、差として記録して残す判断をした（2026-09-21）。Node 版が保護を広げた分には影響しない（広げる方向のみ）。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-config.mjs",
+    "pattern": "const INVOKED_HOME = process.argv[1]",
+    "expect": "present",
+    "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンク経由で登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS の CI が実際にこれで落ちた。"
+  },
+  "related": [
+    "hook-013"
+  ],
+  "tags": [
+    "guard-config",
+    "powershell",
+    "symlink",
+    "path-spelling",
+    "twin-drift",
+    "macos"
+  ]
+}

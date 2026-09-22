@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 25,
+    "total": 26,
     "by_set": {
-      "pitfalls": 25
+      "pitfalls": 26
     },
     "by_confidence": {
-      "measured": 18,
+      "measured": 19,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
       "closed": 17,
-      "open_recorded": 2,
+      "open_recorded": 3,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
       "trap": 16,
-      "limitation": 5,
+      "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 14,
+      "hook": 15,
       "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 13,
+      "unknown_version": 14,
       "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 14
+    "checkable": 15
   },
   "checks": [
     {
@@ -132,6 +132,15 @@
       "expect": "present",
       "message": "guard-config が保護対象の home を自分の位置から導出している行。これを消して環境変数とホームディレクトリだけで決める形に戻すと、標準以外の場所へインストールしたときに実際に使われている設定が無防備に戻る。",
       "severity": "medium"
+    },
+    {
+      "id": "hook-014",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-config.mjs",
+      "pattern": "const INVOKED_HOME = process.argv[1]",
+      "expect": "present",
+      "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンク経由で登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS の CI が実際にこれで落ちた。",
+      "severity": "low"
     },
     {
       "id": "install-001",
@@ -514,6 +523,32 @@
         "claude-home",
         "false-sense-of-security",
         "probe-guards"
+      ]
+    },
+    {
+      "id": "hook-014",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-014.json",
+      "title": "PowerShell版のguard-configは、シンボリックリンクを解決した先の綴りを保護しない",
+      "layer": "hook",
+      "kind": "limitation",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "unknown_version",
+      "origin": "CHANGELOG.md#未リリース",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-013"
+      ],
+      "tags": [
+        "guard-config",
+        "powershell",
+        "symlink",
+        "path-spelling",
+        "twin-drift",
+        "macos"
       ]
     },
     {

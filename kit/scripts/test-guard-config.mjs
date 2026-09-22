@@ -11,7 +11,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -256,6 +256,57 @@ console.log('\ninstalled elsewhere (no AIWF_CLAUDE_HOME):');
   else { console.log('  FAIL  the block message names the matched home'); fail++; }
 
   rmSync(installedHome, { recursive: true, force: true });
+}
+
+// The macOS CI failure, in a form every platform can run. tmpdir() there is
+// /var/folders/... , a symlink to /private/var/folders/... . Node's ESM loader
+// resolves symlinks, so the hook saw only the canonical spelling while the
+// settings.json that registered it -- and anything a person would type --
+// named the other one. Registering through a symlinked home reproduces it
+// without needing that platform.
+console.log('\ninstalled behind a symlink:');
+{
+  const realHome = mkdtempSync(join(tmpdir(), 'aiwf-cfg-real-'));
+  mkdirSync(join(realHome, 'hooks'), { recursive: true });
+  cpSync(HOOK, join(realHome, 'hooks', 'guard-config.mjs'));
+  const linkHome = `${realHome}-link`;
+  let linked = true;
+  try { symlinkSync(realHome, linkHome, 'dir'); } catch { linked = false; }
+
+  if (!linked) {
+    // Windows without developer mode refuses symlinks to unprivileged users.
+    // Skipping is honest; claiming a pass we never ran is not.
+    console.log('  SKIP  symlinks are not available to this user');
+  } else {
+    const callVia = (hookPath, filePath) => {
+      const env = { ...process.env };
+      delete env.AIWF_CLAUDE_HOME;
+      const r = spawnSync(process.execPath, [hookPath], {
+        input: JSON.stringify({
+          session_id: 'test',
+          hook_event_name: 'PreToolUse',
+          cwd: process.cwd(),
+          tool_name: 'Edit',
+          tool_input: { file_path: filePath },
+        }),
+        encoding: 'utf8',
+        env,
+      });
+      return { code: r.status, out: (r.stderr || '') + (r.stdout || '') };
+    };
+    const viaLink = join(linkHome, 'hooks', 'guard-config.mjs');
+    // Registered by the spelling with the symlink in it: that spelling is the
+    // one an agent is handed, so it is the one that has to be refused.
+    assert('the spelling this hook was invoked by', BLOCK,
+      callVia(viaLink, join(linkHome, 'settings.json')));
+    // And the path it resolves to, which names the same file.
+    assert('the spelling it resolves to', BLOCK,
+      callVia(viaLink, join(realHome, 'settings.json')));
+    assert('an ordinary file behind the symlink is still allowed', ALLOW,
+      callVia(viaLink, join(linkHome, 'notes.txt')));
+    rmSync(linkHome, { recursive: true, force: true });
+  }
+  rmSync(realHome, { recursive: true, force: true });
 }
 
 rmSync(CLAUDE_HOME, { recursive: true, force: true });

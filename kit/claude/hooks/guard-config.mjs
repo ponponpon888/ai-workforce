@@ -124,6 +124,19 @@ const DEFAULT_HOME = resolve(join(homedir(), '.claude'));
 const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || OWN_HOME);
 
 /**
+ * The home derived from the path this hook was *invoked* by, which is the
+ * spelling written into settings.json.
+ *
+ * Node's ESM loader resolves symlinks, so import.meta.url above is always the
+ * canonical path -- on macOS a home under tmpdir() is registered as
+ * /var/folders/... and arrives here as /private/var/folders/..., and on
+ * Windows an 8.3 short path arrives expanded. Since the checks below match
+ * paths as text, the spelling the agent will actually type would then match
+ * nothing. process.argv[1] keeps the path as invoked; both are protected.
+ */
+const INVOKED_HOME = process.argv[1] ? resolve(dirname(process.argv[1]), '..') : null;
+
+/**
  * Every home this hook refuses to let an agent rewrite.
  *
  * With AIWF_CLAUDE_HOME set, it is exactly that one: the variable is an
@@ -134,10 +147,15 @@ const CLAUDE_HOME = resolve(process.env.AIWF_CLAUDE_HOME || OWN_HOME);
  * copy of this hook registered straight from a checkout would otherwise stop
  * protecting ~/.claude, which it does today -- widening what is refused is
  * safe, narrowing it silently is not.
+ *
+ * Each home contributes every spelling that names it (see INVOKED_HOME): a
+ * path that resolves to a protected home must be refused however it is
+ * written, and listing an extra spelling of a home already protected can only
+ * refuse more.
  */
-const PROTECTED_HOMES = process.env.AIWF_CLAUDE_HOME
+const PROTECTED_HOMES = [...new Set((process.env.AIWF_CLAUDE_HOME
   ? [CLAUDE_HOME]
-  : [...new Set([CLAUDE_HOME, DEFAULT_HOME])];
+  : [CLAUDE_HOME, INVOKED_HOME, DEFAULT_HOME]).filter(Boolean))];
 
 // Windows paths are case-insensitive end to end; C:\Users\X\.claude and
 // c:\users\x\.claude name the same directory. Normalize case only for the

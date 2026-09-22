@@ -168,6 +168,15 @@ foreach ($hookFile in @($sqlFile, $secretsFile, $configFile, $destructiveFile)) 
     Install-File -Content $hookContent -Destination (Join-Path $ClaudeHome "hooks\$hookFile")
 }
 
+# The shell lexer guard-destructive loads, in the flavour that was installed. It
+# has to land with the hook: without it the hook fails before reading its input
+# and exits non-zero, and Claude Code reports a non-2 exit rather than acting on
+# it -- so the hook would look installed and stop blocking. doctor names it when
+# it is absent; probe-guards catches it at run time.
+$lexFile = if ($Hook -eq 'node') { 'shell-lex.mjs' } else { 'shell-lex.ps1' }
+$lexContent = Get-Content -LiteralPath (Join-Path $srcClaude "hooks\lib\$lexFile") -Raw -Encoding UTF8
+Install-File -Content $lexContent -Destination (Join-Path $ClaudeHome "hooks\lib\$lexFile")
+
 # --- 2b. approval script ---------------------------------------------------
 #
 # guard-sql refuses DDL until a human approves the exact statement, and its refusal

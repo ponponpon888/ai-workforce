@@ -29,7 +29,12 @@
   `probe-guards` が実行時に落とす（`guard-destructive` が `expected block (exit 2), it exited 1`
   で fail になることを実測し、テストに固定した）。`guard-config` の保護対象は `hooks` の前方一致
   なので `hooks/lib/` も既に守られている（Edit も rm も exit 2 になることを確認）。
-  PowerShell 版のレクサー切り出しは別PRにする（dot-source という別の仕組みで、約900行あるため）。
+  PowerShell 版も同じ形で切り出した（`lib/shell-lex.ps1`、797行が行単位で一致。PowerShell は
+  export が要らないので足したのはヘッダだけ）。読み込みは `$PSScriptRoot` からの dot-source。
+  `guard-destructive` の PowerShell 側テスト218件も成功。依存が欠けたときの壊れ方は Node と
+  同じで、dot-source が投げてフックは入力を読む前に exit 1 になる（実際に lexer を消して確認）。
+  `install.ps1` が入れた種類（node / powershell）に応じて `lib/` を置き、`doctor` の依存表にも
+  `guard-destructive.ps1` を足した。
 
 - `guard-sql` が SQL の方言（Postgres / MySQL / SQLite）を読み分けるようになった。着手前に修正前の
   フックで実測したところ、MySQL の `RENAME TABLE` / `REPLACE INTO` / `LOAD DATA` / `FLUSH` /

@@ -150,7 +150,7 @@ Every hook has a PowerShell twin with the same behaviour (`install.ps1 -Hook pow
 the same cases with `--target ps`. CI runs the Node hooks on Ubuntu, macOS and Windows, and the
 PowerShell twins on Windows, Ubuntu, and Windows PowerShell 5.1.
 
-→ [docs/02](docs/02-guardrails.md) · [kit/claude/hooks/](kit/claude/hooks/)
+→ [docs/02](docs/02-guardrails.en.md) · [kit/claude/hooks/](kit/claude/hooks/)
 
 ### 3. Division of labor
 
@@ -187,7 +187,7 @@ Three implementations — Node, PowerShell and POSIX shell — run against the s
 cannot drift. Adding the third one is how I found that the PowerShell twin alone skipped
 dot-prefixed repository directories ([shell-003](data/pitfalls/shell-003.json)).
 
-→ [docs/04](docs/04-multi-project.md) · [pull-all.mjs](kit/scripts/pull-all.mjs) · [pull-all.sh](kit/scripts/pull-all.sh)
+→ [docs/04](docs/04-multi-project.en.md) · [pull-all.mjs](kit/scripts/pull-all.mjs) · [pull-all.sh](kit/scripts/pull-all.sh)
 
 ---
 
@@ -266,11 +266,11 @@ usable as-is; translations are welcome.
 | [01 Two-layer CLAUDE.md](docs/01-two-layer-claude-md.en.md) — EN | Splitting shared safety rules from per-project config |
 | [02 Mechanical guardrails](docs/02-guardrails.en.md) — EN | Hooks, deny lists, the DDL approval token, the PowerShell encoding trap |
 | [03 Division of labor](docs/03-division-of-labor.en.md) — EN | Chat vs local Claude Code vs MCP |
-| [04 Multi-project operation](docs/04-multi-project.md) | Auto-pull, absolute paths, naming |
+| [04 Multi-project operation](docs/04-multi-project.en.md) | Auto-pull, absolute paths, naming |
 | [05 Production database](docs/05-production-db.en.md) — EN | Where the line sits with Supabase |
 | [06 Closing the chat-side hole](docs/06-supabase-mcp.en.md) — EN | Supabase MCP `read_only` / `project_ref`, prompt injection |
 | [07 GitHub and Vercel](docs/07-github-vercel.en.md) — EN | MCP read-only and tool exclusion, why a PAT cannot stop force-push |
-| [08 Pitfall records](docs/08-pitfall-records.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
+| [08 Pitfall records](docs/08-pitfall-records.en.md) | Machine-readable pitfalls in `data/pitfalls/`: measured, inferred, documented and unverified kept apart |
 | [Case studies](docs/case-studies/) | Excerpts from products that are actually running |
 | [99 FAQ](docs/99-faq.md) | |
 | [CHANGELOG](CHANGELOG.md) | What is in each release. Currently v0.1.0 (Japanese) |

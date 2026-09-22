@@ -262,6 +262,156 @@ if (-not (Test-Path -LiteralPath (Join-Path $sessionHome 'known-good\settings.js
 }
 Remove-Item -LiteralPath $sessionHome -Recurse -Force -ErrorAction SilentlyContinue
 
+# The hook decides what to protect from where it is installed, not from
+# $HOME\.claude alone (hook-013). Every case above passes -ClaudeHome, which is
+# the explicit override, so the derived path needs its own section: a copy of
+# the hook placed in a throwaway home, invoked with no override at all.
+Write-Host ''
+Write-Host 'installed elsewhere (no -ClaudeHome, no AIWF_CLAUDE_HOME):' -ForegroundColor White
+$installedHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-installed-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $installedHome 'hooks') -Force | Out-Null
+$installedHook = Join-Path $installedHome 'hooks\guard-config.ps1'
+Copy-Item -LiteralPath $Hook -Destination $installedHook
+
+function Invoke-InstalledHook([string] $FilePath) {
+    $json = @{
+        session_id      = 'test'
+        hook_event_name = 'PreToolUse'
+        cwd             = (Get-Location).Path
+        tool_name       = 'Edit'
+        tool_input      = @{ file_path = $FilePath }
+    } | ConvertTo-Json -Depth 5 -Compress
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $json | & $pwshExe -NoProfile -File $installedHook 2>&1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+}
+
+# Before this was fixed, both of these were allowed: the hook sat in this home,
+# was registered by this home's settings.json, and protected another directory.
+Assert-Result 'the settings.json of the home it was installed into' $BLOCK (Invoke-InstalledHook (Join-Path $installedHome 'settings.json'))
+Assert-Result 'a hook inside the home it was installed into' $BLOCK (Invoke-InstalledHook (Join-Path $installedHome 'hooks\guard-sql.ps1'))
+# Widening what is refused is safe; narrowing it silently is not.
+Assert-Result 'the default home stays protected as well' $BLOCK (Invoke-InstalledHook (Join-Path (Join-Path $HOME '.claude') 'settings.json'))
+Assert-Result 'an ordinary file is still allowed' $ALLOW (Invoke-InstalledHook (Join-Path ([System.IO.Path]::GetTempPath()) 'aiwf-cfg-ordinary-notes.txt'))
+
+$named = Invoke-InstalledHook (Join-Path $installedHome 'settings.json')
+if ($named.Output.Contains($installedHome)) {
+    Write-Host '  PASS  the block message names the matched home' -ForegroundColor Green
+    $script:pass++
+} else {
+    Write-Host '  FAIL  the block message names the matched home' -ForegroundColor Red
+    $script:fail++
+}
+
+Remove-Item -LiteralPath $installedHome -Recurse -Force -ErrorAction SilentlyContinue
+
+# The Node twin's macOS CI failure, mirrored here. PowerShell does not resolve
+# symlinks in $PSCommandPath the way Node's ESM loader does for import.meta.url,
+# so this hook always saw the spelling it was invoked by and never had that bug.
+# The case is pinned anyway: it is the spelling an agent is handed, and a future
+# change to how the home is derived must not quietly drop it.
+#
+# Deliberate difference from the Node version, and the only one here: the Node
+# hook also refuses the path the spelling RESOLVES to, because it has that path
+# for free. This one does not -- resolving an ancestor symlink needs
+# ResolveLinkTarget, which Windows PowerShell 5.1 does not have. Recorded as
+# hook-014; the gap is a macOS/pwsh one, not a Windows one.
+Write-Host ''
+Write-Host 'installed behind a symlink:' -ForegroundColor White
+$realHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-real-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $realHome 'hooks') -Force | Out-Null
+$realHook = Join-Path $realHome 'hooks\guard-config.ps1'
+Copy-Item -LiteralPath $Hook -Destination $realHook
+$linkHome = $realHome + '-link'
+$linked = $true
+try {
+    New-Item -ItemType SymbolicLink -Path $linkHome -Target $realHome -ErrorAction Stop | Out-Null
+} catch {
+    $linked = $false
+}
+
+if (-not $linked) {
+    # Windows refuses symlinks to unprivileged users without developer mode.
+    # Skipping is honest; claiming a pass we never ran is not.
+    Write-Host '  SKIP  symlinks are not available to this user' -ForegroundColor Yellow
+} else {
+    $linkHook = Join-Path $linkHome 'hooks\guard-config.ps1'
+    function Invoke-LinkedHook([string] $FilePath) {
+        $json = @{
+            session_id      = 'test'
+            hook_event_name = 'PreToolUse'
+            cwd             = (Get-Location).Path
+            tool_name       = 'Edit'
+            tool_input      = @{ file_path = $FilePath }
+        } | ConvertTo-Json -Depth 5 -Compress
+
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $out = $json | & $pwshExe -NoProfile -File $linkHook 2>&1
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+    }
+    Assert-Result 'the spelling this hook was invoked by' $BLOCK (Invoke-LinkedHook (Join-Path $linkHome 'settings.json'))
+    Assert-Result 'an ordinary file behind the symlink is still allowed' $ALLOW (Invoke-LinkedHook (Join-Path $linkHome 'notes.txt'))
+    Remove-Item -LiteralPath $linkHome -Recurse -Force -ErrorAction SilentlyContinue
+}
+Remove-Item -LiteralPath $realHome -Recurse -Force -ErrorAction SilentlyContinue
+
+# The Windows CI failure, in a form every platform can run.
+#
+# PowerShell normalizes $PSCommandPath: on Windows an 8.3 short path
+# (C:\Users\RUNNER~1\...) comes back expanded to the long form, so the home
+# derived from it does not match the spelling settings.json registered, and the
+# home actually in use went unprotected. Only the Windows job caught it.
+#
+# A "/./" detour in the invocation reproduces the same split anywhere:
+# PowerShell drops it from $PSCommandPath and keeps it in
+# [Environment]::GetCommandLineArgs(). Built by hand rather than with
+# Join-Path, which would normalize the detour away and quietly test nothing.
+Write-Host ''
+Write-Host 'invoked by a path PowerShell normalizes:' -ForegroundColor White
+$detourHome = Join-Path ([System.IO.Path]::GetTempPath()) ('aiwf-cfg-detour-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $detourHome 'hooks') -Force | Out-Null
+Copy-Item -LiteralPath $Hook -Destination (Join-Path $detourHome 'hooks\guard-config.ps1')
+$sep = [System.IO.Path]::DirectorySeparatorChar
+$detourHook = $detourHome + $sep + '.' + $sep + 'hooks' + $sep + 'guard-config.ps1'
+$detourSettings = $detourHome + $sep + '.' + $sep + 'settings.json'
+
+function Invoke-DetouredHook([string] $FilePath) {
+    $json = @{
+        session_id      = 'test'
+        hook_event_name = 'PreToolUse'
+        cwd             = (Get-Location).Path
+        tool_name       = 'Edit'
+        tool_input      = @{ file_path = $FilePath }
+    } | ConvertTo-Json -Depth 5 -Compress
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = $json | & $pwshExe -NoProfile -File $detourHook 2>&1
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }
+}
+
+# Before this was fixed, the first of these was allowed: $PSCommandPath had
+# already lost the detour, so the spelling the caller used matched nothing.
+Assert-Result 'the spelling this hook was invoked by, detour and all' $BLOCK (Invoke-DetouredHook $detourSettings)
+Assert-Result 'the normalized spelling of the same file' $BLOCK (Invoke-DetouredHook (Join-Path $detourHome 'settings.json'))
+Assert-Result 'an ordinary file under the detour is still allowed' $ALLOW (Invoke-DetouredHook ($detourHome + $sep + '.' + $sep + 'notes.txt'))
+Remove-Item -LiteralPath $detourHome -Recurse -Force -ErrorAction SilentlyContinue
+
 Remove-Item -LiteralPath $ClaudeHome -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''

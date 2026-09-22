@@ -45,20 +45,24 @@ const ALLOW = 0;
 const TIMEOUT_MS = 15000;
 
 /**
- * The home guard-config actually protects at run time. It reads
- * AIWF_CLAUDE_HOME or falls back to ~/.claude -- it does not look at where it
- * was installed. So probing a different home would ask it about a directory it
- * was never guarding, and a pass would mean nothing. Probe the real one and
- * report the mismatch instead (data/pitfalls/hook-013.json).
+ * The home guard-config protects at run time.
+ *
+ * Installed, the hook derives it from its own location, so it is the home
+ * being probed -- that is what hook-013 fixed. AIWF_CLAUDE_HOME still
+ * overrides it explicitly, and an override pointing somewhere else means the
+ * registered hook is guarding a different directory: probe that one and say
+ * so, because a pass against the wrong directory is worse than no answer.
  */
-const protectedHome = resolve(process.env.AIWF_CLAUDE_HOME || join(homedir(), '.claude'));
+function protectedHomeFor(claudeHome) {
+  return process.env.AIWF_CLAUDE_HOME ? resolve(process.env.AIWF_CLAUDE_HOME) : claudeHome;
+}
 
 /**
  * One probe is a tool call the guard should refuse, or one it must let
  * through. Both halves matter: a guard that blocks everything is as broken as
  * one that blocks nothing, and only the allow side catches it.
  */
-function probesFor(guard) {
+function probesFor(guard, protectedHome) {
   switch (guard) {
     case 'guard-sql':
       return [
@@ -153,25 +157,25 @@ export function probe({ claudeHome = join(homedir(), '.claude'), cwd = process.c
     return {
       status: 'error',
       claudeHome: home,
-      protectedHome,
+      protectedHome: protectedHomeFor(home),
       executed: 'none',
       guards: [],
       findings: [{ level: 'error', id: 'settings.read', message: 'Settings could not be read as JSON. Contents are not printed.' }],
     };
   }
 
-  // guard-config reads its own home from the environment, not from where it
-  // was installed, so a non-default home means the registered hook is
-  // guarding some other directory. Say which one; a pass against the wrong
-  // directory would be worse than no answer.
-  if (home !== protectedHome) {
+  // An AIWF_CLAUDE_HOME pointing elsewhere sends guard-config to guard that
+  // directory instead of the one being probed. Say which one; a pass against
+  // the wrong directory would be worse than no answer.
+  if (home !== protectedHomeFor(home)) {
     findings.push({
       level: 'unknown',
       id: 'guard-config.home',
-      message: `guard-config protects ${protectedHome}, not the home being probed (${home}). Its probes below are about ${protectedHome}. Set AIWF_CLAUDE_HOME=${home} to probe this home instead.`,
+      message: `AIWF_CLAUDE_HOME sends guard-config to protect ${protectedHomeFor(home)}, not the home being probed (${home}). Its probes below are about ${protectedHomeFor(home)}. Unset AIWF_CLAUDE_HOME to probe this home instead.`,
     });
   }
 
+  const protectedHome = protectedHomeFor(home);
   for (const name of GUARDS) {
     const command = registeredCommand(settings, name, home);
     if (!command) {
@@ -179,7 +183,7 @@ export function probe({ claudeHome = join(homedir(), '.claude'), cwd = process.c
       findings.push({ level: 'unknown', id: `${name}.registration`, message: 'No standard kit registration found; a custom command is not probed.' });
       continue;
     }
-    const probes = probesFor(name).map(p => runProbe(command, p, cwd));
+    const probes = probesFor(name, protectedHome).map(p => runProbe(command, p, cwd));
     const result = probes.some(p => p.result === 'fail') ? 'fail'
       : probes.some(p => p.result === 'unverified') ? 'unverified' : 'pass';
     guards.push({ guard: name, command, result, probes });

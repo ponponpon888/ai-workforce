@@ -1057,10 +1057,24 @@ supabase で `select 1; drop table nothing;` を実行して
 `[guard-sql] BLOCKED: DROP is never allowed from an agent.` が出れば正常。
 何も起きずに実行されたら、フックが配線されていません。
 
-**Supabase MCP を実際に使う場合は、matcher が実際のツール名と一致することも必ず確認してください。**
+**MCP 経由の DB を実際に使う場合は、matcher が実際のツール名と一致することも必ず確認してください。**
 接続するコネクタによってツール名の接頭辞が変わることがあり（例: `mcp__claude_ai_Supabase__list_projects`）、
 固定接頭辞の matcher だと一致せず、フックが発火しないまま気づかないことがあります
 （[hook-004](../data/pitfalls/hook-004.json)）。
+
+**どのツールが guard-sql に届くかを決める場所は3つあります。** `settings.json` の matcher
+（Claude Code が実際にルーティングに使うもの）、`guard-sql.mjs` の `SQL_TOOL_RE`、
+`guard-sql.ps1` の同じ検査です。方言対応を入れたとき、後ろの2つに MySQL / SQLite の MCP 名を
+足して matcher に足し忘れ、**フックは読めるのに一度も呼ばれない**状態を作りました
+（[hook-015](../data/pitfalls/hook-015.json)）。フック単体のテストは全部通り、doctor も
+static-pass のままだったので、気づく手がかりがありませんでした。
+
+いまは `kit/scripts/test-sql-tool-matcher.mjs` が、3箇所が同じ製品名を挙げていることを
+機械で縛っています。hook-004 の「合わせて確認すること」という注意書きのままだったからこそ
+ドリフトした、というのが今回の教訓です。
+
+なお、この修正より前に入れたインストールは、`doctor` が `guard-sql.coverage` の error として
+報告します。インストーラを再実行してください。
 
 ## SessionStart で、起動していない間の書き換えにも気づけるようにしました
 

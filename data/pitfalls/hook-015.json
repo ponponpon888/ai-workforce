@@ -1,0 +1,47 @@
+{
+  "id": "hook-015",
+  "title": "guard-sqlがMySQL/SQLiteのMCPツール名を理解するようになったのに、settings.jsonのmatcherに足し忘れていた",
+  "summary": "どのツール呼び出しが guard-sql に届くかを決める場所は3つある。kit/claude/settings.json の hooks.PreToolUse matcher（Claude Code が実際にルーティングに使う）、guard-sql.mjs の SQL_TOOL_RE、guard-sql.ps1 の同じ検査。方言対応（MySQL / SQLite）を入れたとき、後ろの2つに mcp__.*[Mm]ysql / mcp__.*[Mm]ariadb / mcp__.*[Ss]qlite を足して、matcher に足さなかった。結果として、フックは MCP 経由の MySQL / SQLite の文を読めるのに、Claude Code はその名前のツール呼び出しをフックへ渡さない。フックへ直接ペイロードを渡せば exit 2 で止まるので、フック単体のテストは全部通り、doctor も static-pass のままだった。守っているつもりで一度も呼ばれない、という形。hook-004 が「matcher は2箇所にあり、片方だけ直すと効かない」を既に記録していたが、同期は人間への注意書きで、機械検査が無かった。",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#mysql-と-sqlite-は同じ文字列を別の意味で読みます",
+  "measured_on": "2026-09-22",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "guard-sql.mjs に tool_name=mcp__mysql__query, tool_input.query='drop table t' を直接渡すと exit 2（フックのロジックは正しい）",
+    "kit/claude/settings.json の guard-sql の matcher を正規表現として mcp__mysql__query に当てると一致しない（mcp__supabase__execute_sql は一致する）",
+    "つまり Claude Code はそのツール呼び出しを guard-sql に渡さないので、実運用では検査されない",
+    "doctor.mjs --claude-home <インストール先> は static-pass のまま。doctor が matcher の網羅を確かめる代表ツール名の一覧にも mysql / mariadb / sqlite が無かったため",
+    "kit/scripts/test-sql-tool-matcher.mjs を修正前の settings.json に対して走らせると、guard-sql.mjs names ... sqlite ...; settings.json names neon planetscale postgres supabase と両側を名指しして落ちる"
+  ],
+  "status": "closed",
+  "fix": "matcher に3つの製品名を足し、doctor が網羅を確かめる代表ツール名の一覧にも足した。そのうえで、3箇所が同じ製品名を挙げていることを機械で縛るテスト（kit/scripts/test-sql-tool-matcher.mjs）を追加した。hook-004 が実際に踏んだ「コネクタ名が接頭辞に挟まる」形（mcp__claude_ai_Supabase__list_projects）も、全製品について3箇所すべてで確認する。注意書きではなく検査にしたのが要点で、注意書きのままだったからこそ今回ドリフトした。なお、この変更後に doctor は修正前の settings.json で入っている既存インストールを error として報告する（再インストールが必要なことが伝わる）。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/settings.json",
+    "pattern": "mcp__.*[Mm]ysql",
+    "expect": "present",
+    "message": "guard-sql の matcher から MySQL の MCP 名が消えると、フックが読めるのに呼ばれない状態に戻る。matcher・guard-sql.mjs・guard-sql.ps1 の3箇所が同じ製品名を挙げていることは test-sql-tool-matcher.mjs が縛っている。"
+  },
+  "related": [
+    "hook-004",
+    "hook-012"
+  ],
+  "tags": [
+    "guard-sql",
+    "matcher",
+    "mcp",
+    "false-sense-of-security",
+    "drift",
+    "recurrence"
+  ]
+}

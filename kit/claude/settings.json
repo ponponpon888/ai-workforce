@@ -87,7 +87,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale",
+        "matcher": "Bash|PowerShell|mcp__.*[Ss]upabase|mcp__.*[Pp]ostgres|mcp__.*[Nn]eon|mcp__.*[Pp]lanetscale|mcp__.*[Mm]ysql|mcp__.*[Mm]ariadb|mcp__.*[Ss]qlite",
         "hooks": [
           {
             "type": "command",

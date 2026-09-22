@@ -6,41 +6,41 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 26,
+    "total": 27,
     "by_set": {
-      "pitfalls": 26
+      "pitfalls": 27
     },
     "by_confidence": {
-      "measured": 19,
+      "measured": 20,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
-      "closed": 19,
+      "closed": 20,
       "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 16,
+      "trap": 17,
       "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
       "permissions": 6,
-      "hook": 15,
+      "hook": 16,
       "runtime": 3,
       "ci": 1,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 14,
+      "unknown_version": 15,
       "ok": 5,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 15
+    "checkable": 16
   },
   "checks": [
     {
@@ -140,6 +140,15 @@
       "pattern": "const INVOKED_HOME = process.argv[1]",
       "expect": "present",
       "message": "Node 版が起動時の綴りからも home を導出している行。これを消すと、シンボリックリンクや 8.3 短縮名を経由して登録された home について、settings.json に書かれている綴り（エージェントが実際に渡してくる綴り）が保護対象から外れる。macOS と Windows の CI が実際にこれで落ちた。PowerShell 版の対応する行は [Environment]::GetCommandLineArgs() を読む箇所。",
+      "severity": "medium"
+    },
+    {
+      "id": "hook-015",
+      "kind": "file-content",
+      "target": "kit/claude/settings.json",
+      "pattern": "mcp__.*[Mm]ysql",
+      "expect": "present",
+      "message": "guard-sql の matcher から MySQL の MCP 名が消えると、フックが読めるのに呼ばれない状態に戻る。matcher・guard-sql.mjs・guard-sql.ps1 の3箇所が同じ製品名を挙げていることは test-sql-tool-matcher.mjs が縛っている。",
       "severity": "medium"
     },
     {
@@ -553,6 +562,33 @@
         "symlink",
         "twin-drift",
         "windows"
+      ]
+    },
+    {
+      "id": "hook-015",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-015.json",
+      "title": "guard-sqlがMySQL/SQLiteのMCPツール名を理解するようになったのに、settings.jsonのmatcherに足し忘れていた",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#mysql-と-sqlite-は同じ文字列を別の意味で読みます",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-004",
+        "hook-012"
+      ],
+      "tags": [
+        "guard-sql",
+        "matcher",
+        "mcp",
+        "false-sense-of-security",
+        "drift",
+        "recurrence"
       ]
     },
     {

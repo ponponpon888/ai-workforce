@@ -1,0 +1,69 @@
+# The documentation checks, on the changes that can break documentation.
+#
+# test.yml carries paths-ignore for "**/*.md" and "docs/**", because the free
+# Actions budget ran out once and macOS minutes cost roughly ten times Linux
+# ones (data/pitfalls/ci-001.json). The side effect nobody had noticed: a
+# documentation-only pull request runs no checks at all -- and those are
+# exactly the ones that break links. Two dead links shipped in
+# docs/02-guardrails.en.md that way.
+#
+# So the doc checks live here instead: Ubuntu only, no matrix, a few seconds of
+# the cheapest runner, and they run on precisely the changes that can break a
+# link -- the Markdown itself, and the checkers.
+name: docs
+
+on:
+  push:
+    branches: [main]
+    # Spelled out twice on purpose: GitHub Actions does not expand YAML
+    # anchors, so an alias here would be read as a literal and the filter
+    # would match nothing.
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "kit/scripts/check-doc-links.mjs"
+      - "kit/scripts/test-check-doc-links.mjs"
+      - "kit/scripts/check-doc-todos.mjs"
+      - "kit/scripts/test-check-doc-todos.mjs"
+      - "kit/scripts/markdown-anchors.mjs"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "kit/scripts/check-doc-links.mjs"
+      - "kit/scripts/test-check-doc-links.mjs"
+      - "kit/scripts/check-doc-todos.mjs"
+      - "kit/scripts/test-check-doc-todos.mjs"
+      - "kit/scripts/markdown-anchors.mjs"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Every relative link in the docs resolves
+        shell: bash
+        run: |
+          node kit/scripts/check-doc-links.mjs
+          node kit/scripts/test-check-doc-links.mjs
+
+      # test.yml runs these too, for pull requests that touch code. A
+      # documentation-only one never reaches that workflow, so they run here as
+      # well rather than not at all.
+      - name: No TODO markers in release docs
+        shell: bash
+        run: |
+          node kit/scripts/check-doc-todos.mjs
+          node kit/scripts/test-check-doc-todos.mjs

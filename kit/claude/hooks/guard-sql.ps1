@@ -64,6 +64,16 @@ param(
 
 Set-StrictMode -Version Latest
 
+# The shell lexers, shared with guard-destructive. Needed to tell the SQL a
+# client is actually handed from a DDL keyword that merely sits in the same
+# command line -- see Get-ClientCall below and data/pitfalls/hook-010.json.
+#
+# This file has to be installed next to the hook. If it is missing the dot
+# source throws, the hook exits non-zero before reading its input, and Claude
+# Code reports a non-2 exit rather than acting on it. install.ps1 places it,
+# doctor names it when it is absent, and probe-guards catches it at run time.
+. (Join-Path $PSScriptRoot (Join-Path 'lib' 'shell-lex.ps1'))
+
 # Where to tell the human to run the approval script. Installed, the hook sits in
 # <claude home>\hooks and approve-ddl in <claude home>\scripts, so an absolute path
 # can be given -- the repo-relative one only works from a checkout of this repo,
@@ -378,6 +388,123 @@ function Get-Unquoted([string] $Token) {
     return ($Token -replace '^["''`]+', '') -replace '["''`]+$', ''
 }
 
+# The SQL a command line actually hands to a database client. The twin of
+# clientCallsIn() in guard-sql.mjs; see the block comment there for why.
+#
+# Short version: matching DDL keywords against the raw command text cannot tell
+# psql -c "drop table t" from a commit message that quotes it. The lexer says
+# which words are a command and which are one command's argument, so only what
+# a client is really handed gets scanned. Nothing here rewrites the line --
+# neutralizing a command line is what removed --sql 'truncate bookings' whole
+# and let a TRUNCATE through once already.
+$script:InlineSqlOptions = @{
+    'psql'     = @('-c', '--command')
+    'sqlite3'  = @()
+    'mysql'    = @('-e', '--execute')
+    'mariadb'  = @('-e', '--execute')
+    'supabase' = @('--sql')
+}
+
+# Runners that put the real command further along the same word list.
+$script:RunnerSkips = @{
+    'npx'  = @('-p', '--package', '-c', '--call')
+    'pnpm' = @()
+    'bunx' = @()
+    'yarn' = @()
+    'sudo' = @('-u', '-g', '-U', '--user', '--group')
+    'env'  = @()
+    'time' = @()
+    'nice' = @('-n', '--adjustment')
+}
+
+function Get-GsProgram([string] $Word) {
+    $raw = [string] $Word
+    $cut = [Math]::Max($raw.LastIndexOf('/'), $raw.LastIndexOf('\'))
+    $base = if ($cut -ge 0) { $raw.Substring($cut + 1) } else { $raw }
+    return ($base -replace '(?i)\.(exe|cmd|bat)$', '').ToLowerInvariant()
+}
+
+# Peel runners off the front until the first word names something that is not
+# one. 'npx supabase db execute --sql ...' becomes the supabase call.
+function Get-GsUnwrapped($Words) {
+    $rest = $Words
+    for ($depth = 0; $depth -lt 4 -and $rest.Count -gt 0; $depth++) {
+        $name = Get-GsProgram $rest[0].V
+        if (-not $script:RunnerSkips.ContainsKey($name)) { return $rest }
+        # No @() here: Get-GdAfterOptions already returns a protected array
+        # (it ends with `return , (...)`). Wrapping it again makes a one-element
+        # array whose single element is that array.
+        $after = Get-GdAfterOptions @($rest[1..($rest.Count - 1)]) $script:RunnerSkips[$name]
+        if ($after.Count -eq 0) { return $rest }
+        $head = Get-GsProgram $after[0].V
+        if (@('dlx', 'exec', 'run') -contains $head) {
+            $rest = if ($after.Count -gt 1) { @($after[1..($after.Count - 1)]) } else { @() }
+        } else {
+            $rest = $after
+        }
+    }
+    return $rest
+}
+
+# Every client invocation on a command line, with the SQL text it was handed.
+# Commands that are not a client contribute nothing at all. Returns $null when
+# the line cannot be lexed, so the caller can fall back to the text scan.
+function Get-ClientCall([string] $Command, [string] $Grammar) {
+    $calls = New-Object System.Collections.Generic.List[object]
+    try {
+        $lexed = if ($Grammar -eq 'ps') { Invoke-GdLexPs $Command } else { Invoke-GdLexPosix $Command }
+    } catch {
+        return $null
+    }
+    # NOT $command: PowerShell variable names are case-insensitive, so that is
+    # the [string] $Command parameter above, and assigning a hashtable to a
+    # type-constrained variable coerces it -- every element would arrive as the
+    # string "System.Collections.Hashtable". Nor $callArgs, which is automatic.
+    foreach ($lexedCommand in $lexed.Commands) {
+        $rest = @(Get-GsUnwrapped @($lexedCommand.Words))
+        if ($rest.Count -eq 0) { continue }
+        $name = Get-GsProgram $rest[0].V
+        $callArgs = if ($rest.Count -gt 1) { @($rest[1..($rest.Count - 1)]) } else { @() }
+        if ($script:InlineSqlOptions.ContainsKey($name)) {
+            if ($name -eq 'supabase') {
+                if ($callArgs.Count -eq 0 -or (Get-GsProgram $callArgs[0].V) -ne 'db') { continue }
+            }
+            $dialect = switch ($name) {
+                'sqlite3' { 'sqlite' }
+                'mysql'   { 'mysql' }
+                'mariadb' { 'mysql' }
+                default   { 'postgres' }
+            }
+            $before = $calls.Count
+            $inline = Get-GdValueAfter $callArgs $script:InlineSqlOptions[$name]
+            if ($null -ne $inline -and $inline.V) {
+                $calls.Add([pscustomobject]@{ Sql = $inline.V; Dialect = $dialect })
+            }
+            if ($name -eq 'sqlite3') {
+                $positional = Get-GdAfterOptions $callArgs @()
+                if ($positional.Count -gt 1 -and $positional[1].V) {
+                    $calls.Add([pscustomobject]@{ Sql = $positional[1].V; Dialect = $dialect })
+                }
+            }
+            if ($calls.Count -eq $before) {
+                $calls.Add([pscustomobject]@{ Sql = ''; Dialect = $dialect })
+            }
+        }
+        if ($name -eq 'prisma' -or $name -eq 'drizzle-kit') {
+            # Neither pins a dialect, so every spelling one of them might use is
+            # read and the statement is scanned under every dialect's rules.
+            $inline = Get-GdValueAfter $callArgs @('--command', '--sql', '-c', '--execute', '-e')
+            $text = if ($null -ne $inline -and $inline.V) { $inline.V } else { '' }
+            $calls.Add([pscustomobject]@{ Sql = $text; Dialect = 'unknown' })
+        }
+    }
+    foreach ($inner in $lexed.Nested) {
+        $deeper = Get-ClientCall $inner.Src $(if ($inner.G -eq 'ps') { 'ps' } else { 'posix' })
+        if ($null -ne $deeper) { foreach ($d in $deeper) { $calls.Add($d) } }
+    }
+    return , $calls.ToArray()
+}
+
 # Paths a command line hands to a database client. Only segments that invoke a
 # client are scanned, so an unrelated -f elsewhere on the line is left alone.
 function Get-FileRouteCandidate([string] $Command) {
@@ -449,7 +576,19 @@ function Test-UnfilteredMutation([string] $Statement) {
     return $false
 }
 
-function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where, [string] $Dialect) {
+# -SkipIncludes is used for SQL pulled off a command line. There the include is
+# also a file route ('.read x' is both), and the route machinery reads the file
+# and scans what is in it -- the better answer, and the one this hook already
+# gave before the SQL was extracted rather than text-matched. Denying here as
+# well would turn sqlite3 app.db ".read harmless.sql" into a refusal.
+function Invoke-StatementScan {
+    param(
+        [string] $Text,
+        [string] $Grammar,
+        [string] $Where,
+        [string] $Dialect,
+        [switch] $SkipIncludes
+    )
     $firstDdl = $null
     $cleaned = Get-NeutralizedSql $Text $Grammar $Dialect
     if ($Dialect -eq 'unknown' -or -not $script:IncludePatterns.ContainsKey($Dialect)) {
@@ -457,7 +596,7 @@ function Invoke-StatementScan([string] $Text, [string] $Grammar, [string] $Where
     } else {
         $includePatterns = @($script:IncludePatterns[$Dialect])
     }
-    if ($Grammar -eq 'sql') {
+    if ($Grammar -eq 'sql' -and -not $SkipIncludes) {
         foreach ($pattern in $includePatterns) {
             if ($cleaned -match $pattern) {
                 Deny "Nested SQL includes are unsupported; submit the reviewed SQL directly.$Where" 'SQL include'
@@ -540,7 +679,27 @@ try {
         $dialect = Get-SqlDialect $toolName $script:McpDialectPatterns
     }
 
-    $firstDdl = Invoke-StatementScan $sql $grammar '' $dialect
+    # For a shell command line, what matters is the SQL that actually reaches a
+    # client. Scanning the whole line cannot tell an executed statement from one
+    # quoted inside a commit message (hook-010). When the lexer cannot read the
+    # line at all, fall back to scanning the text: fewer answers is acceptable,
+    # fewer blocks is not.
+    $firstDdl = $null
+    $calls = $null
+    if ($grammar -eq 'shell') {
+        $calls = Get-ClientCall $sql $(if ($toolName -eq 'PowerShell') { 'ps' } else { 'posix' })
+    }
+    if ($null -eq $calls) {
+        $firstDdl = Invoke-StatementScan $sql $grammar '' $dialect
+    } else {
+        $calls = @($calls)
+        if ($calls.Count -eq 0) { exit 0 }   # no client is being invoked here
+        foreach ($call in $calls) {
+            if (-not $call.Sql) { continue }
+            $ddl = Invoke-StatementScan $call.Sql 'sql' '' $call.Dialect -SkipIncludes
+            if ($null -ne $ddl -and $null -eq $firstDdl) { $firstDdl = $ddl }
+        }
+    }
 
     # The statement need not be on the command line. Read what the client is being
     # pointed at and scan that too; a file route with nothing readable behind it

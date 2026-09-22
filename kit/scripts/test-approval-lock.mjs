@@ -2,11 +2,23 @@
 // Only isolated hook processes and temporary tokens; never executes SQL.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 export async function testApprovalLock({ exe, hook, hookArgs, ps, temp, approvals, env, payload, call, token }) {
   let pass = 0, fail = 0;
+  // The instrumented copies below are written into temp/ and run from there, so
+  // the shell lexer the hook loads has to exist next to them -- the same reason
+  // the installers place lib/ beside the hook. Without it the copy fails on an
+  // unresolved import and every case reports "hook closed before checkpoint",
+  // which says nothing about the lock behaviour under test.
+  {
+    const lexer = join(dirname(hook), 'lib', `shell-lex.${ps ? 'ps1' : 'mjs'}`);
+    if (existsSync(lexer)) {
+      mkdirSync(join(temp, 'lib'), { recursive: true });
+      copyFileSync(lexer, join(temp, 'lib', `shell-lex.${ps ? 'ps1' : 'mjs'}`));
+    }
+  }
   async function check(name, fn) {
     try { await fn(); pass++; console.log('PASS ' + name); }
     catch (error) { fail++; console.log('FAIL ' + name + ': ' + error.message); }

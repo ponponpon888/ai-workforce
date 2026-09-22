@@ -47,6 +47,7 @@ import { existsSync, readFileSync, statSync, renameSync, lstatSync, openSync, cl
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { afterOptions, lexPosix, lexPs, valueAfter } from './lib/shell-lex.mjs';
 
 /**
  * Where to tell the human to run the approval script. Installed, the hook sits in
@@ -369,6 +370,115 @@ const unquote = (token) => token.replace(/^["'`]+/, '').replace(/["'`]+$/, '');
  * Paths a command line hands to a database client. Only segments that invoke a
  * client are scanned, so an unrelated `-f` elsewhere on the line is left alone.
  */
+/**
+ * The SQL a command line actually hands to a database client.
+ *
+ * This is the answer to hook-010. Matching DDL keywords against the raw command
+ * text cannot tell `psql -c "drop table t"` from
+ * `git commit -m "why psql -c 'drop table t' is blocked"`: both contain the
+ * client name and the keyword. Five of ten measured cases were false positives
+ * that way -- all on the blocking side, which is safe but wrong often enough
+ * that people learn to work around the guard.
+ *
+ * The lexer says which words are a command and which are one command's
+ * argument, so the second case yields nothing: `git` is not a client, and the
+ * text that mentions psql is a single argument to it.
+ *
+ * What this deliberately does NOT do is neutralize the shell line. Applying SQL
+ * comment rules to a command line is what removed `--sql 'truncate bookings'`
+ * whole and let a TRUNCATE through once already (docs/02, "3 つ目は、賢くした
+ * せいで空きました"). Nothing here rewrites the line; it only picks arguments out
+ * of it.
+ */
+const INLINE_SQL_OPTIONS = {
+  psql: ['-c', '--command'],
+  sqlite3: [],
+  mysql: ['-e', '--execute'],
+  mariadb: ['-e', '--execute'],
+  supabase: ['--sql'],
+};
+
+/** Runners that put the real command further along the same word list. */
+const RUNNER_SKIPS = {
+  npx: ['-p', '--package', '-c', '--call'],
+  pnpm: [],
+  bunx: [],
+  yarn: [],
+  sudo: ['-u', '-g', '-U', '--user', '--group'],
+  env: [],
+  time: [],
+  nice: ['-n', '--adjustment'],
+};
+
+const programOf = (word) => {
+  const raw = String(word ?? '');
+  const base = raw.slice(Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\')) + 1);
+  return base.replace(/\.(exe|cmd|bat)$/i, '').toLowerCase();
+};
+
+/**
+ * Peel runners off the front until the first word names something that is not
+ * one. `npx supabase db execute --sql '...'` becomes the supabase call.
+ */
+function unwrapRunners(words) {
+  let rest = words;
+  for (let depth = 0; depth < 4 && rest.length > 0; depth++) {
+    const name = programOf(rest[0].v);
+    if (!Object.hasOwn(RUNNER_SKIPS, name)) return rest;
+    const after = afterOptions(rest.slice(1), RUNNER_SKIPS[name]);
+    if (after.length === 0 || after === rest) return rest;
+    // `pnpm dlx x` / `yarn dlx x`: the subcommand is not the program.
+    rest = ['dlx', 'exec', 'run'].includes(programOf(after[0].v)) ? after.slice(1) : after;
+  }
+  return rest;
+}
+
+/**
+ * Every client invocation on a command line, with the SQL text it was handed.
+ * Commands that are not a client contribute nothing at all.
+ */
+function clientCallsIn(command, grammar) {
+  const calls = [];
+  let lexed;
+  try {
+    lexed = grammar === 'ps' ? lexPs(command) : lexPosix(command);
+  } catch {
+    return null;   // unreadable: the caller falls back to the text scan
+  }
+  const visit = (words) => {
+    const rest = unwrapRunners(words);
+    if (rest.length === 0) return;
+    const name = programOf(rest[0].v);
+    const args = rest.slice(1);
+    if (Object.hasOwn(INLINE_SQL_OPTIONS, name)) {
+      // `supabase` only speaks SQL under `db`; `supabase login` is not a call.
+      if (name === 'supabase' && programOf(args[0]?.v) !== 'db') return;
+      const dialect = name === 'sqlite3' ? 'sqlite'
+        : name === 'mysql' || name === 'mariadb' ? 'mysql' : 'postgres';
+      const inline = valueAfter(args, INLINE_SQL_OPTIONS[name]);
+      if (inline && inline.v) calls.push({ sql: inline.v, dialect, words: rest });
+      // sqlite3 takes the statement as a bare argument after the database.
+      if (name === 'sqlite3') {
+        const positional = afterOptions(args, []).slice(1);
+        if (positional.length > 0 && positional[0].v) calls.push({ sql: positional[0].v, dialect, words: rest });
+      }
+      if (calls.length === 0) calls.push({ sql: '', dialect, words: rest });
+    }
+    if (name === 'prisma' || name === 'drizzle-kit') {
+      // Neither pins a dialect, so every spelling one of them might use is read
+      // and the statement is scanned under every dialect's rules.
+      const inline = valueAfter(args, ['--command', '--sql', '-c', '--execute', '-e']);
+      calls.push({ sql: inline && inline.v ? inline.v : '', dialect: 'unknown', words: rest });
+    }
+  };
+  for (const c of lexed.commands) visit(c.words);
+  for (const inner of lexed.nested || []) {
+    const deeper = clientCallsIn(inner.src, inner.g === 'ps' ? 'ps' : 'posix');
+    if (deeper) calls.push(...deeper);
+  }
+  return calls;
+}
+
 function fileRouteCandidates(command) {
   const found = new Map();
   for (const segment of command.split(SEGMENT_RE)) {
@@ -433,14 +543,21 @@ function hasUnfilteredMutation(stmt) {
   return false;
 }
 
-function scanStatements(text, grammar, where, dialect) {
+/**
+ * `includes` is false for SQL pulled off a command line. There the include is
+ * also a file route (`.read x` is both), and the route machinery reads the file
+ * and scans what is in it -- which is the better answer, and the one this hook
+ * already gave before the SQL was extracted rather than text-matched. Denying
+ * here as well would turn `sqlite3 app.db ".read harmless.sql"` into a refusal.
+ */
+function scanStatements(text, grammar, where, dialect, { includes = true } = {}) {
   let firstDdl = null;
   const cleaned = neutralize(text, grammar, dialect);
   const includeRes =
     dialect === 'unknown' || !INCLUDE_RES[dialect]
       ? Object.values(INCLUDE_RES)
       : [INCLUDE_RES[dialect]];
-  if (grammar === 'sql' && includeRes.some((re) => re.test(cleaned))) {
+  if (includes && grammar === 'sql' && includeRes.some((re) => re.test(cleaned))) {
     deny('Nested SQL includes are unsupported; submit the reviewed SQL directly.' + where, 'SQL include');
   }
   for (const stmt of cleaned.split(';')) {
@@ -504,7 +621,23 @@ try {
       ? dialectOf(sql, CLIENT_DIALECT_RES)
       : dialectOf(toolName, MCP_DIALECT_RES);
 
-  let firstDdl = scanStatements(sql, grammar, '', dialect);
+  // For a shell command line, what matters is the SQL that actually reaches a
+  // client. Scanning the whole line cannot tell an executed statement from one
+  // quoted inside a commit message (hook-010). When the lexer cannot read the
+  // line at all, fall back to scanning the text: fewer answers is acceptable,
+  // fewer blocks is not.
+  let firstDdl = null;
+  const calls = grammar === 'shell' ? clientCallsIn(sql, toolName === 'PowerShell' ? 'ps' : 'posix') : null;
+  if (calls === null) {
+    firstDdl = scanStatements(sql, grammar, '', dialect);
+  } else {
+    if (calls.length === 0) process.exit(0);   // no client is being invoked here
+    for (const call of calls) {
+      if (!call.sql) continue;
+      const ddl = scanStatements(call.sql, 'sql', '', call.dialect, { includes: false });
+      if (ddl !== null && firstDdl === null) firstDdl = ddl;
+    }
+  }
 
   // The statement need not be on the command line. Read what the client is being
   // pointed at and scan that too; a file route with nothing readable behind it

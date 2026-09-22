@@ -132,7 +132,7 @@ const pattern = new RegExp([
 
 無害化したあとで `;` で分割するので、文字列に含まれるセミコロンで文が割れることもありません。
 
-### シェル経由のコマンドは無害化していません（既知の誤検知）
+### シェル経由のコマンドは無害化していません（誤検知は塞ぎました）
 
 上の無害化は、フックに **SQL の文法として** 渡ってきたものにしか適用していません。
 `Bash` / `PowerShell` ツールの `command` フィールド（シェルのコマンド行）には適用していません。
@@ -143,25 +143,36 @@ const pattern = new RegExp([
 外れます（無害化する側が穴を作る）。これを避けるため、シェル経由のコマンドは**無害化せず、
 そのままの文字列で** `DROP` / `TRUNCATE` / `WHERE` なしの `UPDATE`・`DELETE` を検査しています。
 
-その結果、SQL クライアントの名前（`psql` など）と `DROP` / `TRUNCATE` が、**実行される SQL
-としてではなく単なる文字列として**同じシェルコマンドの中に両方出てくると、guard-sql は
-反応します。
+以前はその結果として、SQL クライアントの名前（`psql` など）と `DROP` / `TRUNCATE` が、
+**実行される SQL としてではなく単なる文字列として**同じシェルコマンドの中に両方出てくるだけで
+guard-sql が反応していました。
 
 ```bash
-psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # select 1 しか実行しないが BLOCK される
-git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked"  # コミットメッセージが理由で BLOCK される
+psql -c "select 1" && echo "note: never run DROP TABLE in prod"      # select 1 しか実行しないのに BLOCK された
+git commit -m "docs: explain why psql -c 'DROP TABLE x' is blocked"  # コミットメッセージが理由で BLOCK された
 ```
 
-実害はブロックだけです（安全側に倒れる誤検知で、危険な SQL を通す方向の穴ではありません）。
-このドキュメント自体、guard-sql の挙動を説明するのに `psql` と `DROP` / `TRUNCATE` を
-並べて書いているため、そのままコミットメッセージに引用すると起こり得ます。
+実害はブロックだけでした（安全側に倒れる誤検知で、危険な SQL を通す方向の穴ではありません）。
+とはいえ、このドキュメント自体 `psql` と `DROP` を並べて書いているので、
+そのままコミットメッセージに引用すると起きる程度には頻繁でした。
 
-**いまは既知の制約として残しています。** 安全に塞ぐには、guard-destructive が持つ文法ごとの
-レクサー（Bash は POSIX シェル、PowerShell は PowerShell として実際にトークン化する）を使って、
-SQL クライアントに渡っている**実際の引数だけ**を取り出して検査する必要があります。1 本の
-正規表現や SQL 文法の無害化をシェル文字列に当てる形で済ませようとすると、上と同じ
-「賢くしたせいで空く」失敗を繰り返しかねません。[hook-010](../data/pitfalls/hook-010.json) に
-記録しています。
+**これは塞ぎました**（[hook-010](../data/pitfalls/hook-010.json) / status: closed）。
+着手前の実測では代表的な10ケース中5件が誤検知で、本物の危険4件はすべて正しく阻止していました。
+
+塞ぎ方は、hook-010 自身が書いていたとおりです。`guard-destructive` が持っていた文法ごとの
+レクサーを共有モジュール（[`kit/claude/hooks/lib/shell-lex.mjs`](../kit/claude/hooks/lib/shell-lex.mjs) /
+`.ps1`）に切り出し、guard-sql もそれでコマンド行を字句解析して、**SQL クライアントに実際に
+渡っている引数だけ**を取り出して検査します（`psql -c`、`mysql -e`、
+`supabase db execute --sql`、`sqlite3` の位置引数など）。クライアントでないコマンドは何も
+寄与しないので、`git commit -m "...psql -c 'DROP TABLE x'..."` からは検査対象が1つも出てきません。
+
+**コマンド行そのものは、いまも一切書き換えていません。** 上で書いた「賢くしたせいで空く」
+失敗（`--sql` オプションごと消えて `TRUNCATE` が視界から外れる）は、無害化をやめて
+「引数を取り出すだけ」にしたことで構造的に起こらなくなっています。無害化は、取り出した
+SQL に対して SQL の文法として当てます。
+
+レクサーが読めなかったコマンド行は、従来どおり生テキストで走査します。答えが減るのは
+許容できますが、ブロックが減るのは許容できないためです。
 
 ### MySQL と SQLite は、同じ文字列を別の意味で読みます
 
@@ -219,6 +230,7 @@ Postgres にも MySQL にも向けられるので、どちらかに決めつけ�
 丸ごと外れます。この場合は**全方言の規則を当て、無害化は一切しません**（両方の安全側）。
 
 テストは 47 → 87 件（止める 42 / 既知の制約 2 / 通す 32 / 承認トークン 11）。
+※ この内訳は方言対応を入れた時点のものです。その後 [hook-010](../data/pitfalls/hook-010.json) を塞いだので、「既知の制約」2 件は「通す」側に移り、件数は 91 になりました。
 増えた 40 件のうち 16 件は「止まってはいけない」側です。
 
 ### DDL の承認トークン
@@ -975,7 +987,7 @@ node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 87 ケース（落とす 42（うち MySQL 12 / SQLite 10） / 既知の制約として残した誤検知 2 / 通す 32 / 承認トークン関連 11）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。既知の制約として残した誤検知 2 件は「シェル経由のコマンドは無害化していません（既知の誤検知）」（上）と [hook-010](../data/pitfalls/hook-010.json) を参照してください。
+合計 91 ケース（Node 版。PowerShell 版は 90）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。[hook-010](../data/pitfalls/hook-010.json) を塞いだ分は、「テキストとして書かれただけの DDL キーワードは通す」側と「同じ形で実際に実行されるものは止める」側を対にして入れています（上の「シェル経由のコマンドは無害化していません（誤検知は塞ぎました）」）。
 
 ```
 guard-sql test suite (node)
@@ -990,9 +1002,11 @@ must block:
   PASS  a file route with nothing readable behind it
   (抜粋。must block は 20 件)
 
-known limitation, still BLOCK (hook-010, open_recorded — not a bug to fix silently):
+was hook-010, now ALLOW (a DDL keyword that is only text):
   PASS  SQL-client name and DROP as plain text, not executed SQL
   PASS  DDL keyword only in a commit message
+  PASS  the same DROP, actually executed
+  PASS  a client mentioned only inside an echo argument
 
 must allow:
   PASS  DELETE with WHERE

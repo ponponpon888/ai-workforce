@@ -6,29 +6,29 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 28,
+    "total": 29,
     "by_set": {
-      "pitfalls": 28
+      "pitfalls": 29
     },
     "by_confidence": {
-      "measured": 21,
+      "measured": 22,
       "inferred": 3,
       "documented": 3,
       "unverified": 1
     },
     "by_status": {
-      "closed": 21,
+      "closed": 22,
       "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 18,
+      "trap": 19,
       "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
-      "instruction": 1,
+      "instruction": 2,
       "permissions": 6,
       "hook": 16,
       "runtime": 3,
@@ -37,11 +37,11 @@
     },
     "by_stale_risk": {
       "unknown_version": 15,
-      "ok": 6,
+      "ok": 7,
       "not_applicable": 7
     },
     "without_prose": 10,
-    "checkable": 17
+    "checkable": 18
   },
   "checks": [
     {
@@ -51,6 +51,15 @@
       "pattern": "check-pitfall-claims",
       "expect": "present",
       "message": "docs ワークフローから check-pitfall-claims.mjs の実行が消えると、散文がレコードの値を引用したまま古くなる状態に戻る。paths の data/pitfalls/** も一緒に必要で、それが無いとレコードだけを変えたコミットで検査が走らない。",
+      "severity": "low"
+    },
+    {
+      "id": "doc-002",
+      "kind": "file-content",
+      "target": ".github/workflows/docs.yml",
+      "pattern": "check-doc-commands",
+      "expect": "present",
+      "message": "docs ワークフローから check-doc-commands.mjs の実行が消えると、コマンドの隣に書いた結果がまた古くなる。test.yml 側の同じ実行も要る。テストを1件足しただけで、Markdown を1行も触らずに README が偽になるため。",
       "severity": "low"
     },
     {
@@ -246,6 +255,32 @@
         "docs",
         "drift",
         "pitfall-records",
+        "ci",
+        "recurrence"
+      ]
+    },
+    {
+      "id": "doc-002",
+      "set": "pitfalls",
+      "file": "data/pitfalls/doc-002.json",
+      "title": "README がコマンドの隣に載せていた実行結果が古くなり、10箇所のうち6箇所が実際の出力と違っていた",
+      "layer": "instruction",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/13-doc-todos.md#コマンドの隣に書いた結果が本当か",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "doc-001",
+        "hook-010"
+      ],
+      "tags": [
+        "docs",
+        "drift",
+        "readme",
         "ci",
         "recurrence"
       ]

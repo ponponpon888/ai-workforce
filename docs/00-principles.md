@@ -132,8 +132,10 @@ Neural Glow → Hex Grid → GlobalSidebar。最初の 6 日で機能を組ん�
 「たぶん通る」で次に進んでいたということです。
 
 → いまは各プロジェクトの `CLAUDE.md` に `npm run build` を「push 前に必ず通す」と書いています。
-　このリポジトリ自体も、CI でスクリプトのパース・非 ASCII 検査・guard-sql 44 ケース・
-　pull-all 23 ケース・インストーラの実行を、Ubuntu / macOS / Windows で回しています。
+　このリポジトリ自体も、CI でスクリプトのパース・非 ASCII 検査・guard-sql と pull-all の
+　テスト・インストーラの実行を、Ubuntu / macOS / Windows で回しています。件数をここには
+　書きません。[README](../README.md) がコマンドの隣に載せていて、そちらは実際に走らせて
+　照合しているからです。
 
 ### 3. マイグレーションを残していなかった
 

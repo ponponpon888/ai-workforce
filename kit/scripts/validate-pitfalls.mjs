@@ -18,6 +18,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { anchorsOf, slugify } from './markdown-anchors.mjs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,35 +42,6 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
 
 /** Schema keys carrying documentation rather than definition. */
 const isMeta = (key) => key.startsWith('$');
-
-/**
- * GitHub-style heading anchor. Punctuation is dropped and whitespace becomes a hyphen, so
- * "### 3 つ目は、賢くしたせいで空きました" becomes "3-つ目は賢くしたせいで空きました".
- */
-const PUNCTUATION = new RegExp(
-  '[`~!@#$%^&*()+=<>?,.;:\'"\\\\|/\\[\\]{}。、，．・？！「」『』（）［］｛｝〈〉《》…—–]',
-  'g'
-);
-const slugify = (text) => text.trim().toLowerCase().replace(PUNCTUATION, '').replace(/\s+/g, '-');
-
-/** Every heading anchor in a markdown file. Fenced code blocks are not headings. */
-const anchorCache = new Map();
-function anchorsOf(absPath) {
-  if (anchorCache.has(absPath)) return anchorCache.get(absPath);
-  const anchors = new Set();
-  let inFence = false;
-  for (const line of readFileSync(absPath, 'utf8').split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const m = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
-    if (m) anchors.add(slugify(m[2]));
-  }
-  anchorCache.set(absPath, anchors);
-  return anchors;
-}
 
 function typeOk(value, type) {
   if (type === 'string') return isNonEmptyString(value);

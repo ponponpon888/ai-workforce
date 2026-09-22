@@ -11,6 +11,28 @@
 
 ## 未リリース
 
+- `kit/scripts/check-doc-links.mjs` を追加。README と `docs/` の Markdown の**相対リンクが
+  実在するファイルを指しているか**を検査する（249本）。`#見出し` が付いていて指す先が
+  リポジトリ内の Markdown なら、見出しの実在も見る。入れた理由は、実際にリンク切れが2本
+  出荷されたから: `docs/02-guardrails.en.md` が `](data/pitfalls/hook-010.json)` と書いていて、
+  日本語の正本にある `../` が落ちていた（#40 の合流時に手作業で見つけて直した）。リンクを
+  見る仕組みが無かったので誰も気づかず、英訳を増やすたびに同じ機会が増える状態だった。
+  見出しの照合は落とし穴レコードの `origin` と同じ実装を使う。共通部分を
+  `kit/scripts/markdown-anchors.mjs` に切り出し、`validate-pitfalls` はそこから読むように
+  した（挙動は変えていない。`test-validate-pitfalls` で確認）。2つ持つと、見出しに記号が
+  入った瞬間に食い違うため。`http(s)` と `mailto` は見ない（ネットワークに出ると、変更と
+  関係のない理由で落ちるようになる）。フェンスとインラインコードの中も見ない（コード例で
+  あって、リンクではない。この方針は自分の解説ページの例を誤検出して気づいた）。
+  テストは `test-check-doc-links.mjs` 30件。**出荷された実物のリンク切れ2本を、この
+  チェッカーが検出することを確認済み**。
+- 上を入れるときに、**文書だけの変更では CI が1つも走っていなかった**ことが分かった。
+  `test.yml` は無料枠対策（[ci-001](data/pitfalls/ci-001.json)。macOS の単価は Linux の
+  約10倍）で `**/*.md` と `docs/**` を `paths-ignore` にしているため、リンクを壊す種類の
+  変更が、ちょうど検査を素通りしていた（#40 も CI 0件で入っている）。文書の検査だけを
+  `.github/workflows/docs.yml` に分けた。Ubuntu 1ジョブ、数秒。`check-doc-todos` も同じ
+  理由でこちらに入れた（こちらも文書だけの PR では走っていなかった）。無料枠対策は
+  そのまま維持している。
+
 - `guard-destructive` が持っていた**シェルのレクサーを `kit/claude/hooks/lib/shell-lex.mjs` に
   切り出した**。中身は一行も変えていない（680行がそのまま。足したのは `export` と冒頭の説明だけで、
   抽出後に元の範囲と行単位で一致することを確認している）。`guard-destructive` のテスト219件は
@@ -35,6 +57,7 @@
   同じで、dot-source が投げてフックは入力を読む前に exit 1 になる（実際に lexer を消して確認）。
   `install.ps1` が入れた種類（node / powershell）に応じて `lib/` を置き、`doctor` の依存表にも
   `guard-destructive.ps1` を足した。
+
 
 - `guard-sql` が SQL の方言（Postgres / MySQL / SQLite）を読み分けるようになった。着手前に修正前の
   フックで実測したところ、MySQL の `RENAME TABLE` / `REPLACE INTO` / `LOAD DATA` / `FLUSH` /

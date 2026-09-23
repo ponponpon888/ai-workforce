@@ -253,11 +253,11 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 | [01 2 層の CLAUDE.md](docs/01-two-layer-claude-md.md) | 共通ルールと案件ルールの分け方（[EN](docs/01-two-layer-claude-md.en.md)） |
 | [02 機械的な歯止め](docs/02-guardrails.md) | フック・deny リスト・承認モードの設計（[EN](docs/02-guardrails.en.md)） |
 | [03 役割分担](docs/03-division-of-labor.md) | チャット / Claude Code / MCP の使い分け（[EN](docs/03-division-of-labor.en.md)） |
-| [04 複数案件運用](docs/04-multi-project.md) | 自動 pull、絶対パス指定、命名規約 |
+| [04 複数案件運用](docs/04-multi-project.md) | 自動 pull、絶対パス指定、命名規約（[EN](docs/04-multi-project.en.md)） |
 | [05 本番 DB の取り決め](docs/05-production-db.md) | Supabase を AI に触らせるときの線引き（[EN](docs/05-production-db.en.md)） |
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション（[EN](docs/06-supabase-mcp.en.md)） |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話（[EN](docs/07-github-vercel.en.md)） |
-| [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/` |
+| [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/`（[EN](docs/08-pitfall-records.en.md)） |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 | [CHANGELOG](CHANGELOG.md) | 各版に何が入っているか。現在は v0.1.0 |

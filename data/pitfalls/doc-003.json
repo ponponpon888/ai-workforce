@@ -1,0 +1,49 @@
+{
+  "id": "doc-003",
+  "title": "ページを訳したのに、正本の README と CONTRIBUTING は「英語版は無い」と言い続けていた",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "summary": "ページを訳すのは3箇所の編集になる。docs/<base>.en.md を置く、日本語の原本の冒頭に English: の行を足す、両方の README の表にリンクを張る。docs/04 と docs/08 を訳したあと、ファイルも English: 行も README.en.md の表も揃っていたのに、README.md（正本）の表だけリンクが無かった。CONTRIBUTING も英語の節だけが直っていて、日本語側は「残りの docs/（04・08）の英訳は歓迎します」のままだった。正本のほうが間違っている状態。check-doc-links は逆向き（無い翻訳へのリンク）を落とせるが、在る翻訳が張られていないほうは誰も見ていなかった。壊れていないからで、主張が不完全なだけでは目に見えない。doc-001 が散文とレコードのずれ、doc-002 が散文とコマンド出力のずれで、これは散文とファイルの存在のずれ。訳した本人がその同じ PR で見落としているので、注意して直せば防げる種類ではない。",
+  "origin": "docs/13-doc-todos.md#訳したページが訳したと書いてあるか",
+  "measured_on": "2026-09-23",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "docs/04-multi-project.en.md と docs/08-pitfall-records.en.md は存在する",
+    "docs/04-multi-project.md と docs/08-pitfall-records.md の冒頭には English: の行がある",
+    "README.en.md の表は両方の .en.md にリンクしている",
+    "README.md の表の該当行には .en.md へのリンクが無かった（他の7ページには [EN] が付いている）",
+    "CONTRIBUTING.md の英語側は docs/00 through docs/08 exist in English と正しく書いていたが、日本語側は 00〜03・05〜07 を挙げ、04 と 08 の英訳を募集したままだった",
+    "README.en.md は英語版があるのは 00 と 02 の2本と書いていた。実際は9本",
+    "check-doc-links / check-doc-todos / check-pitfall-claims / check-doc-commands はいずれも0件。リンクは1本も壊れていない",
+    "kit/scripts/check-translation-links.mjs を修正前の状態に対して走らせると、README.md の2箇所を名指しして exit 1 になる"
+  ],
+  "status": "closed",
+  "fix": "kit/scripts/check-translation-links.mjs を追加し、docs ワークフローから走らせる。docs/<base>.en.md が存在するページそれぞれについて、日本語ページの冒頭（先頭10行以内）・README.md・README.en.md の3箇所がその対訳を張っていることを見る。対訳が無いページはどこからも要求しない。README.en.md から日本語ページへ張るのは、その場合に正しいことだから。あわせて README.md の2行を直し、散文の列挙を3箇所から消した（CONTRIBUTING の日英と README.en.md の「2本」）。どのページが訳されているかを文で書くと訳した瞬間に古くなり、文をファイル一覧に縛る方法は新しい記法を作らない限り無い。doc-002 のときは # pass: N という既存の書き方が使えたが、ここには使えるものが無かった。だから表に答えを持たせ、表を検査する。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": ".github/workflows/docs.yml",
+    "pattern": "check-translation-links",
+    "expect": "present",
+    "message": "docs ワークフローから check-translation-links.mjs の実行が消えると、訳したのに訳したと書いていない状態に戻る。リンクが壊れるわけではないので、check-doc-links では代われない。"
+  },
+  "related": [
+    "doc-001",
+    "doc-002"
+  ],
+  "tags": [
+    "docs",
+    "translation",
+    "drift",
+    "readme",
+    "ci"
+  ]
+}

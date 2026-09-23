@@ -6,29 +6,29 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 30,
+    "total": 31,
     "by_set": {
-      "pitfalls": 30
+      "pitfalls": 31
     },
     "by_confidence": {
-      "measured": 22,
+      "measured": 23,
       "inferred": 3,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 23,
+      "closed": 24,
       "open_recorded": 1,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 20,
+      "trap": 21,
       "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
-      "instruction": 2,
+      "instruction": 3,
       "permissions": 6,
       "hook": 16,
       "runtime": 3,
@@ -37,11 +37,11 @@
     },
     "by_stale_risk": {
       "unknown_version": 15,
-      "ok": 7,
+      "ok": 8,
       "not_applicable": 8
     },
     "without_prose": 10,
-    "checkable": 19
+    "checkable": 20
   },
   "checks": [
     {
@@ -69,6 +69,15 @@
       "pattern": "check-doc-commands",
       "expect": "present",
       "message": "docs ワークフローから check-doc-commands.mjs の実行が消えると、コマンドの隣に書いた結果がまた古くなる。test.yml 側の同じ実行も要る。テストを1件足しただけで、Markdown を1行も触らずに README が偽になるため。",
+      "severity": "low"
+    },
+    {
+      "id": "doc-003",
+      "kind": "file-content",
+      "target": ".github/workflows/docs.yml",
+      "pattern": "check-translation-links",
+      "expect": "present",
+      "message": "docs ワークフローから check-translation-links.mjs の実行が消えると、訳したのに訳したと書いていない状態に戻る。リンクが壊れるわけではないので、check-doc-links では代われない。",
       "severity": "low"
     },
     {
@@ -317,6 +326,32 @@
         "readme",
         "ci",
         "recurrence"
+      ]
+    },
+    {
+      "id": "doc-003",
+      "set": "pitfalls",
+      "file": "data/pitfalls/doc-003.json",
+      "title": "ページを訳したのに、正本の README と CONTRIBUTING は「英語版は無い」と言い続けていた",
+      "layer": "instruction",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/13-doc-todos.md#訳したページが訳したと書いてあるか",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "doc-001",
+        "doc-002"
+      ],
+      "tags": [
+        "docs",
+        "translation",
+        "drift",
+        "readme",
+        "ci"
       ]
     },
     {

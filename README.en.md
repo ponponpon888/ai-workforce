@@ -115,7 +115,7 @@ that safely needs the same real lexer guard-destructive has; a quick regex once 
 hole, letting `TRUNCATE` slip past `--sql`).
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 91   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 ```
 
 Adding the "unrelated MCP tool" case is how I found a real bug: searching GitHub for the string
@@ -140,7 +140,7 @@ stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c
 `git -C` ([perm-006](data/pitfalls/perm-006.json)).
 
 ```bash
-node kit/scripts/test-guard-sql.mjs           # pass: 91    fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0

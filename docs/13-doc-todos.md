@@ -100,7 +100,7 @@ node kit/scripts/check-translation-links.mjs
 README は、実行するコマンドのすぐ隣に、そのコマンドが出す結果を書いています。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 91   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 ```
 
 誰も走らせていなかったので、古くなりました。この検査を入れた時点の実測では、guard-sql は

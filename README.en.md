@@ -256,9 +256,13 @@ both installers into a throwaway home.
 
 ## Documentation
 
-Japanese is canonical. **The two core documents are also in English** — 00 and 02, marked EN
-below. For the rest, the tables, flags, file names and code are language-neutral, so they are
-usable as-is; translations are welcome.
+Japanese is canonical. A page that has an English version is linked to it in the table below;
+the rest are Japanese only, but their tables, flags, file names and code are language-neutral,
+so they are usable as-is. Translations are welcome.
+
+The count is not written here. It went stale twice -- this line still said "the two core
+documents" long after seven more had been translated. The table is the answer, and
+`check-translation-links.mjs` runs it against the files on disk.
 
 | | |
 |---|---|

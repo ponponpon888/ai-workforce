@@ -31,9 +31,13 @@ English follows the Japanese. 日本語・英語どちらでも構いません�
 
 ### 4. 翻訳
 
-日本語が正本です。英語版は README と `docs/00` `docs/01` `docs/02` `docs/03`（4 本柱の説明）、
-`docs/05` `docs/06` `docs/07`（本番 DB とチャット側の穴）。
-残りの `docs/`（04・08）の英訳は歓迎します。
+日本語が正本です。英語版があるページは、[README](README.md) の表から `.en.md` へのリンクが
+張ってあります。英訳は歓迎します。
+
+**ここに一覧は書きません。** この節は実際に古くなりました。`docs/04` と `docs/08` を訳した
+あとも「残りの `docs/`（04・08）の英訳は歓迎します」と書いたままで、英語版の節だけが直って
+いました。正本のほうが間違っている状態です。表は `check-translation-links.mjs` が
+ディスク上のファイルと突き合わせるので、そちらが答えです。
 
 ---
 
@@ -120,8 +124,9 @@ In order of value:
 3. **Ports** — `pull-all` on another runtime (Node, PowerShell and POSIX shell exist),
    corrections to the MySQL/SQLite rules in `guard-sql` from someone who actually runs
    those engines, more per-project `CLAUDE.md` templates.
-4. **Translation.** Japanese is canonical; the README and `docs/00` through `docs/08` exist in
-   English. `docs/09` and later -- the tool-by-tool pages -- do not.
+4. **Translation.** Japanese is canonical. A page that has an English version is linked to it
+   from the table in [README.md](README.md); that table is checked against the files on disk
+   by `check-translation-links.mjs`, so it is the answer rather than a list written here.
 
 ## What is not welcome
 

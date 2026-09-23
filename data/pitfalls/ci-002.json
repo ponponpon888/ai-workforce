@@ -1,0 +1,33 @@
+{
+  "id": "ci-002",
+  "title": "CI が5ヶ月間、サポートの切れた Node 20 で全テストを回していた",
+  "layer": "ci",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "documented",
+  "summary": "test.yml の3ジョブと docs.yml が setup-node に node-version: 20 を渡していた。Node 20 は 2026-04-30 にサポート終了しており、2026-09-22 時点で5ヶ月が過ぎている。全スイートは緑だったが、誰も走らせるべきでないバージョンでの緑は、このワークフローが出したい信号ではない。docs/11 も「Node.js 20以上」と書いていたので、両者は食い違ってすらおらず、ドリフト検査では見つからない。壊れているという事実がリポジトリの外（Node のリリース計画）にあるため、リポジトリ内の検査では原理的に検出できない種類の古さ。PR #47 で actions 側を node24 対応版へ上げたときも、action の実行環境の話とテストを走らせるランタイムの話が別だったため、こちらは残った。",
+  "origin": "docs/11-pitfall-linter.md#11-落とし穴の静的検査",
+  "sources": [
+    "https://github.com/nodejs/Release — schedule.json: v20 end 2026-04-30, v22 end 2027-04-30, v24 end 2028-04-30"
+  ],
+  "status": "closed",
+  "fix": "test.yml の3ジョブと docs.yml を node-version: 22 に上げ、docs/11 の要件も「Node.js 22以上」に直した。22 は修正が続いている一番古い系列（2027-04-30 まで）で、手元の開発環境と critical-gate の Linux ジョブが元から使っていたバージョンでもある。これで CI と手元の検証が同じランタイムになった。ワークフローには終了日を書いたコメントを添えた。detection は node-version: 20 が戻ってこないことを見る。これは特定の退行しか止められず、次に 22 が終了するときは誰も気づかない。ランタイムのフックに実行時のバージョン判定を足す案は採らなかった。フックは exit 2 以外の非ゼロが「報告されるが何もしない」＝実質の許可になるため、古い Node を弾こうとした判定がそのまま素通しの穴になる。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": ".github/workflows/test.yml",
+    "pattern": "node-version: 20",
+    "expect": "absent",
+    "message": "CI が Node 20 に戻ると、サポートの切れたランタイムでの緑に逆戻りする。これは20への退行しか見ておらず、22 の終了（2027-04-30）には気づけない。"
+  },
+  "related": [
+    "ci-001"
+  ],
+  "tags": [
+    "ci",
+    "node",
+    "end-of-life",
+    "false-sense-of-security",
+    "external-fact"
+  ]
+}

@@ -51,9 +51,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Node 20 reached end of life on 2026-04-30 (nodejs/Release). Everything
+      # here had been running green on an unsupported runtime since then, and
+      # green on a version nobody should be running is not the signal this
+      # workflow is for. 22 is the oldest line still receiving fixes
+      # (maintenance until 2027-04-30) and is the floor docs/11 names.
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Diagnose the kit template
         shell: bash
@@ -186,9 +191,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      # Node 20 reached end of life on 2026-04-30 (nodejs/Release). Everything
+      # here had been running green on an unsupported runtime since then, and
+      # green on a version nobody should be running is not the signal this
+      # workflow is for. 22 is the oldest line still receiving fixes
+      # (maintenance until 2027-04-30) and is the floor docs/11 names.
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Diagnose the kit template
         shell: pwsh
@@ -343,9 +353,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+      # Node 20 reached end of life on 2026-04-30 (nodejs/Release). Everything
+      # here had been running green on an unsupported runtime since then, and
+      # green on a version nobody should be running is not the signal this
+      # workflow is for. 22 is the oldest line still receiving fixes
+      # (maintenance until 2027-04-30) and is the floor docs/11 names.
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
       - name: Test cross-platform entry points
         shell: bash
         run: |

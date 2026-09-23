@@ -152,7 +152,7 @@ Assert-Result 'a subshell-style chain does not hide it' $BLOCK (Invoke-ToolHook 
 Write-Host ''
 Write-Host 'must allow - Edit/Write tools and shell commands:' -ForegroundColor White
 Assert-Result 'Edit an unrelated project file' $ALLOW (Invoke-ToolHook 'Edit' @{ file_path = '/home/user/project/src/index.ts'; old_string = 'x'; new_string = 'y' })
-Assert-Result 'Write to a project scripts dir with the same name' $ALLOW (Invoke-ToolHook 'Write' @{ file_path = '/home/user/project/scripts/build.mjs'; content = 'x' })
+Assert-Result 'Write to a project scripts/ dir with the same name' $ALLOW (Invoke-ToolHook 'Write' @{ file_path = '/home/user/project/scripts/build.mjs'; content = 'x' })
 Assert-Result 'reading settings.json is fine' $ALLOW (Invoke-ToolHook 'Bash' @{ command = "cat $settingsPath" })
 Assert-Result 'rm on an unrelated scripts dir' $ALLOW (Invoke-ToolHook 'Bash' @{ command = 'rm ./scripts/build.sh' })
 Assert-Result 'cp between two unrelated files' $ALLOW (Invoke-ToolHook 'Bash' @{ command = 'cp foo.txt bar.txt' })

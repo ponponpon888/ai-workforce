@@ -11,6 +11,35 @@
 
 ## 未リリース
 
+- **`guard-sql` のツインのテストが3件ずれていた**のを直した
+  （[hook-016](data/pitfalls/hook-016.json)）。Node 版と PowerShell 版を検査するやり方は
+  2通りある。`guard-secrets` と `guard-destructive` は**1つのケース集合を両実装に送る**
+  （`--target ps`）ので構造上ずれない。`guard-sql` と `guard-config` は**ケースを二重に
+  書いて**いて、ずれる。両スイートのケース名を突き合わせて実測した:
+  - Node の `DROP hidden behind a SQL comment in -c is still read` は**名前が嘘**だった。
+    ペイロードは `psql -c "select 1; drop table t"` で、コメントは1つも入っていない。
+    PowerShell 側の `DROP behind a semicolon in -c` が正確な名前で、同じペイロード・同じ期待値
+  - `a DDL keyword written into a file is not executed` は **PowerShell 版では一度も
+    検査されていなかった**。直接投げて実測 → 両実装とも通す。バグではなく未検査
+  - **どちらのスイートも SQL コメントの形を検査していなかった**。実測すると
+    `-- drop table t` と `/* drop table t */` は両実装とも通し、コメント行の**後ろ**にある
+    本物の `DROP` は両実装とも止める。正しいのに誰も守っていない挙動だった
+  3件を両側に足して **Node 94 / PowerShell 94**、残る差はランタイム固有の関数名1つ
+  （`isApproved()` ↔ `Test-Approved`）だけになった。フックのコードは変えていない。
+- **`guard-config` の 53 対 55 は意図的な差**であることを確認した。PowerShell の
+  `$PSCommandPath` はシンボリックリンクを解決しないので「解決後の綴り」に相当するケースが
+  存在せず、`/./` 迂回で同じ分裂を再現している（[hook-014](data/pitfalls/hook-014.json)）。
+  表記ゆれ1件だけ揃えた。
+- **根本の形は残している**（`hook-016` は `open_recorded`）。二重に書いたリストは人が
+  気をつけている限りしか揃わない。`--target ps` へ移せば構造的に閉じるが、
+  PowerShell スイート749行の削除を伴うので別の変更にする。静的にケース名を抽出する検査も
+  検討したが、ループで生成されるケースを取りこぼし（`guard-config` で53件中30件しか
+  拾えない）、**見かけより少なく検査する形**になるので採らなかった。
+- 件数が 91 → 94 になったので、[#50](https://github.com/ponponpon888/ai-workforce/pull/50) で
+  入れた `check-doc-commands` が README と `docs/13` の古い記述を落とした。あわせて
+  `docs/02` の日英に埋まっていたサンプル出力の合計（87 / 45 / 91）を消し、
+  **合計はコマンドの隣に一度だけ**置く形に揃えた。
+
 - **README がコマンドの隣に載せていた実行結果が古くなっていた**のを直し、同じずれを機械で縛った
   （[doc-002](data/pitfalls/doc-002.json)）。README.md と README.en.md は
   `node kit/scripts/test-guard-sql.mjs    # pass: 87   fail: 0` の形で、実行するコマンドの

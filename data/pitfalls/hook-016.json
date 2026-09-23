@@ -1,0 +1,48 @@
+{
+  "id": "hook-016",
+  "title": "guard-sql と guard-config はツインのテストを二重に書いているので、3件が片方でしか検査されていなかった",
+  "layer": "hook",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "summary": "Node 版と PowerShell 版を検査するやり方が2通りある。guard-secrets と guard-destructive は1つのケース集合を両実装に送る（--target ps）ので構造上ずれない。guard-sql と guard-config は別々のスイートにケースを二重に書いていて、ずれうる。両スイートのケース名を突き合わせたところ、guard-sql は Node 91 件 / PowerShell 90 件で実質3件が食い違っていた。フック本体の挙動は3件とも両ランタイムで同じだったので、これはバグではなく検査の穴。テストは全部緑で、件数が2件違うことにも誰も気づいていなかった。guard-config の 53 対 55 のほうは意図的な差で、PowerShell の $PSCommandPath がシンボリックリンクを解決しないため「解決後の綴り」に相当するケースが存在せず、/./ 迂回で同じ分裂を再現している（hook-014）。",
+  "origin": "docs/02-guardrails.md#ツインのテストには2つの形があります",
+  "measured_on": "2026-09-23",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.2"
+  },
+  "repro": [
+    "両スイートを走らせて PASS 行のケース名を取り出し、sort して comm で突き合わせる",
+    "guard-sql: Node 91 件 / PowerShell 90 件。名前の差は5件で、うち2件はランタイム固有の関数名（isApproved() 対 Test-Approved）",
+    "Node の DROP hidden behind a SQL comment in -c is still read は名前が実体と合っていない。ペイロードは psql -c \"select 1; drop table t\" でコメントは含まれない。PowerShell 側の DROP behind a semicolon in -c が正確な名前で、同じペイロード・同じ期待値",
+    "a DDL keyword written into a file is not executed は Node 側にしかない。printf '%s\\n' \"run psql -c 'DROP TABLE t'\" > notes.md を guard-sql.ps1 に直接投げると exit 0 で、Node と同じく通す",
+    "SQL コメントを含む形はどちらのスイートにも無い。psql -c \"select 1; -- drop table t\" と psql -c \"/* drop table t */ select 1\" は両実装とも exit 0、psql -c \"-- note\\ndrop table t\" は両実装とも exit 2",
+    "guard-config: Node 53 件 / PowerShell 55 件。差はすべて approve-ddl のファイル名（.mjs 対 .ps1）と経路の綴りのテストで、後者は hook-014 のとおりランタイムごとに別の再現方法が要る"
+  ],
+  "status": "open_recorded",
+  "why_not_closed": "見つかった3件は両スイートに足した（guard-sql は Node 94 / PowerShell 94 になり、残る差はランタイム固有の関数名1つだけ）。だが二重に書いたリストという形そのものは残っている。人が気をつけている限りしか揃わない。このキットには既に揃わないようにする作り（--target ps、guard-secrets と guard-destructive が使っている）があり、guard-sql と guard-config をそこへ移せば構造的に閉じる。移行は test-guard-sql.ps1 322行と test-guard-config.ps1 427行の削除を伴い、ランタイム固有のケース（hook-014 の経路テスト）を per-target で表現し直す必要があるため、別の変更として扱う。静的にケース名を抽出して突き合わせる検査も検討したが、ループやテンプレートで生成されるケースを取りこぼし（guard-config で 53 件中 30 件しか拾えなかった）、見かけより少なく検査する形になるので採らなかった。実行して突き合わせる形は pwsh のスイートを再実行することになり、手元の実測で guard-sql.ps1 が 50 秒、guard-config.ps1 が 19 秒かかる。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/scripts/test-guard-sql.ps1",
+    "pattern": "a DDL keyword written into a file is not executed",
+    "expect": "present",
+    "message": "PowerShell 版のスイートからこのケースが消えると、Node 側だけが検査している状態に戻る。これは見つかった1件を押さえるだけで、次に二重リストがずれることは止められない。止めるには --target ps へ移す必要がある。"
+  },
+  "related": [
+    "hook-003",
+    "hook-014"
+  ],
+  "tags": [
+    "guard-sql",
+    "guard-config",
+    "powershell",
+    "twin",
+    "test-coverage",
+    "drift"
+  ]
+}

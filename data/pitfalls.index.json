@@ -6,42 +6,42 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 30,
+    "total": 31,
     "by_set": {
-      "pitfalls": 30
+      "pitfalls": 31
     },
     "by_confidence": {
-      "measured": 22,
+      "measured": 23,
       "inferred": 3,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
       "closed": 23,
-      "open_recorded": 1,
+      "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 20,
+      "trap": 21,
       "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
       "instruction": 2,
       "permissions": 6,
-      "hook": 16,
+      "hook": 17,
       "runtime": 3,
       "ci": 2,
       "external": 1
     },
     "by_stale_risk": {
-      "unknown_version": 15,
+      "unknown_version": 16,
       "ok": 7,
       "not_applicable": 8
     },
     "without_prose": 10,
-    "checkable": 19
+    "checkable": 20
   },
   "checks": [
     {
@@ -178,6 +178,15 @@
       "expect": "present",
       "message": "guard-sql の matcher から MySQL の MCP 名が消えると、フックが読めるのに呼ばれない状態に戻る。matcher・guard-sql.mjs・guard-sql.ps1 の3箇所が同じ製品名を挙げていることは test-sql-tool-matcher.mjs が縛っている。",
       "severity": "medium"
+    },
+    {
+      "id": "hook-016",
+      "kind": "file-content",
+      "target": "kit/scripts/test-guard-sql.ps1",
+      "pattern": "a DDL keyword written into a file is not executed",
+      "expect": "present",
+      "message": "PowerShell 版のスイートからこのケースが消えると、Node 側だけが検査している状態に戻る。これは見つかった1件を押さえるだけで、次に二重リストがずれることは止められない。止めるには --target ps へ移す必要がある。",
+      "severity": "low"
     },
     {
       "id": "install-001",
@@ -696,6 +705,33 @@
         "false-sense-of-security",
         "drift",
         "recurrence"
+      ]
+    },
+    {
+      "id": "hook-016",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-016.json",
+      "title": "guard-sql と guard-config はツインのテストを二重に書いているので、3件が片方でしか検査されていなかった",
+      "layer": "hook",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "unknown_version",
+      "origin": "docs/02-guardrails.md#ツインのテストには2つの形があります",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-003",
+        "hook-014"
+      ],
+      "tags": [
+        "guard-sql",
+        "guard-config",
+        "powershell",
+        "twin",
+        "test-coverage",
+        "drift"
       ]
     },
     {

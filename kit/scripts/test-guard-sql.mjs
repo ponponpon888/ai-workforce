@@ -198,8 +198,17 @@ assert('a DDL keyword written into a file is not executed', ALLOW,
   callHook('Bash', { command: `printf '%s\\n' "run psql -c 'DROP TABLE t'" > notes.md` }));
 assert('a client mentioned only inside an echo argument', ALLOW,
   callHook('Bash', { command: `echo "psql -c 'DROP TABLE users'"` }));
-assert('DROP hidden behind a SQL comment in -c is still read', BLOCK,
+assert('DROP behind a semicolon in -c is still read', BLOCK,
   callHook('Bash', { command: 'psql -c "select 1; drop table t"' }));
+// Neither suite had a case with an actual SQL comment in it, so the behaviour
+// below was correct and untested on both runtimes. Measured 2026-09-23: Node
+// and PowerShell agree on all three.
+assert('a DROP commented out with -- is not executed', ALLOW,
+  callHook('Bash', { command: 'psql -c "select 1; -- drop table t"' }));
+assert('a DROP inside a /* */ comment is not executed', ALLOW,
+  callHook('Bash', { command: 'psql -c "/* drop table t */ select 1"' }));
+assert('a real DROP on the line after a comment is still read', BLOCK,
+  callHook('Bash', { command: 'psql -c "-- note\ndrop table t"' }));
 
 console.log('\nmust allow:');
 assert('DELETE with WHERE', ALLOW, callHook(SB, { query: 'delete from bookings where id = 1' }));

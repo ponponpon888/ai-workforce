@@ -101,7 +101,7 @@ DDL は「人間が承認したその文が、15 分だけ、1 回だけ通る�
 [hook-010](data/pitfalls/hook-010.json) を塞いで誤検知でなくなった 6 / 承認トークン関連 11）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs    # pass: 91   fail: 0
+node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 ```
 
 同じ形のフックが、あと 3 つあります。**4 つとも、止める理由も、テストの形も同じです。**
@@ -123,7 +123,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 91   fail: 0
 （[perm-006](data/pitfalls/perm-006.json)）。
 
 ```bash
-node kit/scripts/test-guard-sql.mjs           # pass: 91    fail: 0
+node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
 node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0

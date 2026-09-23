@@ -1007,8 +1007,6 @@ SessionStart:
   PASS  mismatch surfaces a WARNING in additionalContext
   PASS  a mismatch does not silently adopt the new file as the baseline
   (excerpt; SessionStart has 15 cases)
-
-pass: 45   fail: 0
 ```
 
 After installing or reinstalling, open `/hooks` and confirm `SessionStart` shows **1
@@ -1021,14 +1019,15 @@ hook** (`PreToolUse`'s `Bash|PowerShell` still shows 2).
 ### 1. Run the test suite
 
 ```bash
-node kit/scripts/test-guard-sql.mjs      # Windows / macOS / Linux
+node kit/scripts/test-guard-sql.mjs      # pass: 94   fail: 0
 ```
 
 ```powershell
 .\kit\scripts\test-guard-sql.ps1         # if you use the PowerShell hook
 ```
 
-91 cases in total for the Node version, 90 for the PowerShell one. Both halves matter -- the
+The Node and PowerShell versions run the same cases; the total is beside the command above,
+where it is actually run. Both halves matter -- the
 false-positive half is what keeps this guard from getting switched off, and closing
 [hook-010](../data/pitfalls/hook-010.json) added cases to both sides in pairs: a DDL keyword that is
 only text must pass, and the same shape actually executed must not.
@@ -1063,8 +1062,6 @@ approval token:
   PASS  token is single use
   PASS  approved blind file route passes
   (excerpt; approval token has 11 cases)
-
-pass: 91   fail: 0
 ```
 
 Two of the must-block cases are a known, deliberately unfixed false positive
@@ -1084,6 +1081,43 @@ edit away from being widened, so the hook now checks the tool name itself.
 
 CI runs the Node suite on Ubuntu, macOS and Windows, and the PowerShell suite on Windows and
 Ubuntu.
+
+### There are two shapes of twin test
+
+This kit checks the Node and PowerShell versions in two different ways.
+
+| Guard | Shape |
+|---|---|
+| `guard-secrets` / `guard-destructive` | **one set of cases, sent to both implementations** (`--target ps`) |
+| `guard-sql` / `guard-config` | **the cases written twice, once per suite** |
+
+The first cannot drift. The second can, and **had**.
+
+Measured 2026-09-23 by diffing the case names of both suites:
+
+- `guard-sql` was 91 cases on Node and 90 on PowerShell, with **three real differences**
+  - the Node case named `DROP hidden behind a SQL comment in -c is still read` **had a name
+    that lied**: its payload is `psql -c "select 1; drop table t"`, which contains no comment
+    at all. The PowerShell twin had the accurate name, `DROP behind a semicolon in -c`
+  - `a DDL keyword written into a file is not executed` **was never asked of the PowerShell
+    hook**. Sending it there directly: both implementations allow it. Not a bug -- untested
+  - **neither suite had a case with an actual SQL comment in it.** Measured: both allow
+    `-- drop table t` and `/* drop table t */`, and both block a real `DROP` on the line
+    after a comment. Correct behaviour that nothing was holding
+- `guard-config` is 53 on Node and 55 on PowerShell, and that difference is **deliberate and
+  right**. PowerShell's `$PSCommandPath` does not resolve symlinks, so "the spelling it
+  resolves to" has no PowerShell counterpart; a `/./` detour reproduces the same split
+  instead ([hook-014](../data/pitfalls/hook-014.json))
+
+Adding the three cases to both sides takes `guard-sql` to **94 and 94**, with one remaining
+difference: the function name each runtime actually has (`isApproved()` vs `Test-Approved`).
+
+**The shape that allowed it is still there.** Two hand-written lists stay in step only while
+someone is being careful. The kit already has the arrangement that removes the question, and
+these two guards simply have not been moved to it; moving them deletes 749 lines of PowerShell
+suite, so it is a separate change ([hook-016](../data/pitfalls/hook-016.json)).
+
+---
 
 ### 2. Confirm it is actually wired up
 

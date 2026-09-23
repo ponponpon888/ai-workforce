@@ -201,6 +201,13 @@ Assert-Result 'DDL keyword only in a commit message' $ALLOW (Invoke-Hook 'PowerS
 Assert-Result 'the same DROP, actually executed' $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1" && psql -c "DROP TABLE t"' })
 Assert-Result 'a client mentioned only inside an echo argument' $ALLOW (Invoke-Hook 'Bash' @{ command = 'echo "psql -c ''DROP TABLE users''"' })
 Assert-Result 'DROP behind a semicolon in -c is still read' $BLOCK (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1; drop table t"' })
+# This case existed only in the Node suite, so the PowerShell hook was never
+# asked about it. Measured 2026-09-23: it allows it, same as Node.
+Assert-Result 'a DDL keyword written into a file is not executed' $ALLOW (Invoke-Hook 'Bash' @{ command = "printf '%s\n' `"run psql -c 'DROP TABLE t'`" > notes.md" })
+# Neither suite had a case with an actual SQL comment in it.
+Assert-Result 'a DROP commented out with -- is not executed' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql -c "select 1; -- drop table t"' })
+Assert-Result 'a DROP inside a /* */ comment is not executed' $ALLOW (Invoke-Hook 'Bash' @{ command = 'psql -c "/* drop table t */ select 1"' })
+Assert-Result 'a real DROP on the line after a comment is still read' $BLOCK (Invoke-Hook 'Bash' @{ command = "psql -c `"-- note`ndrop table t`"" })
 
 Write-Host ''
 Write-Host 'must allow:' -ForegroundColor White

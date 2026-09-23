@@ -980,14 +980,15 @@ Node はシンボリックリンクを解決してからファイルを読むの
 ### 1. テストスイートを走らせる
 
 ```bash
-node kit/scripts/test-guard-sql.mjs     # Windows / macOS / Linux
+node kit/scripts/test-guard-sql.mjs     # pass: 94   fail: 0
 ```
 
 ```powershell
 .\kit\scripts\test-guard-sql.ps1        # PowerShell 版を使う場合
 ```
 
-合計 91 ケース（Node 版。PowerShell 版は 90）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。[hook-010](../data/pitfalls/hook-010.json) を塞いだ分は、「テキストとして書かれただけの DDL キーワードは通す」側と「同じ形で実際に実行されるものは止める」側を対にして入れています（上の「シェル経由のコマンドは無害化していません（誤検知は塞ぎました）」）。
+Node 版と PowerShell 版は同じケースを見ます（件数はコマンドの隣にあり、そこは実際に
+走らせて照合しています）。「止まるべきもの」と「止まってはいけないもの」を両方見ます。承認トークン関連には、BLOCK 表示が承認対象の文字列と一致することを確認するケースを含みます（[hook-005](../data/pitfalls/hook-005.json)）。[hook-010](../data/pitfalls/hook-010.json) を塞いだ分は、「テキストとして書かれただけの DDL キーワードは通す」側と「同じ形で実際に実行されるものは止める」側を対にして入れています（上の「シェル経由のコマンドは無害化していません（誤検知は塞ぎました）」）。
 
 ```
 guard-sql test suite (node)
@@ -1022,8 +1023,6 @@ approval token:
   PASS  token is single use
   PASS  approved blind file route passes
   (抜粋。承認トークン関連は 11 件)
-
-pass: 87   fail: 0
 ```
 
 **誤検知のテストの方が大事**です。正しい SQL が落ちるようになると、人はフックを外します。
@@ -1043,6 +1042,44 @@ CI（`.github/workflows/test.yml`）の内訳:
 | pull-all | Ubuntu / macOS / Windows（Node 版と PowerShell 版の両方） |
 | installers | Ubuntu / Windows |
 | `.ps1` のパース / 非 ASCII 検査 | — |
+
+### ツインのテストには2つの形があります
+
+Node 版と PowerShell 版を検査するやり方が、このキットには2通りあります。
+
+| ガード | 形 |
+|---|---|
+| `guard-secrets` / `guard-destructive` | **1つのケース集合を両実装に送る**（`--target ps`） |
+| `guard-sql` / `guard-config` | **別々のスイートにケースを二重に書く** |
+
+前者は構造上ずれません。後者はずれます。**実際にずれていました。**
+
+2026-09-23、両スイートのケース名を突き合わせて実測した結果:
+
+- `guard-sql` は Node 91 件 / PowerShell 90 件で、**実質3件が食い違って**いました
+  - Node 側の `DROP hidden behind a SQL comment in -c is still read` は**名前が嘘**でした。
+    ペイロードは `psql -c "select 1; drop table t"` で、コメントは1つも入っていません。
+    PowerShell 側は `DROP behind a semicolon in -c` という正確な名前でした
+  - `a DDL keyword written into a file is not executed` は **PowerShell 版では一度も
+    検査されていません**でした。直接フックに投げて実測したところ両実装とも通します。
+    バグではなく、未検査だっただけです
+  - **どちらのスイートも SQL コメントの形を検査していません**でした。実測すると
+    `-- drop table t` と `/* drop table t */` は両実装とも通し、コメント行の**後ろ**にある
+    本物の `DROP` は両実装とも止めます。正しいのに、誰も守っていない挙動でした
+- `guard-config` は Node 53 件 / PowerShell 55 件ですが、こちらの差は**意図的で正しい**
+  ものです。PowerShell の `$PSCommandPath` はシンボリックリンクを解決しないので「解決後の
+  綴り」という概念が無く、代わりに `/./` 迂回で同じ分裂を再現しています
+  （[hook-014](../data/pitfalls/hook-014.json)）
+
+3件を両側に足して、`guard-sql` は **Node 94 / PowerShell 94**、残る差はランタイム固有の
+関数名1つ（`isApproved()` ↔ `Test-Approved`）だけになりました。
+
+**根本の形は残っています。** 二重に書いたリストは、人が気をつけている限りしか揃いません。
+このキットには既に揃わないようにする作り（`--target ps`）があるのに、この2つが移行されて
+いないだけです。移行は PowerShell スイート749行の削除を伴うので、別の変更にしています
+（[hook-016](../data/pitfalls/hook-016.json)）。
+
+---
 
 ### 2. 実際に配線されているか確かめる
 
@@ -1161,8 +1198,6 @@ SessionStart:
   PASS  mismatch surfaces a WARNING in additionalContext
   PASS  a mismatch does not silently adopt the new file as the baseline
   (抜粋。SessionStart は 15 件)
-
-pass: 45   fail: 0
 ```
 
 インストール（または再インストール）した後は、`/hooks` で `SessionStart` が **1 hook**

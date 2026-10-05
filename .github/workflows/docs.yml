@@ -33,6 +33,7 @@ on:
       - "kit/scripts/check-translation-links.mjs"
       - "kit/scripts/test-check-translation-links.mjs"
       - "data/pitfalls/**"
+      - "data/app-pitfalls/**"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
@@ -50,6 +51,7 @@ on:
       - "kit/scripts/check-translation-links.mjs"
       - "kit/scripts/test-check-translation-links.mjs"
       - "data/pitfalls/**"
+      - "data/app-pitfalls/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -79,8 +81,9 @@ jobs:
           node kit/scripts/test-check-doc-links.mjs
 
       # The inputs to this check are the Markdown, the records, and the
-      # checker itself -- data/pitfalls/** is in the paths filter above for
-      # that reason. A record whose status changes can falsify a sentence in a
+      # checker itself -- data/pitfalls/** and data/app-pitfalls/** are in the
+      # paths filter above for that reason (ci-003: the second record set was
+      # missing at first). A record whose status changes can falsify a sentence in a
       # file the same commit never touches, and that is exactly how
       # ROADMAP.md came to say hook-010 was still open after it was closed.
       - name: Prose agrees with the pitfall records

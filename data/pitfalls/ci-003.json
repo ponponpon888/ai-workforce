@@ -1,0 +1,36 @@
+{
+  "id": "ci-003",
+  "title": "docs ワークフローの paths に data/app-pitfalls/** が無く、アプリ側のレコードだけの変更では散文の検査が走らない",
+  "summary": "docs.yml は paths で起動を絞っていて、レコードの側は data/pitfalls/** しか入っていなかった。data/app-pitfalls のレコードだけを変えたコミットでは docs ワークフローが起動せず、そのレコードを引用している文が偽になっても、次に Markdown を触るまで誰も見ない。doc-001 が data/pitfalls/** を paths に入れた理由（レコードだけが変わったコミットが、触っていないファイルの文を偽にしうる）は、2 つ目の置き場所にもそのまま当てはまる。ワークフローを走らせて見たものではなく、docs.yml の paths を読んだ帰結。",
+  "layer": "ci",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "inferred",
+  "origin": "record",
+  "inferred_from": [
+    ".github/workflows/docs.yml",
+    "doc-001",
+    "doc-004"
+  ],
+  "status": "closed",
+  "fix": "docs.yml の paths（push と pull_request の両方）に data/app-pitfalls/** を足した。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": ".github/workflows/docs.yml",
+    "pattern": "data/app-pitfalls/**",
+    "expect": "present",
+    "message": "docs.yml の paths から data/app-pitfalls/** が消えると、アプリ側のレコードだけを変えたコミットで散文の検査が走らなくなる。"
+  },
+  "related": [
+    "ci-001",
+    "doc-001",
+    "doc-004"
+  ],
+  "tags": [
+    "ci",
+    "docs",
+    "paths-filter",
+    "pitfall-records"
+  ]
+}

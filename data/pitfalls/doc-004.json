@@ -1,0 +1,45 @@
+{
+  "id": "doc-004",
+  "title": "check-pitfall-claims が data/pitfalls しか読まず、アプリ側のレコードへの引用を素通ししていた",
+  "summary": "散文がレコードの値を引用したまま古くなるのを止める検査（doc-001）は、レコードを data/pitfalls からしか読んでいなかった。data/app-pitfalls のレコードを引用して間違った status を書いても exit 0 で、その引用は「not attributable」の件数に 1 件足されるだけになる。違反にも警告にもならない。data/app-pitfalls が空のあいだは誰も困らず、最初の 1 件が入った日に黙って届かなくなる形だった。レコードの置き場所を知っているスクリプトは 3 本（validate-pitfalls / build-pitfall-index / check-pitfall-claims）あり、3 本目だけが片方しか読んでいなかった。",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-10-06",
+  "environment": {
+    "os": "Linux",
+    "shell": "bash",
+    "shell_version": "5.2.21(1)-release",
+    "claude_code_version": "unrecorded",
+    "node_version": "v22.22.0"
+  },
+  "repro": [
+    "main の 9a1dec4 に data/app-pitfalls/rls-001.json（status: closed）を置いた状態で測った",
+    "docs/08-pitfall-records.md の末尾に [rls-001](../data/app-pitfalls/rls-001.json)（`status: open_recorded`）と書き足す",
+    "node kit/scripts/check-pitfall-claims.mjs は「0 quote(s) disagree with the record; 13 checked, 13 not attributable.」で exit 0。書き足す前は 12 not attributable だった",
+    "対照: 同じ文を [hook-002](../data/pitfalls/hook-002.json) で書くと「hook-002 status: says \"open_recorded\", the record says \"closed\"」で exit 1",
+    "recordsIn が data/app-pitfalls も読むようにしてから 2 行目の文を置くと「rls-001 status: says \"open_recorded\", the record says \"closed\"」で exit 1"
+  ],
+  "status": "closed",
+  "fix": "check-pitfall-claims がレコードを両方の置き場所から読むようにした。docs ワークフローの paths にも data/app-pitfalls/** を足した（ci-003）。",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/scripts/check-pitfall-claims.mjs",
+    "pattern": "'data/app-pitfalls'",
+    "expect": "present",
+    "message": "check-pitfall-claims が data/app-pitfalls を読まなくなると、アプリ側のレコードを引用した文は、間違っていても「not attributable」に数えられるだけで通る。"
+  },
+  "related": [
+    "doc-001",
+    "ci-003"
+  ],
+  "tags": [
+    "docs",
+    "drift",
+    "pitfall-records",
+    "recurrence"
+  ]
+}

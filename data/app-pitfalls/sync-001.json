@@ -1,0 +1,27 @@
+{
+  "id": "sync-001",
+  "title": "一度きりのバックフィルを「同期」だと思い込んでいた",
+  "summary": "多対多テーブルを足したとき、既存の行は insert ... select で埋めたが、これから出来る行に対する仕組みを作らなかった。一覧の判定は両方のテーブルの status の AND なので、新規の施設は公開しても一覧に出ない。既存の行は全部そろっているので、手元のデータを見ている限り正しく動いて見える。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/beauty-matching.md#一度きりのバックフィルを同期だと思い込んでいた",
+  "inferred_from": [
+    "docs/case-studies/beauty-matching.md#一度きりのバックフィルを同期だと思い込んでいた"
+  ],
+  "status": "closed",
+  "fix": "親テーブルの AFTER INSERT OR UPDATE OF status にトリガーを置き、on conflict ... do update で冪等に同期する。あわせて「同じ値を書ける場所を 2 つ作らない」を設計の決まりにした。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "バックフィルのマイグレーションは在る。無いのは「そのあと」の仕組みで、無いものは文字列の一致では探せない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "supabase",
+    "backfill",
+    "trigger",
+    "many-to-many"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "vertical-001",
+  "title": "業種を三項演算子で分けると、3 業種目が別の職種名で呼ばれる",
+  "summary": "スタッフの職種名と絵文字を industry === 'eyelash' ? ... : ... で決めていた。2 業種のあいだは正しく動くが、else の側が「それ以外の全部」を引き受けているので、3 業種目を足した瞬間に、その業種のスタッフが 1 業種目の職種名で呼ばれる。エラーにはならず、AI の応答の文面にだけ出る。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/musubu.md#業種のハードコードが別業種を違う職種名で呼んだ",
+  "inferred_from": [
+    "docs/case-studies/musubu.md#業種のハードコードが別業種を違う職種名で呼んだ"
+  ],
+  "status": "closed",
+  "fix": "業種ごとの設定ファイルから用語を引く形に変え、設定とプロンプトそれぞれの登録漏れを個別に警告する。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "分岐の書き方も業種の名前もプロジェクトごとに違う。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "multi-vertical",
+    "hardcode",
+    "config"
+  ]
+}

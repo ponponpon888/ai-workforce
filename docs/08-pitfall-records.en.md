@@ -22,7 +22,7 @@ whether it is closed right now".
 | | |
 |---|---|
 | `data/pitfalls/` | Pitfalls of this repository's tools and environment. One file per pitfall |
-| `data/app-pitfalls/` | Pitfalls on the application side. Same schema. Still empty |
+| `data/app-pitfalls/` | Pitfalls on the application side. Same schema, but `status` points somewhere else ([Application-side records](#application-side-records)) |
 | `data/pitfalls/_schema.json` | The definition itself. The validator reads it and works from it |
 | `data/pitfalls/_template.json` | The skeleton to copy when adding one |
 | `data/pitfalls.index.json` | Generated, and committed. CI regenerates it and fails on a diff |
@@ -112,6 +112,8 @@ instead.
 `status` has three values: `closed` (closed it), `open_recorded` (recorded as an open hole) and
 `untouched` (not addressed). `closed` requires `fix`, `open_recorded` requires
 `why_not_closed`. In other words, **leaving a hole open makes you write down why**.
+
+In `data/app-pitfalls/`, `status` points somewhere else -> [Application-side records](#application-side-records)
 
 `behaviour` carries no `status` because a record such as "deny beats allow" should not be
 counted as an unaddressed hole.
@@ -223,6 +225,41 @@ that is stopped by machine.
 
 Reporting from an issue alone is fine too; turning it into a record is our job
 → [pitfall report template](https://github.com/ponponpon888/ai-workforce/issues/new?template=pitfall.yml)
+
+---
+
+## Application-side records
+
+`data/app-pitfalls/` holds pitfalls stepped into on **the application an AI was asked to
+write**, not in this repository's tools. They come from the
+[case studies](case-studies/README.md) (Japanese). The schema and the checks are shared, and an
+`id` is unique across both record sets (R18). Two things differ.
+
+| | `data/pitfalls/` | `data/app-pitfalls/` |
+|---|---|---|
+| What `status` refers to | This repository's kit | **The case-study project that stepped into it** |
+| `detection` | Mostly machine-checkable | All `checkable: false` for now |
+
+**`closed` on the application side means "closed in the case-study project". Whether it is
+closed in the application you are reading this for is something the record cannot tell you.**
+`fix` is what was actually done there.
+
+Every `detection` is `checkable: false` because the thing to check lives outside this
+repository. `lint-pitfalls` reads fixed paths under its own root and nothing else. There is no
+way yet to point it at another repository.
+
+### The open holes are not in yet
+
+The case studies describe several holes as "not fixed". Those are not records yet.
+
+When the real code was read again in order to write the records, **two of those "not fixed"
+holes turned out to have been closed a month earlier**
+([the addendum in the MUSUBU case study](case-studies/musubu.md#その後-line-側も塞いだ), Japanese).
+A case study quotes code from another repository, so nothing here turns red when the source
+moves. Copying a "not fixed" in that state into an `untouched` record would only make a stale
+claim machine-readable and hand it out.
+
+Open holes go in after they have been checked against the real repositories, with a date.
 
 ---
 

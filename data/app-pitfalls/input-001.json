@@ -1,0 +1,27 @@
+{
+  "id": "input-001",
+  "title": "値の行き先が変わると、変えていない検証が脆弱性になる",
+  "summary": "予約フォームの連絡先の検証は「@ と . を含むか」だけだったが、その値をどこにも送っていないあいだは問題にならなかった。そこへ予約受付メールの自動送信が入り、同じ値がそのまま宛先になった。任意の第三者のアドレスを入れれば、公式ドメインからメールを送りつけられる。既存のコードは 1 行も変わっていない。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/hanami-nail.md#機能追加が既存のゆるい検証を脆弱性に変えた",
+  "inferred_from": [
+    "docs/case-studies/hanami-nail.md#機能追加が既存のゆるい検証を脆弱性に変えた"
+  ],
+  "status": "closed",
+  "fix": "「宛先として成立する形か」と「複数宛先・ヘッダ挿入に使える文字（区切り文字、制御文字、改行）が入っていないか」の 2 点だけを見る検証に差し替えた。厳密な RFC 準拠は目指していない（厳しすぎると本物の客を弾くため）。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "差分に現れるのは新しい送信処理だけで、甘くなった検証の側は 1 行も変わらない。値がどこへ流れるかを追う必要がある。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "validation",
+    "email",
+    "feature-interaction",
+    "sender-reputation"
+  ]
+}

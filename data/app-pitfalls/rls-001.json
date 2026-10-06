@@ -1,0 +1,30 @@
+{
+  "id": "rls-001",
+  "title": "RLS は行を守るが、列は守らない",
+  "summary": "ポリシーが status = 'published' で行を絞っていても、列は絞らない。anon キーはブラウザに配られる公開鍵なので、PostgREST に select=contact_email,contact_phone と書くだけで、画面が一度も表示していない列まで公開行の全件ぶん取れる。UI を見ている限り気づけない。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/hanami-nail.md#rls-は行を守るが列は守らない",
+  "inferred_from": [
+    "docs/case-studies/hanami-nail.md#rls-は行を守るが列は守らない"
+  ],
+  "status": "closed",
+  "fix": "anon から表全体の SELECT を revoke し、公開してよい列だけを列レベルの GRANT で付け直した。列を足し忘れると PostgREST が 42501 で落ちるので、静かに漏れる側ではなく、うるさく落ちる側に倒れる。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "ポリシーと GRANT はデータベースの中にあり、表の名前も列の名前もプロジェクトごとに違う。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "rls-002"
+  ],
+  "tags": [
+    "supabase",
+    "rls",
+    "column-grant",
+    "postgrest",
+    "anon-key"
+  ]
+}

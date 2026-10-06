@@ -1,0 +1,27 @@
+{
+  "id": "race-001",
+  "title": "冒頭に読んだ値だけで削除対象を決めると、使用中のファイルが消える",
+  "summary": "画像の削除対象を、リクエストの冒頭に読んだ一覧との差分だけで決めていた。同じ行への保存がほぼ同時に走ると（別タブ、二重送信、古い画面からの再送信）、片方が外した画像をもう片方が書き戻し、DB は参照したまま実ファイルだけが無くなる。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/hanami-nail.md#スナップショット比較で使用中の画像が消えるレース",
+  "inferred_from": [
+    "docs/case-studies/hanami-nail.md#スナップショット比較で使用中の画像が消えるレース"
+  ],
+  "status": "closed",
+  "fix": "削除の直前に行を読み直し、いま参照されているものは消さない。読み直しに失敗したら 1 件も消さない（孤児ファイルは棚卸しで拾えるが、使用中のファイルを消すと戻せない）。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "並行して走ったときにだけ起きる。1 本ずつ流すテストでは通るし、文字列の一致でも見分けられない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "race",
+    "storage",
+    "delete",
+    "supabase"
+  ]
+}

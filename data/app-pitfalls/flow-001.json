@@ -1,0 +1,27 @@
+{
+  "id": "flow-001",
+  "title": "業務フローの一部だけがコード化されていて、半公開が起きた",
+  "summary": "掲載の申請は status を draft から pending_review にするところまでがコードで、その先の公開（published 化と slug の付け直し）は SQL Editor での手作業だった。手順が一部だけ行われた結果、静的ページは公開・DB は pending_review・slug は draft-xxxxxxxx のまま、という状態が 4 件で起きて、一覧の見出しにスラッグ文字列が出た。コードに無い工程は、不変条件もどこにも無い。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/hanami-nail.md#業務フローの一部だけがコード化されていて半公開が起きた",
+  "inferred_from": [
+    "docs/case-studies/hanami-nail.md#業務フローの一部だけがコード化されていて半公開が起きた"
+  ],
+  "status": "closed",
+  "fix": "公開をコードに入れ、不変条件を付けた。draft-xxxxxxxx の slug のままでは公開できない／ページが存在しない slug は確認なしでは公開できない／メイン写真が無いと公開できない／draft から直接は公開できない／published の slug は変更できない。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "手作業の工程はリポジトリに現れない。在るコードをいくら読んでも、無い工程は見つからない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "state",
+    "manual-operation",
+    "invariant",
+    "publish"
+  ]
+}

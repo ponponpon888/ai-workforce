@@ -1,0 +1,27 @@
+{
+  "id": "authz-001",
+  "title": "公開 webhook に送れる文字列が、そのまま権限になっていた",
+  "summary": "お客さん向けの公開 LINE webhook が、本文「オーナー登録」を受け取ると、その送信者をオーナーの通知先に登録していた。誰でも送れる文字列なので、送った人が予約通知の受け取り手になれる。署名検証は通る。署名が保証するのは LINE から届いたことだけで、送った人が誰かではない。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/musubu.md#公開-webhook-からのオーナー成りすまし",
+  "inferred_from": [
+    "docs/case-studies/musubu.md#公開-webhook-からのオーナー成りすまし"
+  ],
+  "status": "closed",
+  "fix": "公開 webhook では連携を一切行わず、管理画面へ案内する文面だけを返す。連携は管理画面が発行した HMAC 連携コードでのみ成立させ、webhook のソースに登録関数の名前が現れないことを回帰テストで固定した。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "どの文字列が権限の分岐になっているかは、ハンドラを読まないと分からない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "webhook",
+    "line",
+    "privilege-escalation",
+    "public-endpoint"
+  ]
+}

@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { claimsIn, checkClaims, frozenFrom, recordsIn, CHECKED_FIELDS } from './check-pitfall-claims.mjs';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import * as claims from './check-pitfall-claims.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const attributed = (text, path = '') =>
   claimsIn(text, path).map(c => `${c.id ?? '-'} ${c.field}=${c.claimed}`);
@@ -146,4 +148,39 @@ test('every Markdown file check-doc-links reads is read here too', () => {
     assert.deepEqual(checkClaims(root).findings.map(f => f.path).sort(),
       ['README.md', 'ROADMAP.md', 'docs/nested/guide.md']);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+// doc-004: records were read from data/pitfalls only, so a wrong quote of an
+// application-side record was counted as "not attributable" and passed.
+test('a quote of a data/app-pitfalls record that disagrees is reported', () => {
+  run({
+    'data/app-pitfalls/rls-001.json': record('rls-001', { kind: 'trap', status: 'closed' }),
+    'docs/a.md': '[x](../data/app-pitfalls/rls-001.json)（`status: open_recorded`）',
+  }, root => {
+    const out = checkClaims(root);
+    assert.deepEqual(out.findings, [{
+      path: 'docs/a.md', line: 1, id: 'rls-001',
+      field: 'status', claimed: 'open_recorded', actual: 'closed',
+    }]);
+    assert.equal(out.skipped, 0);
+  });
+});
+
+test('a root without data/app-pitfalls still reads data/pitfalls', () => {
+  run({}, root => assert.deepEqual([...recordsIn(root).keys()], ['hook-010']));
+});
+
+// Three scripts know where the records live. The other two keep their own
+// literal lists; this keeps all three from drifting apart.
+test('the record sets agree with validate-pitfalls and build-pitfall-index', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const literal = (file, re) => {
+    const m = re.exec(readFileSync(join(here, file), 'utf8'));
+    assert.ok(m, `no record-set list found in ${file}`);
+    return JSON.parse(m[1].replaceAll("'", '"'));
+  };
+  const validate = literal('validate-pitfalls.mjs', /dirArgs\.length \? dirArgs : (\[[^\]]*\])/);
+  const index = literal('build-pitfall-index.mjs', /const SETS = (\[[^\]]*\])/);
+  assert.deepEqual(claims.RECORD_SETS, validate);
+  assert.deepEqual(claims.RECORD_SETS, index);
 });

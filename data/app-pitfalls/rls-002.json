@@ -1,0 +1,30 @@
+{
+  "id": "rls-002",
+  "title": "関数の EXECUTE は 2 系統あり、片方だけ revoke しても閉じない",
+  "summary": "Postgres の関数には、PUBLIC への既定の EXECUTE と、anon / authenticated への明示的な EXECUTE が別々に付いている。片方だけ revoke すると、もう片方から呼べるまま残る。事例では同じ日に逆向きに 2 回やった（anon / authenticated だけ revoke して PUBLIC が残り、次は public だけ revoke して anon / authenticated が残った）。SECURITY DEFINER の RPC を入口にしている設計では、そのまま実害になる。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/beauty-matching.md#postgres-関数の-execute-権限は-2-系統ある",
+  "inferred_from": [
+    "docs/case-studies/beauty-matching.md#postgres-関数の-execute-権限は-2-系統ある"
+  ],
+  "status": "closed",
+  "fix": "revoke all on function ... from public と、from anon, authenticated の両方を書く。事例では片方ずつ、あとから別のマイグレーションで閉じた。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "権限はデータベースの中にあり、関数の名前はプロジェクトごとに違う。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "rls-001"
+  ],
+  "tags": [
+    "supabase",
+    "postgres",
+    "security-definer",
+    "execute",
+    "revoke"
+  ]
+}

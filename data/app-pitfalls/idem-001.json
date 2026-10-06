@@ -1,0 +1,31 @@
+{
+  "id": "idem-001",
+  "title": "同じリポジトリで、片方の webhook だけが再送を弾いていなかった",
+  "summary": "Stripe の webhook は event.id を一意制約つきのテーブルに記録して再送を弾いていたのに、LINE の webhook にはそれが無かった。LINE が同じイベントを再送すると AI 応答が丸ごともう一度走り、ログも AI の課金も使用量カウンタも二重になる。冪等テーブルは既に在って、片方の入口だけが使っていなかった。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "high",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/musubu.md#line-側には何もない",
+  "inferred_from": [
+    "docs/case-studies/musubu.md#line-側には何もない",
+    "docs/case-studies/musubu.md#その後-line-側も塞いだ"
+  ],
+  "status": "closed",
+  "fix": "LINE 側も同じ冪等テーブルを使う。署名検証のあとで、message.id（無ければ webhookEventId）を先に insert し、一意制約違反なら何もせず抜ける。先に予約するので at-most-once になる（1 回目が途中で落ちると、再送が来ても応答は返らない）。その穴は、予約フローのテキストにだけ処理状態（processing / done / failed）を持たせ、processing のまま止まった行を再送時に 1 回だけ引き取る形で、あとから狭めた。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "再送を弾いているかどうかは、入口ごとにハンドラを読まないと分からない。冪等テーブルが在ることは、全部の入口がそれを使っていることを意味しない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "idem-002"
+  ],
+  "tags": [
+    "webhook",
+    "line",
+    "stripe",
+    "idempotency",
+    "at-most-once"
+  ]
+}

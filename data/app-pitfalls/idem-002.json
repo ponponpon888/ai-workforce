@@ -1,0 +1,30 @@
+{
+  "id": "idem-002",
+  "title": "冪等キーに、再送のたびに変わる値を入れていた",
+  "summary": "conversation_events には (tenant_id, idempotency_key) の一意制約があるのに、そのキーへ入れる値の先頭が「いま insert したログ行の UUID」だった。再送のたびに新しく発行されるので、正常系ではキーが毎回変わる。安定している LINE の message.id は、insert が失敗したときだけ使われるフォールバックに回っていた。制約もキーも在るので、スキーマを見ただけでは効いていないと分からない。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/musubu.md#一番厄介なのは冪等キーがあるように見えて効いていないこと",
+  "inferred_from": [
+    "docs/case-studies/musubu.md#一番厄介なのは冪等キーがあるように見えて効いていないこと",
+    "docs/case-studies/musubu.md#その後-line-側も塞いだ"
+  ],
+  "status": "closed",
+  "fix": "キーの優先順位を入れ替え、LINE の message.id から作った安定キーを先頭にした。ログ行の ID は、安定キーが作れないときのフォールバックに下げた。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "キーの列と一意制約はスキーマに在る。効いているかどうかは、そこへ何を入れているかを呼び出し側で読まないと分からない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "idem-001"
+  ],
+  "tags": [
+    "idempotency",
+    "line",
+    "unique-constraint",
+    "plausible-but-useless"
+  ]
+}

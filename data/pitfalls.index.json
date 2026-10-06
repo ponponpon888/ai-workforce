@@ -6,42 +6,44 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 32,
+    "total": 44,
     "by_set": {
-      "pitfalls": 32
+      "pitfalls": 34,
+      "app-pitfalls": 10
     },
     "by_confidence": {
-      "measured": 24,
-      "inferred": 3,
+      "measured": 25,
+      "inferred": 14,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 24,
+      "closed": 36,
       "open_recorded": 2,
       "untouched": 2,
       "none": 4
     },
     "by_kind": {
-      "trap": 22,
+      "trap": 34,
       "limitation": 6,
       "behaviour": 4
     },
     "by_layer": {
-      "instruction": 3,
+      "instruction": 4,
       "permissions": 6,
       "hook": 17,
       "runtime": 3,
-      "ci": 2,
-      "external": 1
+      "ci": 3,
+      "external": 1,
+      "app": 10
     },
     "by_stale_risk": {
       "unknown_version": 16,
-      "ok": 8,
-      "not_applicable": 8
+      "ok": 9,
+      "not_applicable": 19
     },
-    "without_prose": 10,
-    "checkable": 21
+    "without_prose": 12,
+    "checkable": 23
   },
   "checks": [
     {
@@ -51,6 +53,15 @@
       "pattern": "node-version: 20",
       "expect": "absent",
       "message": "CI が Node 20 に戻ると、サポートの切れたランタイムでの緑に逆戻りする。これは20への退行しか見ておらず、22 の終了（2027-04-30）には気づけない。",
+      "severity": "low"
+    },
+    {
+      "id": "ci-003",
+      "kind": "file-content",
+      "target": ".github/workflows/docs.yml",
+      "pattern": "data/app-pitfalls/**",
+      "expect": "present",
+      "message": "docs.yml の paths から data/app-pitfalls/** が消えると、アプリ側のレコードだけを変えたコミットで散文の検査が走らなくなる。",
       "severity": "low"
     },
     {
@@ -78,6 +89,15 @@
       "pattern": "check-translation-links",
       "expect": "present",
       "message": "docs ワークフローから check-translation-links.mjs の実行が消えると、訳したのに訳したと書いていない状態に戻る。リンクが壊れるわけではないので、check-doc-links では代われない。",
+      "severity": "low"
+    },
+    {
+      "id": "doc-004",
+      "kind": "file-content",
+      "target": "kit/scripts/check-pitfall-claims.mjs",
+      "pattern": "'data/app-pitfalls'",
+      "expect": "present",
+      "message": "check-pitfall-claims が data/app-pitfalls を読まなくなると、アプリ側のレコードを引用した文は、間違っていても「not attributable」に数えられるだけで通る。",
       "severity": "low"
     },
     {
@@ -236,6 +256,28 @@
   ],
   "records": [
     {
+      "id": "authz-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/authz-001.json",
+      "title": "公開 webhook に送れる文字列が、そのまま権限になっていた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/musubu.md#公開-webhook-からのオーナー成りすまし",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "webhook",
+        "line",
+        "privilege-escalation",
+        "public-endpoint"
+      ]
+    },
+    {
       "id": "ci-001",
       "set": "pitfalls",
       "file": "data/pitfalls/ci-001.json",
@@ -281,6 +323,32 @@
         "end-of-life",
         "false-sense-of-security",
         "external-fact"
+      ]
+    },
+    {
+      "id": "ci-003",
+      "set": "pitfalls",
+      "file": "data/pitfalls/ci-003.json",
+      "title": "docs ワークフローの paths に data/app-pitfalls/** が無く、アプリ側のレコードだけの変更では散文の検査が走らない",
+      "layer": "ci",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "ci-001",
+        "doc-001",
+        "doc-004"
+      ],
+      "tags": [
+        "ci",
+        "docs",
+        "paths-filter",
+        "pitfall-records"
       ]
     },
     {
@@ -361,6 +429,53 @@
         "drift",
         "readme",
         "ci"
+      ]
+    },
+    {
+      "id": "doc-004",
+      "set": "pitfalls",
+      "file": "data/pitfalls/doc-004.json",
+      "title": "check-pitfall-claims が data/pitfalls しか読まず、アプリ側のレコードへの引用を素通ししていた",
+      "layer": "instruction",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "doc-001",
+        "ci-003"
+      ],
+      "tags": [
+        "docs",
+        "drift",
+        "pitfall-records",
+        "recurrence"
+      ]
+    },
+    {
+      "id": "flow-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/flow-001.json",
+      "title": "業務フローの一部だけがコード化されていて、半公開が起きた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/hanami-nail.md#業務フローの一部だけがコード化されていて半公開が起きた",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "state",
+        "manual-operation",
+        "invariant",
+        "publish"
       ]
     },
     {
@@ -770,6 +885,77 @@
       ]
     },
     {
+      "id": "idem-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/idem-001.json",
+      "title": "同じリポジトリで、片方の webhook だけが再送を弾いていなかった",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/musubu.md#line-側には何もない",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "idem-002"
+      ],
+      "tags": [
+        "webhook",
+        "line",
+        "stripe",
+        "idempotency",
+        "at-most-once"
+      ]
+    },
+    {
+      "id": "idem-002",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/idem-002.json",
+      "title": "冪等キーに、再送のたびに変わる値を入れていた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/musubu.md#一番厄介なのは冪等キーがあるように見えて効いていないこと",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "idem-001"
+      ],
+      "tags": [
+        "idempotency",
+        "line",
+        "unique-constraint",
+        "plausible-but-useless"
+      ]
+    },
+    {
+      "id": "input-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/input-001.json",
+      "title": "値の行き先が変わると、変えていない検証が脆弱性になる",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/hanami-nail.md#機能追加が既存のゆるい検証を脆弱性に変えた",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "validation",
+        "email",
+        "feature-interaction",
+        "sender-reputation"
+      ]
+    },
+    {
       "id": "install-001",
       "set": "pitfalls",
       "file": "data/pitfalls/install-001.json",
@@ -966,6 +1152,78 @@
       ]
     },
     {
+      "id": "race-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/race-001.json",
+      "title": "冒頭に読んだ値だけで削除対象を決めると、使用中のファイルが消える",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/hanami-nail.md#スナップショット比較で使用中の画像が消えるレース",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "race",
+        "storage",
+        "delete",
+        "supabase"
+      ]
+    },
+    {
+      "id": "rls-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/rls-001.json",
+      "title": "RLS は行を守るが、列は守らない",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/hanami-nail.md#rls-は行を守るが列は守らない",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "rls-002"
+      ],
+      "tags": [
+        "supabase",
+        "rls",
+        "column-grant",
+        "postgrest",
+        "anon-key"
+      ]
+    },
+    {
+      "id": "rls-002",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/rls-002.json",
+      "title": "関数の EXECUTE は 2 系統あり、片方だけ revoke しても閉じない",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "high",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/beauty-matching.md#postgres-関数の-execute-権限は-2-系統ある",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "rls-001"
+      ],
+      "tags": [
+        "supabase",
+        "postgres",
+        "security-definer",
+        "execute",
+        "revoke"
+      ]
+    },
+    {
       "id": "shell-001",
       "set": "pitfalls",
       "file": "data/pitfalls/shell-001.json",
@@ -1033,6 +1291,49 @@
         "get-childitem",
         "portability",
         "dotfiles"
+      ]
+    },
+    {
+      "id": "sync-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/sync-001.json",
+      "title": "一度きりのバックフィルを「同期」だと思い込んでいた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/beauty-matching.md#一度きりのバックフィルを同期だと思い込んでいた",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "supabase",
+        "backfill",
+        "trigger",
+        "many-to-many"
+      ]
+    },
+    {
+      "id": "vertical-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/vertical-001.json",
+      "title": "業種を三項演算子で分けると、3 業種目が別の職種名で呼ばれる",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "inferred",
+      "status": "closed",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/musubu.md#業種のハードコードが別業種を違う職種名で呼んだ",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "multi-vertical",
+        "hardcode",
+        "config"
       ]
     }
   ]

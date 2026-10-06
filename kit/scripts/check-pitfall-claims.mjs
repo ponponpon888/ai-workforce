@@ -44,7 +44,7 @@
  * records could not be read.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docFiles } from './check-doc-links.mjs';
@@ -58,15 +58,25 @@ const CLAIM = new RegExp(`(${CHECKED_FIELDS.join('|')})\\s*[:：]\\s*\`?([a-z_]+
 const MENTION = new RegExp(`(?:data/pitfalls/(${ID})\\.json|\\b(${ID})\\b)`, 'g');
 const BRACKETS = { ')': '(', '）': '（' };
 
-/** Every record on disk, by id. Underscore-prefixed files are not records. */
+// Where the records live. validate-pitfalls and build-pitfall-index keep their
+// own copies of this list; the test holds all three to the same value (doc-004).
+export const RECORD_SETS = ['data/pitfalls', 'data/app-pitfalls'];
+
+/**
+ * Every record on disk, by id, from every record set. Underscore-prefixed
+ * files are not records. A set that does not exist yet is skipped.
+ */
 export function recordsIn(root) {
-  const dir = join(root, 'data', 'pitfalls');
   const records = new Map();
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json') || name.startsWith('_')) continue;
-    const record = JSON.parse(readFileSync(join(dir, name), 'utf8'));
-    if (typeof record?.id !== 'string') throw Error(`record without an id: ${name}`);
-    records.set(record.id, record);
+  for (const set of RECORD_SETS) {
+    const dir = join(root, ...set.split('/'));
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json') || name.startsWith('_')) continue;
+      const record = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+      if (typeof record?.id !== 'string') throw Error(`record without an id: ${name}`);
+      records.set(record.id, record);
+    }
   }
   if (!records.size) throw Error('no records found');
   return records;

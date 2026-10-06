@@ -21,7 +21,7 @@ English: [08-pitfall-records.en.md](08-pitfall-records.en.md)
 | | |
 |---|---|
 | `data/pitfalls/` | このリポジトリのツールと環境の落とし穴。1 穴 1 ファイル |
-| `data/app-pitfalls/` | アプリ実装側の落とし穴。スキーマは共通。まだ空です |
+| `data/app-pitfalls/` | アプリ実装側の落とし穴。スキーマは共通ですが、`status` の指す先が違います（[アプリ側のレコード](#アプリ側のレコード)） |
 | `data/pitfalls/_schema.json` | 定義そのもの。バリデータはこれを読んで動きます |
 | `data/pitfalls/_template.json` | 1 件足すときにコピーする雛形 |
 | `data/pitfalls.index.json` | 生成物。コミットします。CI が再生成して差分が出たら赤 |
@@ -108,6 +108,8 @@ English: [08-pitfall-records.en.md](08-pitfall-records.en.md)
 `status` は `closed`（塞いだ）/ `open_recorded`（塞がずに穴として記録）/
 `untouched`（未対応）の 3 値です。`closed` なら `fix`、`open_recorded` なら
 `why_not_closed` が要ります。**塞がずに残すなら、残す理由を書かせる**ということです。
+
+`data/app-pitfalls/` では、`status` の指す先が違います → [アプリ側のレコード](#アプリ側のレコード)
 
 `behaviour` に `status` を持たせないのは、「deny は allow に勝つ」のような記録を
 「未対応の穴」として数えたくないからです。
@@ -214,6 +216,39 @@ CI（`pitfalls` ジョブ）が同じことをして、インデックスに差�
 
 Issue から報告するだけでも構いません。レコードにするのはこちらでやります
 → [落とし穴の報告テンプレート](https://github.com/ponponpon888/ai-workforce/issues/new?template=pitfall.yml)
+
+---
+
+## アプリ側のレコード
+
+`data/app-pitfalls/` には、このリポジトリのツールではなく、**AI に書かせたアプリの側**で
+踏んだ穴を置きます。出所は[事例](case-studies/README.md)です。スキーマも検査も共通で、
+`id` は 2 つの置き場所を通して一意です（R18）。違うのは 2 点だけです。
+
+| | `data/pitfalls/` | `data/app-pitfalls/` |
+|---|---|---|
+| `status` が指すもの | このリポジトリの kit | **その穴を踏んだ事例のプロジェクト** |
+| `detection` | 多くは機械で見られる | いまは全部 `checkable: false` |
+
+**アプリ側の `closed` は「事例のプロジェクトでは塞いだ」という意味です。読んでいるあなたの
+アプリで塞がっているかどうかは、レコードからは分かりません。** `fix` は、そこで実際に取った
+塞ぎ方です。
+
+`detection` が全部 `checkable: false` なのは、当てる先がこのリポジトリの外にあるからです。
+`lint-pitfalls` は自分のルートの決まったパスしか読みません。ほかのリポジトリに当てる方法は、
+まだ作っていません。
+
+### 開いている穴を、まだ入れていません
+
+事例には「未修正」と書いた穴がいくつもあります。それはまだレコードにしていません。
+
+レコードにしようとして実物を読み直したら、**事例の「未修正」のうち 2 件は、1 か月前に
+塞がっていました**（[MUSUBU の事例の追記](case-studies/musubu.md#その後-line-側も塞いだ)）。
+事例は別のリポジトリのコードを引用しているので、引用元が動いてもこちらでは何も赤くなりません。
+その状態の「未修正」を `untouched` のレコードとして写せば、古い主張を機械可読にして
+配るだけです。
+
+開いている穴は、実物のリポジトリに当てて、日付を付けてから入れます。
 
 ---
 

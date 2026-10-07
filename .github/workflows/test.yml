@@ -172,6 +172,18 @@ jobs:
           fi
           node kit/scripts/lint-pitfalls.mjs
 
+      # The exposure checks are SQL for a reader's own project, so the only thing that
+      # can be tested here is the SQL itself, on a database whose answers are known.
+      # --require-db: a runner without Postgres has to be a red build, not a green one
+      # that tested nothing.
+      - name: Supabase exposure checks answer correctly on a known database
+        shell: bash
+        run: |
+          sudo systemctl start postgresql.service
+          for i in $(seq 1 30); do pg_isready -q && break; sleep 1; done
+          sudo -u postgres psql -X -Atc 'select version()'
+          AIWF_PSQL='sudo -u postgres psql' node kit/scripts/test-supabase-exposure.mjs --require-db
+
       # The counterpart of the docs workflow's copy: a pull request that adds
       # a test case changes what a suite prints, and every README quoting that
       # number becomes wrong without a single Markdown file being touched.

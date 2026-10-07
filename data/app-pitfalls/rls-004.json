@@ -1,0 +1,46 @@
+{
+  "id": "rls-004",
+  "title": "列の絞りを未ログインにだけ入れて、ログイン済みが全列を読めた",
+  "summary": "公開中の行を読めるポリシーは anon と authenticated の両方に付いていたのに、列単位の GRANT で絞ったのは anon だけだった。authenticated は運営が管理画面で使うロールのつもりで、全列の SELECT が残っていた。ロールは、運営と、登録しただけの他人を区別しない。運営でないログイン済みアカウントとして数えると、公開中の 10 行が全 44 列ぶん読めた（連絡先のメールが入った行は 10、電話は 9）。前日の確かめ直しは未ログインのロールでしか数えておらず、「塞がっている」と書いていた。Supabase の Security Advisor は、この状態を出さなかった。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "docs/case-studies/hanami-nail.md#列の絞りが未ログインにしか入っていませんでした",
+  "measured_on": "2026-10-07",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded",
+    "target": "Postgres 17.6 (Supabase)"
+  },
+  "repro": [
+    "本番 DB で、のちに kit/supabase/exposure-who-can-read.sql になった問い合わせを流した。anon は salons の 44 列中 26 列、authenticated は 44 列すべてに SELECT があり、公開中の行を読めるポリシーは両方のロールに付いていた",
+    "ロールを authenticated に切り替え、sub に乱数の uuid を入れて（運営でないログイン済み）行数を数えた。salons は 10 行で、連絡先のメールが入っている行は 10、電話は 9。行の中身は読んでいない",
+    "対照: 同じアカウントで、申込・会話・メッセージの表は 0 行だった。運営だけを通すポリシーは効いている",
+    "登録アカウントは 1 件（運営）で、直近 30 日の新規登録は 0 件。他人が自分でアカウントを作れる設定だったかどうかは、確かめられていない",
+    "Security Advisor（security）の同じ日の結果は、RLS 有効・ポリシーなしの INFO 9 件だけだった",
+    "修正をトランザクションの中で当てて数えた: 運営でないログイン済み 0 行、運営 12 行（全 12 行）、未ログイン 10 行。ROLLBACK してから本適用した",
+    "適用後に kit/supabase/exposure-count-as-roles.sql を流した: 運営でないログイン済みが読めるのは、スタイルのタグの表（34 行）だけ。未ログインは salons 10 行とタグ 34 行で、変わっていない"
+  ],
+  "status": "closed",
+  "fix": "公開中の行を読めるポリシーの対象を anon だけにした（alter policy ... to anon）。運営は is_admin を条件にした別のポリシーで読むので変わらない。anon と同じように authenticated の列を GRANT で絞る方法は取れなかった。運営も同じ authenticated で、管理画面が全列を読むためである。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "kit/supabase/exposure-count-as-roles.sql を自分のプロジェクトで流すと、登録しただけのアカウントから読める表と行数が出る。どの列まで読めるかは exposure-who-can-read.sql で見る。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "rls-001",
+    "rls-003"
+  ],
+  "tags": [
+    "supabase",
+    "rls",
+    "column-grant",
+    "authenticated",
+    "postgrest"
+  ]
+}

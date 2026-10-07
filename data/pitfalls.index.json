@@ -6,25 +6,25 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 49,
+    "total": 50,
     "by_set": {
       "pitfalls": 37,
-      "app-pitfalls": 12
+      "app-pitfalls": 13
     },
     "by_confidence": {
-      "measured": 29,
+      "measured": 30,
       "inferred": 15,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 37,
+      "closed": 38,
       "open_recorded": 3,
       "untouched": 4,
       "none": 5
     },
     "by_kind": {
-      "trap": 38,
+      "trap": 39,
       "limitation": 6,
       "behaviour": 5
     },
@@ -35,11 +35,11 @@
       "runtime": 4,
       "ci": 3,
       "external": 1,
-      "app": 12
+      "app": 13
     },
     "by_stale_risk": {
       "unknown_version": 16,
-      "ok": 13,
+      "ok": 14,
       "not_applicable": 20
     },
     "without_prose": 15,
@@ -1298,6 +1298,32 @@
         "rpc",
         "postgrest",
         "anon-key"
+      ]
+    },
+    {
+      "id": "rls-004",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/rls-004.json",
+      "title": "列の絞りを未ログインにだけ入れて、ログイン済みが全列を読めた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/case-studies/hanami-nail.md#列の絞りが未ログインにしか入っていませんでした",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "rls-001",
+        "rls-003"
+      ],
+      "tags": [
+        "supabase",
+        "rls",
+        "column-grant",
+        "authenticated",
+        "postgrest"
       ]
     },
     {

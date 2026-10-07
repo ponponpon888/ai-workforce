@@ -6,43 +6,43 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 44,
+    "total": 49,
     "by_set": {
-      "pitfalls": 34,
-      "app-pitfalls": 10
+      "pitfalls": 37,
+      "app-pitfalls": 12
     },
     "by_confidence": {
-      "measured": 25,
-      "inferred": 14,
+      "measured": 29,
+      "inferred": 15,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 36,
-      "open_recorded": 2,
-      "untouched": 2,
-      "none": 4
+      "closed": 37,
+      "open_recorded": 3,
+      "untouched": 4,
+      "none": 5
     },
     "by_kind": {
-      "trap": 34,
+      "trap": 38,
       "limitation": 6,
-      "behaviour": 4
+      "behaviour": 5
     },
     "by_layer": {
-      "instruction": 4,
+      "instruction": 6,
       "permissions": 6,
       "hook": 17,
-      "runtime": 3,
+      "runtime": 4,
       "ci": 3,
       "external": 1,
-      "app": 10
+      "app": 12
     },
     "by_stale_risk": {
       "unknown_version": 16,
-      "ok": 9,
-      "not_applicable": 19
+      "ok": 13,
+      "not_applicable": 20
     },
-    "without_prose": 12,
+    "without_prose": 15,
     "checkable": 23
   },
   "checks": [
@@ -453,6 +453,57 @@
         "docs",
         "drift",
         "pitfall-records",
+        "recurrence"
+      ]
+    },
+    {
+      "id": "doc-005",
+      "set": "pitfalls",
+      "file": "data/pitfalls/doc-005.json",
+      "title": "文書に書いた実行結果の照合は Ubuntu でしか走らず、Windows では 5 件が合わない",
+      "layer": "instruction",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "untouched",
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "doc-002"
+      ],
+      "tags": [
+        "docs",
+        "windows",
+        "ci",
+        "cross-platform"
+      ]
+    },
+    {
+      "id": "doc-006",
+      "set": "pitfalls",
+      "file": "data/pitfalls/doc-006.json",
+      "title": "事例が別のリポジトリのコードを引用したまま古くなり、直った穴を「未修正」と伝え続けていた",
+      "layer": "instruction",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "open_recorded",
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "doc-001",
+        "idem-001",
+        "idem-002",
+        "state-001"
+      ],
+      "tags": [
+        "docs",
+        "drift",
+        "case-studies",
         "recurrence"
       ]
     },
@@ -1224,6 +1275,32 @@
       ]
     },
     {
+      "id": "rls-003",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/rls-003.json",
+      "title": "関数で絞った内容を、同じ表への直接の SELECT が素通りしていた",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/case-studies/beauty-matching.md#当てている途中で新しい穴が-1-つ見つかりました",
+      "has_prose": true,
+      "checkable": false,
+      "related": [
+        "rls-001",
+        "rls-002"
+      ],
+      "tags": [
+        "supabase",
+        "rls",
+        "rpc",
+        "postgrest",
+        "anon-key"
+      ]
+    },
+    {
       "id": "shell-001",
       "set": "pitfalls",
       "file": "data/pitfalls/shell-001.json",
@@ -1291,6 +1368,52 @@
         "get-childitem",
         "portability",
         "dotfiles"
+      ]
+    },
+    {
+      "id": "shell-004",
+      "set": "pitfalls",
+      "file": "data/pitfalls/shell-004.json",
+      "title": "PowerShell では、コマンドの後ろに置いたヒアストリングは標準入力ではなく引数になる",
+      "layer": "runtime",
+      "kind": "behaviour",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": null,
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": false,
+      "related": [
+        "shell-001"
+      ],
+      "tags": [
+        "powershell",
+        "here-string",
+        "git",
+        "stdin",
+        "agent-instructions"
+      ]
+    },
+    {
+      "id": "state-001",
+      "set": "app-pitfalls",
+      "file": "data/app-pitfalls/state-001.json",
+      "title": "状態の型と CHECK 制約はあるが、遷移表がない",
+      "layer": "app",
+      "kind": "trap",
+      "severity": "low",
+      "confidence": "inferred",
+      "status": "untouched",
+      "stale_risk": "not_applicable",
+      "origin": "docs/case-studies/beauty-matching.md#状態機械には遷移表がない",
+      "has_prose": true,
+      "checkable": false,
+      "related": [],
+      "tags": [
+        "state-machine",
+        "admin",
+        "check-constraint"
       ]
     },
     {

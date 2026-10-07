@@ -1,0 +1,41 @@
+{
+  "id": "shell-004",
+  "title": "PowerShell では、コマンドの後ろに置いたヒアストリングは標準入力ではなく引数になる",
+  "summary": "bash の git commit -F - <<'EOF' ... EOF を PowerShell に写して git commit -F - @'...'@ と書くと、ヒアストリングは標準入力ではなく、ただの引数として git に渡る。git はそれを pathspec として読み、did not match any file(s) known to git で落ちる。コミットは作られない。メッセージをファイルに書いて -F <file> で渡すと通る（ここで試したのはこの形だけ）。もう 1 つ: 同じ行に ; でつないだ後続のコマンドは、前が失敗しても走る。実測では、コミットが落ちたあとの git add がそのまま実行され、別のコミットに分けるつもりだったファイルが stage された状態で残った。",
+  "layer": "runtime",
+  "kind": "behaviour",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-10-06",
+  "environment": {
+    "os": "Windows 11 Pro",
+    "shell": "PowerShell",
+    "shell_version": "7.6.6",
+    "claude_code_version": "2.1.290",
+    "node_version": "v24.13.0"
+  },
+  "repro": [
+    "git 2.52.0.windows.1。Claude Code が、コミットを 2 つ続けて作るために次の形を 1 行で実行した",
+    "git commit -q -F - @'<メッセージ>'@; \"exit=$LASTEXITCODE\"; git add .github/workflows/docs.yml; git commit -q -F - @'<メッセージ>'@",
+    "1 つ目: error: pathspec '<メッセージの全文>' did not match any file(s) known to git / exit=1",
+    "2 つ目も同じエラーで exit=1。コミットは 1 つも作られなかった",
+    "あいだの git add は実行されていて、docs.yml は stage された状態で残っていた",
+    "メッセージをファイルに書き出して git commit -F <file> にすると通った。以後のコミットは全部この形で入れた"
+  ],
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "エージェントがその場で組み立てるコマンドの形なので、リポジトリの中に検査する対象がない。"
+  },
+  "related": [
+    "shell-001"
+  ],
+  "tags": [
+    "powershell",
+    "here-string",
+    "git",
+    "stdin",
+    "agent-instructions"
+  ]
+}

@@ -83,6 +83,26 @@ that cannot be picked up as "worth re-measuring" when its subject moves cannot s
 freshness axis at all. If no date comes out, it is not treated as a measurement and the
 confidence goes down.
 
+### `target` -- when the thing measured is not this machine
+
+The five fields say where the measurement was run from. When what was measured is a
+production database or a hosted service, **what it was** goes in the optional `target`.
+
+```json
+"environment": {
+  "os": "unrecorded",
+  "shell": "unrecorded",
+  "shell_version": "unrecorded",
+  "claude_code_version": "unrecorded",
+  "node_version": "unrecorded",
+  "target": "Postgres 17.6 (Supabase)"
+}
+```
+
+`target` does not take `"unrecorded"`. It is optional, so when there is nothing to name,
+**leave the key out**. An optional field that may also say `"unrecorded"` has two ways of being
+empty, and the reader cannot tell which one was meant.
+
 ### `stale_risk`
 
 A derived value computed while building `data/pitfalls.index.json`. It is not written into a
@@ -248,18 +268,22 @@ Every `detection` is `checkable: false` because the thing to check lives outside
 repository. `lint-pitfalls` reads fixed paths under its own root and nothing else. There is no
 way yet to point it at another repository.
 
-### The open holes are not in yet
+### Open holes go in after they are checked against the real thing
 
-The case studies describe several holes as "not fixed". Those are not records yet.
+The case studies describe several holes as "not fixed". Those do not become records as written.
 
-When the real code was read again in order to write the records, **two of those "not fixed"
-holes turned out to have been closed a month earlier**
-([the addendum in the MUSUBU case study](case-studies/musubu.md#その後-line-側も塞いだ), Japanese).
-A case study quotes code from another repository, so nothing here turns red when the source
-moves. Copying a "not fixed" in that state into an `untouched` record would only make a stale
-claim machine-readable and hand it out.
+On 2026-10-06, the 11 places the case studies call "not fixed" were checked against the real
+repositories. **Eight of them had already been fixed**
+([doc-006](../data/pitfalls/doc-006.json)). A case study quotes code from another repository, so
+nothing here turns red when the source moves. Copying a "not fixed" in that state into an
+`untouched` record would only make a stale claim machine-readable and hand it out.
 
-Open holes go in after they have been checked against the real repositories, with a date.
+Open holes go in after they have been checked against the real repositories, with a date. The
+first one is [state-001](../data/app-pitfalls/state-001.json).
+
+**A hole that touches personal data or permissions is published after it is closed**, so that a
+hole in a running service is not announced before it is fixed. Anything else is published when
+it is found.
 
 ---
 
@@ -274,7 +298,7 @@ Open holes go in after they have been checked against the real repositories, wit
 | R03 | Types and enum values are valid |
 | R04 | `id` matches `^[a-z][a-z0-9]*-[0-9]{3}$` |
 | R05 | `measured` ⟺ `measured_on` / `environment` / `repro` are all present |
-| R06 | `environment` has exactly 5 fields, each a value or `"unrecorded"` |
+| R06 | `environment` has 5 fields, each a value or `"unrecorded"`. The optional `target`, when present, is a value |
 | R07 | `documented` has at least one `sources` entry |
 | R08 | `inferred` has at least one `inferred_from` entry |
 | R09 | `behaviour` forbids `status`; `trap` / `limitation` require it |

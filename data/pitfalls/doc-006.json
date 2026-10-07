@@ -1,0 +1,52 @@
+{
+  "id": "doc-006",
+  "title": "事例が別のリポジトリのコードを引用したまま古くなり、直った穴を「未修正」と伝え続けていた",
+  "summary": "事例 3 本は、別のリポジトリのコードを引用して「ここは未修正」と書いている。引用元が直っても、このリポジトリでは何も赤くならない。2026-10-06 に、「未修正」と読める 11 件を実物に当てた。8 件はもう直っていた。残りは、未修正のままが 1 件、設計として変わっていないものが 1 件、事例が指す対象を特定できなかったものが 1 件。古い「未修正」は、公開しているプロダクトについて「穴が開いている」と言い続ける。doc-001 と同じ形だが、照合する相手がこのリポジトリの外にある。",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-10-06",
+  "environment": {
+    "os": "Windows 11 Pro",
+    "shell": "PowerShell",
+    "shell_version": "7.6.6",
+    "claude_code_version": "2.1.290",
+    "node_version": "v24.13.0",
+    "target": "MUSUBU 5c440cc / 美容領域のマッチングプラットフォーム 89cb6b4 と本番 DB（Postgres 17.6）/ Hanami Nail efe5403"
+  },
+  "repro": [
+    "コードは各リポジトリの origin/main を git grep と git show で読んだ。本番 DB は、権限・ポリシー・関数の定義と行数だけを読んだ",
+    "MUSUBU: LINE 側の重複排除 → 直っていた（idem-001）",
+    "MUSUBU: 冪等キーに毎回変わる値 → 直っていた（idem-002）",
+    "MUSUBU: isAffirmativeResponse の import 漏れ → 直っていた（呼び出しごと別のモジュールへ移り、そこで import している）",
+    "MUSUBU: 曜日の計算の timeZone 抜け → 事例が挙げた箇所は直っていた。画面側に残る getDay() は見ていない",
+    "MUSUBU: 検出パターンの手コピー → 直っていた（共通の 11 件を 1 か所に切り出し、2 か所ともそれを展開している）",
+    "マッチング: 問い合わせの表に残っていた authenticated の権限 → 直っていた（本番で、authenticated にも anon にも権限なし）",
+    "マッチング: RLS 有効・ポリシー 0 本の表 → 変わらず。いま 27 表あり、外からは 1 行も読めない。穴ではなく設計",
+    "マッチング: 状態の遷移表 → 未修正のまま（state-001）",
+    "マッチング: 新旧 2 本の cron が同じ式で重複 → 事例が指す組を特定できなかった。同じ式の組は 2 つあるが、名前の上では目的が違う",
+    "Hanami Nail: オンボーディングの step1 が下書きを読まない → 直っていた（step2〜4 は import を見ただけ）",
+    "Hanami Nail: /guides/[slug] に JSON-LD が無い → 直っていた（共通コンポーネントが無い状態は同じ）"
+  ],
+  "status": "open_recorded",
+  "why_not_closed": "引用元は別のリポジトリで、このリポジトリの CI からは読めない。機械で縛る方法がない。代わりに、当てた結果を日付つきで事例に追記し、開いている穴は実物に当ててからレコードにする（docs/08）。日付の無い「未修正」は、次に当てるまで正しいかどうか分からない。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "照合する相手がこのリポジトリの外にある。"
+  },
+  "related": [
+    "doc-001",
+    "idem-001",
+    "idem-002",
+    "state-001"
+  ],
+  "tags": [
+    "docs",
+    "drift",
+    "case-studies",
+    "recurrence"
+  ]
+}

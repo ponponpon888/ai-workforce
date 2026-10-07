@@ -142,13 +142,22 @@ function checkMeasuredExtras(record, file) {
   if (!isPlainObject(record.environment)) return;
 
   const expected = schema.environment.fields;
+  const optional = schema.environment.optional_fields ?? [];
   for (const field of expected) {
     if (!isNonEmptyString(record.environment[field])) {
       err(file, 'R06', `environment.${field} is required: a value, or "${schema.unrecorded}"`);
     }
   }
+  // An optional field is left out when there is nothing to say, so "unrecorded" is not a value.
+  for (const field of optional) {
+    if (!(field in record.environment)) continue;
+    const value = record.environment[field];
+    if (!isNonEmptyString(value) || value === schema.unrecorded) {
+      err(file, 'R06', `environment.${field} is optional: a value, or leave the key out (not "${schema.unrecorded}")`);
+    }
+  }
   for (const key of Object.keys(record.environment)) {
-    if (!expected.includes(key)) err(file, 'R06', `unknown environment field "${key}"`);
+    if (!expected.includes(key) && !optional.includes(key)) err(file, 'R06', `unknown environment field "${key}"`);
   }
 }
 

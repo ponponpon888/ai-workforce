@@ -1,0 +1,26 @@
+{
+  "id": "state-001",
+  "title": "状態の型と CHECK 制約はあるが、遷移表がない",
+  "summary": "問い合わせの状態は 6 つの値を取り、型と CHECK 制約が値の集合を縛っている。しかし、どの状態からどの状態へ移れるかは、どこにも書かれていない。運営画面は現在値以外のボタンを全部押せて、書き込み先の関数は渡された値をそのまま入れる。matched から new へも、spam から matched へも移れる。事例を書いたあとで、変更が「誰が・何から何へ」で履歴の表に残るようになった。止めてはいないが、あとから追える。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "low",
+  "confidence": "inferred",
+  "origin": "docs/case-studies/beauty-matching.md#状態機械には遷移表がない",
+  "inferred_from": [
+    "docs/case-studies/beauty-matching.md#状態機械には遷移表がない",
+    "docs/case-studies/beauty-matching.md#2026-10-06-に確かめ直したこと"
+  ],
+  "status": "untouched",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "遷移表が「無い」ことは、文字列の一致では探せない。状態を書き込む経路を全部読む必要がある。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [],
+  "tags": [
+    "state-machine",
+    "admin",
+    "check-constraint"
+  ]
+}

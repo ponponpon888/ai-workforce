@@ -14,10 +14,10 @@
     "shell_version": "7.6.6",
     "claude_code_version": "2.1.290",
     "node_version": "v24.13.0",
-    "target": "MUSUBU 5c440cc / 美容領域のマッチングプラットフォーム 89cb6b4 と本番 DB（Postgres 17.6）/ Hanami Nail efe5403"
+    "target": "MUSUBU 5c440cc / 美容領域のマッチングプラットフォーム 89cb6b4 / Hanami Nail efe5403"
   },
   "repro": [
-    "コードは各リポジトリの origin/main を git grep と git show で読んだ。本番 DB は、権限・ポリシー・関数の定義と行数だけを読んだ",
+    "コードは各リポジトリの origin/main を git grep と git show で読んだ（上の環境）。本番 DB（Postgres 17.6）の権限・ポリシー・関数の定義と行数は、この環境からではなく、Supabase の接続ツール経由で読んだ（rls-003 と同じ）",
     "MUSUBU: LINE 側の重複排除 → 直っていた（idem-001）",
     "MUSUBU: 冪等キーに毎回変わる値 → 直っていた（idem-002）",
     "MUSUBU: isAffirmativeResponse の import 漏れ → 直っていた（呼び出しごと別のモジュールへ移り、そこで import している）",

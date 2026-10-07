@@ -16,12 +16,12 @@
     "node_version": "v24.13.0"
   },
   "repro": [
-    "git 2.52.0.windows.1。Claude Code が、コミットを 2 つ続けて作るために次の形を 1 行で実行した",
-    "git commit -q -F - @'<メッセージ>'@; \"exit=$LASTEXITCODE\"; git add .github/workflows/docs.yml; git commit -q -F - @'<メッセージ>'@",
-    "1 つ目: error: pathspec '<メッセージの全文>' did not match any file(s) known to git / exit=1",
-    "2 つ目も同じエラーで exit=1。コミットは 1 つも作られなかった",
-    "あいだの git add は実行されていて、docs.yml は stage された状態で残っていた",
-    "メッセージをファイルに書き出して git commit -F <file> にすると通った。以後のコミットは全部この形で入れた"
+    "git 2.52.0.windows.1。Claude Code が、コミットを 2 つ続けて作るために、次のコマンドを 1 回の PowerShell 呼び出しで実行した。省略したのはメッセージの本文だけ（<メッセージ1>・<メッセージ2>）。ヒアストリングの中身は複数行なので、@' の直後と '@ の直前は改行",
+    "Set-Location C:\\Dev\\ai-workforce-app-pitfalls; git branch --show-current; git add data/app-pitfalls data/pitfalls/doc-004.json data/pitfalls/ci-003.json data/pitfalls.index.json kit/scripts/check-pitfall-claims.mjs kit/scripts/test-check-pitfall-claims.mjs; git commit -q -F - @'<メッセージ1>'@; \"exit=$LASTEXITCODE\"; git add .github/workflows/docs.yml; git commit -q -F - @'<メッセージ2>'@; \"exit=$LASTEXITCODE\"; git log --oneline -3; git status --porcelain",
+    "1 つ目の git commit: error: pathspec '<メッセージ1の全文>' did not match any file(s) known to git / exit=1",
+    "2 つ目の git commit も同じエラーで exit=1。git log --oneline -3 の先頭は作業前のコミットのままで、コミットは 1 つも作られなかった",
+    "git add は 2 回とも実行されていた。1 回目（レコード 12 件・インデックス・check-pitfall-claims とそのテスト）と 2 回目（.github/workflows/docs.yml）の両方が stage されたまま残り、git status --porcelain は 16 行すべてが M か A だった。別のコミットに分けるつもりだった docs.yml も、その中に入っていた",
+    "回復: git restore --staged .github/workflows/docs.yml で docs.yml だけを外し、メッセージをファイルに書き出して git commit -F <file> にすると通った。以後のコミットは全部この形で入れた"
   ],
   "detection": {
     "checkable": false,

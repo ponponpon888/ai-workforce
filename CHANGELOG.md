@@ -11,6 +11,7 @@
 
 ## 未リリース
 
+- [shell-004](data/pitfalls/shell-004.json) の repro を実際に打ったコマンドに合わせ（stage が残ったのは `git add` 2 回分だった）、[doc-006](data/pitfalls/doc-006.json) の `target` から本番 DB を外して、DB は別の経路で読んだことを repro に書いた。
 - **事例の「未修正」11 件を実物に当てた。8 件は、もう直っていた**（[doc-006](data/pitfalls/doc-006.json)）。
   事例 3 本に、日付つきの「確かめ直したこと」を足した。元の記述は消していない。未修正のままだったのは
   1 件で、開いている穴として最初のレコードにした（[state-001](data/app-pitfalls/state-001.json)）。

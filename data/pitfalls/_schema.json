@@ -61,8 +61,20 @@
   },
 
   "environment": {
-    "$comment": "All five are required whenever the environment object exists. Value or \"unrecorded\".",
-    "fields": ["os", "shell", "shell_version", "claude_code_version", "node_version"]
+    "$comment": [
+      "The five fields are required whenever the environment object exists. Value or \"unrecorded\".",
+      "They say where the measurement was run from.",
+      "",
+      "target is optional. It names the thing that was measured when that thing is not this",
+      "machine -- a production database, a hosted service. Without it, the only place left for",
+      "\"Postgres 17.6\" is a repro line, and a reader ageing the record has to go and find it.",
+      "",
+      "target never takes \"unrecorded\". It is optional, so if there is nothing to name, leave the",
+      "key out. An optional field that may also say \"unrecorded\" has two ways of being empty, and",
+      "the next reader cannot tell which one was meant."
+    ],
+    "fields": ["os", "shell", "shell_version", "claude_code_version", "node_version"],
+    "optional_fields": ["target"]
   },
 
   "detection": {
@@ -168,7 +180,7 @@
     { "id": "R03", "what": "types and enum values are valid" },
     { "id": "R04", "what": "id matches record_id_pattern" },
     { "id": "R05", "what": "confidence==measured <=> measured_on, environment and repro are all present" },
-    { "id": "R06", "what": "environment holds exactly the five fields, each a value or \"unrecorded\"" },
+    { "id": "R06", "what": "environment holds the five fields, each a value or \"unrecorded\"; target is optional and, when present, a value" },
     { "id": "R07", "what": "confidence==documented requires a non-empty sources list" },
     { "id": "R08", "what": "confidence==inferred requires a non-empty inferred_from list" },
     { "id": "R09", "what": "kind==behaviour forbids status; kind trap|limitation requires it" },

@@ -232,6 +232,10 @@ accepts('origin is "record" -- this file is where it was first written down',
 
 accepts('claim gate allows 実測 on a measured record',
   f(measuredOpen(), { summary: '実測した。前方一致は単語の途中では切れない。' }));
+// target is the one optional environment field. Before it was allowed, R06 rejected this
+// record, so unlike the other accepts this one was seen failing first.
+accepts('measured, environment with the optional target',
+  f(measuredOpen(), { environment: { ...UNRECORDED_ENV, target: 'Postgres 17.6 (Supabase)' } }));
 
 console.log('\nmust reject:');
 rejects('file name does not match id', 'R01', {
@@ -253,6 +257,13 @@ rejects('environment is missing one of the five', 'R06',
   f(measuredOpen(), { environment: { os: 'unrecorded', shell: 'unrecorded', shell_version: 'unrecorded', node_version: 'unrecorded' } }));
 rejects('environment carries an extra field', 'R06',
   f(measuredOpen(), { environment: { ...UNRECORDED_ENV, editor: 'vim' } }));
+// An optional field has one way of being empty: leave the key out.
+rejects('environment target is "unrecorded"', 'R06',
+  f(measuredOpen(), { environment: { ...UNRECORDED_ENV, target: 'unrecorded' } }));
+rejects('environment target is an empty string', 'R06',
+  f(measuredOpen(), { environment: { ...UNRECORDED_ENV, target: '' } }));
+rejects('environment target is not a string', 'R06',
+  f(measuredOpen(), { environment: { ...UNRECORDED_ENV, target: 17 } }));
 rejects('documented without sources', 'R07', f(documented(), {}, ['sources']));
 rejects('documented with an empty sources list', 'R07', f(documented(), { sources: [] }));
 rejects('inferred without inferred_from', 'R08', f(inferred(), {}, ['inferred_from']));

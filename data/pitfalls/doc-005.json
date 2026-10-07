@@ -1,0 +1,39 @@
+{
+  "id": "doc-005",
+  "title": "文書に書いた実行結果の照合は Ubuntu でしか走らず、Windows では 5 件が合わない",
+  "summary": "文書はコマンドの隣に実行結果を書いていて、check-doc-commands がそれを実際に走らせて照合する（doc-002）。この照合は docs ワークフローの Ubuntu でしか走らない。Windows で同じ検査を走らせると 5 件が合わず、exit 1 になる。4 件は test-guard-config で、文書は 4 ページとも pass: 53 と書いているのに、Windows では pass: 50 を出す。残る 1 件は、docs/13 が引いている test-check-doc-links の結果行で、Windows では読み取れない。文書の数字は Linux でだけ正しいことになる。test-guard-config が Windows で 3 件少ない理由は調べていない。",
+  "layer": "instruction",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-10-06",
+  "environment": {
+    "os": "Windows 11 Pro",
+    "shell": "PowerShell",
+    "shell_version": "7.6.6",
+    "claude_code_version": "2.1.290",
+    "node_version": "v24.13.0"
+  },
+  "repro": [
+    "main の 9a1dec4 を git archive で書き出したクリーンなツリーで node kit/scripts/check-doc-commands.mjs を実行した",
+    "結果: 5 documented result(s) wrong; 16 checked across 5 suite(s). / exit 1",
+    "内訳: test-guard-config が pass: 50 を出す（文書は 53）× 4 ページ、docs/13 の test-check-doc-links の結果行が読めない 1 件",
+    "対照: 同じコミットを Linux（Ubuntu 24.04 / Node v22.22.0）で実行すると 0 documented result(s) wrong; 16 checked across 5 suite(s). / exit 0"
+  ],
+  "status": "untouched",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "OS ごとに実際に走らせないと分からない。"
+  },
+  "related": [
+    "doc-002"
+  ],
+  "tags": [
+    "docs",
+    "windows",
+    "ci",
+    "cross-platform"
+  ]
+}

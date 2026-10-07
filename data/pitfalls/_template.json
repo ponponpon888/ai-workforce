@@ -20,6 +20,9 @@
     "to satisfy the first shape -- the index counts records with no prose, so say so instead.",
     "",
     "Never guess an environment value. Write \"unrecorded\".",
+    "environment.target is optional and not in the template: add it only when what you measured is",
+    "not this machine (a production database, a hosted service), e.g. \"Postgres 17.6 (Supabase)\".",
+    "It never takes \"unrecorded\" -- if there is nothing to name, leave the key out.",
     "measured_on does NOT take \"unrecorded\": if you cannot date it, it is not a measurement.",
     "Run: node kit/scripts/validate-pitfalls.mjs"
   ],

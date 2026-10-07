@@ -1,0 +1,45 @@
+{
+  "id": "rls-003",
+  "title": "関数で絞った内容を、同じ表への直接の SELECT が素通りしていた",
+  "summary": "席の一覧を返す RPC は「ログイン済みの施術者か運営」「公開中の施設」に絞っていたのに、同じ表の SELECT ポリシーには「status = 'open' なら誰でも」という枝が残っていた。公開鍵だけで PostgREST を直接叩けば、RPC を通さずに open の行を全列読める。実測では 64 行が未ログインから読め、うち 2 行は下書き（未公開）の施設の席だった。画面は RPC しか使っていないので、UI を見ている限り気づけない。RPC の条件を厳しくするたびに、表のポリシーとの差は黙って広がる。",
+  "layer": "app",
+  "kind": "trap",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "docs/case-studies/beauty-matching.md#当てている途中で新しい穴が-1-つ見つかりました",
+  "measured_on": "2026-10-06",
+  "environment": {
+    "os": "unrecorded",
+    "shell": "unrecorded",
+    "shell_version": "unrecorded",
+    "claude_code_version": "unrecorded",
+    "node_version": "unrecorded",
+    "target": "Postgres 17.6 (Supabase)"
+  },
+  "repro": [
+    "本番 DB で、ロールを anon に切り替えて表ごとの行数を数えた（begin; set local role anon; select count(*) ...; rollback;）。行の中身は読んでいない",
+    "対照: 同じ測り方で、個人情報を持つ表は 0 行、公開のマスタは全行が返った。ロールの切り替えが効いていることを先に見た",
+    "席の表は 64 行が返った。status = 'open' の全行で、うち 2 行は下書きの施設の席",
+    "同じ席を返す RPC の定義は、プロフィールの role が施術者か運営であることと、施設が公開中でサンプルでないことを条件にしていた",
+    "修正をトランザクションの中で当て、施術者として数えて 62 行になることを見てから ROLLBACK した。そのあとで本適用した",
+    "修正後に同じ測り方で: anon は 42501 permission denied、施術者は 62 行、施設のオーナーは自分の 3 行、運営は全 71 行、プロフィールの無いアカウントは 0 行"
+  ],
+  "status": "closed",
+  "fix": "SELECT ポリシーを authenticated に限定し、open の枝に「施術者であること」「席の施設が公開中であること」を足した。施設の表は RLS で施術者から見えないので、公開中かどうかだけを返す SECURITY DEFINER の関数を 1 本足し、その EXECUTE は PUBLIC と anon の両方から外した（rls-002）。anon からは表の権限ごと外したので、以後の直接アクセスは 42501 で落ちる。",
+  "detection": {
+    "checkable": false,
+    "kind": "manual",
+    "note": "RPC の条件と表のポリシーを並べて読むか、anon のロールで実際に数えるしかない。当てる先が読む人のアプリの中にあり、このリポジトリには無い。lint-pitfalls は自分のルートの決まったパスしか読まない。"
+  },
+  "related": [
+    "rls-001",
+    "rls-002"
+  ],
+  "tags": [
+    "supabase",
+    "rls",
+    "rpc",
+    "postgrest",
+    "anon-key"
+  ]
+}

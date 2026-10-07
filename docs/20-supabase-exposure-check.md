@@ -46,6 +46,10 @@ authenticated | t_listing    | rows that meet row_conditions | 4 / 4   | contact
 - `named_like_private` は、読める列のうち、**名前が**連絡先やメモに見えるものです。名前からの推測で、
   中身は見ていません。
 - RLS が有効で、そのロールに当たるポリシーが 1 つも無い表は、出しません（1 行も返らないため）。
+- `row_conditions` の条件は、どれか 1 つを通れば読めます（`||` でつないであります）。`[restrictive]` と
+  付いた条件だけは逆で、ほかの条件を**狭める**側です（`AND` でつないであります）。
+- マテリアライズドビューと外部テーブルには、RLS を付けられません。SELECT を持つロールは全部読めるので、
+  `ALL ROWS ...` と出します。
 
 `authenticated` は「ログインしている人」です。運営のことではありません。
 だれでも自分でアカウントを作れるプロジェクトでは、だれでも、と同じ意味になります。
@@ -54,11 +58,13 @@ authenticated | t_listing    | rows that meet row_conditions | 4 / 4   | contact
 
 ```
 asked_as      | counted_as    | object            | rows_visible
-anon          | anon          | (objects counted) | 7
+anon          | anon          | (objects counted) | 9
+anon          | anon          | m_copy            | 3
 anon          | anon          | t_listing         | 2
+anon          | anon          | t_narrowed        | 2
 anon          | anon          | t_open            | 3
 anon          | anon          | v_definer         | 3
-authenticated | authenticated | (objects counted) | 7
+authenticated | authenticated | (objects counted) | 9
 ...
 ```
 
@@ -71,7 +77,8 @@ authenticated | authenticated | (objects counted) | 7
   その結果は捨ててください。** ロールが切り替わっていません。
 
 `v_definer` が 3 行なのは、ビューが作成者の権限で下の表を読むからです。下の表は RLS で 0 行なのに、
-ビュー経由では全部読めます。
+ビュー経由では全部読めます。`m_copy` はマテリアライズドビューで、作った時点の写しなので、RLS が
+そもそも掛かりません。
 
 ### 3 本目: 呼べる関数と、権限の系統
 
@@ -122,6 +129,8 @@ anon | f_public_left()   | PUBLIC only   | revoke execute on function public.f_p
   （[rls-004](../data/app-pitfalls/rls-004.json)）。その日に塞いで、いまは 5 → 1 です。
 - トランザクションを開いてロールを手で切り替える数え方（[rls-003](../data/app-pitfalls/rls-003.json) の
   `repro` の方法）とも突き合わせました。比べた範囲では、全部一致しました。
+- 3 プロジェクトとも、マテリアライズドビュー・外部テーブル・`restrictive` のポリシーは 1 つもありません。
+  この 3 つの扱いは、テスト用のデータベースでしか確かめていません。
 
 ---
 
@@ -141,6 +150,7 @@ anon | f_public_left()   | PUBLIC only   | revoke execute on function public.f_p
 ## 見ていないもの
 
 - `public` スキーマだけを見ます。ほかのスキーマを API に公開している場合と、Storage のバケットは見ません。
+- 外部テーブルは、1 本目には出ますが、2 本目では数えません。数えると、別のサーバへの問い合わせになるためです。
 - 読み取りだけを見ます。INSERT / UPDATE / DELETE は見ません。
 - 関数の中身は見ません。呼べることと、呼んで何が起きるかは別です。
 - 「登録しただけの他人」は 1 種類です。ある利用者が、別の利用者やテナントの行を読めるかどうかは数えていません。

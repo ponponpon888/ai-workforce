@@ -90,6 +90,26 @@ create view public.v_definer as select id, memo from public.t_admin_only;
 create view public.v_invoker with (security_invoker = true) as
   select id, memo from public.t_admin_only;
 
+-- 9. A restrictive policy narrows what the permissive one lets through, and
+--    only for the role it names: anon reads 2 rows, a signed-in stranger 3.
+create table public.t_narrowed (id int primary key, region text, note text);
+insert into public.t_narrowed values (1, 'jp', 'x'), (2, 'jp', 'y'), (3, 'us', 'z');
+alter table public.t_narrowed enable row level security;
+create policy "anyone reads" on public.t_narrowed for select using (true);
+create policy "jp only" on public.t_narrowed as restrictive
+  for select to anon using (region = 'jp');
+
+-- 10. A materialized view is a stored copy. It cannot have RLS, so both roles
+--     read all 3 rows of a table that lets neither of them through.
+create materialized view public.m_copy as select id, memo from public.t_admin_only;
+
+-- 11. A foreign table. Its wrapper has no handler, so any query through it
+--     fails: it must be listed by exposure-who-can-read.sql and must NOT be
+--     touched by exposure-count-as-roles.sql.
+create foreign data wrapper aiwf_nowhere;
+create server aiwf_nowhere_server foreign data wrapper aiwf_nowhere;
+create foreign table public.ft_elsewhere (id int, memo text) server aiwf_nowhere_server;
+
 -- Functions. EXECUTE arrives by two lines: the default to PUBLIC, and the
 -- explicit grants to the client roles (rls-002).
 

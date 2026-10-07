@@ -257,6 +257,7 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 | [06 チャット側の穴を塞ぐ](docs/06-supabase-mcp.md) | Supabase MCP の `read_only` / `project_ref`、プロンプトインジェクション（[EN](docs/06-supabase-mcp.en.md)） |
 | [07 GitHub と Vercel の穴](docs/07-github-vercel.md) | MCP の読み取り専用・ツール除外、PAT では force-push を止められない話（[EN](docs/07-github-vercel.en.md)） |
 | [08 落とし穴のデータ化](docs/08-pitfall-records.md) | 実測・推論・公式・未検証を混ぜずに記録する。`data/pitfalls/`（[EN](docs/08-pitfall-records.en.md)） |
+| [20 Supabase の公開範囲を数える](docs/20-supabase-exposure-check.md) | 公開鍵と、登録しただけの他人から、何が何行読めるか。自分で流す SQL 3 本 |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
 | [CHANGELOG](CHANGELOG.md) | 各版に何が入っているか。現在は v0.1.0 |
@@ -282,6 +283,7 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 自社の環境に合わせた導入が必要な場合は、個別に支援できます。
 
 - 現在のClaude Code設定と運用フローの診断
+- Supabase の公開範囲の点検（[自分で流せる SQL](docs/20-supabase-exposure-check.md) の結果とコードを読み、直す SQL と前後の測定結果まで）
 - 本番DB・秘密情報・Git操作に対するガードレール設計
 - 独自フック、診断ツール、承認フローの実装
 - 少人数チームへの導入設計と運用ルール整備

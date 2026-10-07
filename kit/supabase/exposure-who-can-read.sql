@@ -19,9 +19,16 @@
 --    columns              readable columns / all columns
 --    named_like_private   readable columns whose NAME looks private. A guess
 --                         from the name; it does not look at the contents.
---    row_conditions       the SELECT policies that apply to the role
---  Left out: tables with RLS on and no policy for the role (they return no
---  rows; the Supabase Security Advisor lists those).
+--    row_conditions       the SELECT policies that apply to the role. Several
+--                         are joined with ||: a row passing any one of them
+--                         is readable. A policy marked [restrictive] is
+--                         joined with AND: it narrows what the others allow.
+--  Left out: tables with RLS on and no permissive policy for the role (they
+--  return no rows; the Supabase Security Advisor lists those).
+--
+--  Materialized views and foreign tables cannot have RLS at all, so whoever
+--  holds SELECT on one reads all of it. Foreign tables are listed here but
+--  are not counted by exposure-count-as-roles.sql.
 --
 --  WHAT IT CANNOT TELL YOU
 --  How many rows a condition lets through. `is_admin()` and `true` look the
@@ -45,12 +52,16 @@ rel as (
 ),
 pol as (
   select p.polrelid, r.r,
-         count(*) as n,
-         string_agg(p.polname || ': ' || coalesce(pg_get_expr(p.polqual, p.polrelid), 'true'), '  ||  ' order by p.polname) as conditions
+         count(*) filter (where p.polpermissive) as n,
+         concat_ws('  AND  ',
+           string_agg(p.polname || ': ' || coalesce(pg_get_expr(p.polqual, p.polrelid), 'true'), '  ||  ' order by p.polname)
+             filter (where p.polpermissive),
+           string_agg('[restrictive] ' || p.polname || ': ' || coalesce(pg_get_expr(p.polqual, p.polrelid), 'true'), '  AND  ' order by p.polname)
+             filter (where not p.polpermissive)
+         ) as conditions
   from pg_policy p
   cross join roles r
-  where p.polpermissive
-    and p.polcmd in ('r', '*')
+  where p.polcmd in ('r', '*')
     and exists (
       select 1 from unnest(p.polroles) x
       where x = 0 or pg_has_role(r.r, x, 'MEMBER')
@@ -73,9 +84,13 @@ col as (
 select roles.r as role,
        rel.relname as object,
        case
-         when rel.relkind in ('v', 'm', 'f') and rel.opts ~* 'security_invoker=(true|on|1)'
+         when rel.relkind = 'm'
+           then 'ALL ROWS of the stored copy (materialized view, no RLS)'
+         when rel.relkind = 'f'
+           then 'ALL ROWS the other server returns (foreign table, no RLS here)'
+         when rel.opts ~* 'security_invoker=(true|on|1)'
            then 'view, read with the caller''s rights'
-         when rel.relkind in ('v', 'm', 'f')
+         when rel.relkind = 'v'
            then 'view, read with its owner''s rights (RLS of the tables under it is not applied)'
          when not rel.relrowsecurity
            then 'ALL ROWS (RLS is off)'

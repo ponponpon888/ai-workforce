@@ -166,17 +166,25 @@ try {
   const READS_ALL = 'ALL ROWS (RLS is off)';
   const VIEW_OWNER = "view, read with its owner's rights (RLS of the tables under it is not applied)";
   const VIEW_CALLER = "view, read with the caller's rights";
+  const MATVIEW = 'ALL ROWS of the stored copy (materialized view, no RLS)';
+  const FOREIGN = 'ALL ROWS the other server returns (foreign table, no RLS here)';
   const ADMIN = '( SELECT private.is_admin() AS is_admin)';
 
   console.log('\nexposure-who-can-read.sql:');
   sameLines('lists what each role holds SELECT on, and nothing else', psql(DB, asDashboard(read('exposure-who-can-read.sql'))), [
+    `anon | ft_elsewhere | ${FOREIGN} | 2 / 2 | memo | `,
+    `anon | m_copy | ${MATVIEW} | 2 / 2 | memo | `,
     `anon | t_admin_only | ${READS_ROWS} | 2 / 2 | memo | admin only: ${ADMIN}`,
     `anon | t_listing | ${READS_ROWS} | 2 / 4 |  | anyone reads published: (status = 'published'::text)`,
+    `anon | t_narrowed | ${READS_ROWS} | 3 / 3 | note | anyone reads: true  AND  [restrictive] jp only: (region = 'jp'::text)`,
     `anon | t_open | ${READS_ALL} | 3 / 3 | contact_email | `,
     `anon | v_definer | ${VIEW_OWNER} | 2 / 2 | memo | `,
     `anon | v_invoker | ${VIEW_CALLER} | 2 / 2 | memo | `,
+    `authenticated | ft_elsewhere | ${FOREIGN} | 2 / 2 | memo | `,
+    `authenticated | m_copy | ${MATVIEW} | 2 / 2 | memo | `,
     `authenticated | t_admin_only | ${READS_ROWS} | 2 / 2 | memo | admin only: ${ADMIN}`,
     `authenticated | t_listing | ${READS_ROWS} | 4 / 4 | contact_email | admin reads all: ${ADMIN}  ||  anyone reads published: (status = 'published'::text)`,
+    `authenticated | t_narrowed | ${READS_ROWS} | 3 / 3 | note | anyone reads: true`,
     `authenticated | t_open | ${READS_ALL} | 3 / 3 | contact_email | `,
     `authenticated | t_owned | ${READS_ROWS} | 3 / 3 | note | owner reads own: (owner_id = ( SELECT auth.uid() AS uid))`,
     `authenticated | v_definer | ${VIEW_OWNER} | 2 / 2 | memo | `,
@@ -185,13 +193,19 @@ try {
 
   console.log('\nexposure-count-as-roles.sql:');
   const count = read('exposure-count-as-roles.sql');
+  // 9 objects, not 10: ft_elsewhere is a foreign table and is left alone. Counting it would
+  // fail the whole statement, because its wrapper has no handler.
   const COUNTS = [
-    'anon | anon | (objects counted) | 7',
+    'anon | anon | (objects counted) | 9',
+    'anon | anon | m_copy | 3',
     'anon | anon | t_listing | 2',
+    'anon | anon | t_narrowed | 2',
     'anon | anon | t_open | 3',
     'anon | anon | v_definer | 3',
-    'authenticated | authenticated | (objects counted) | 7',
+    'authenticated | authenticated | (objects counted) | 9',
+    'authenticated | authenticated | m_copy | 3',
     'authenticated | authenticated | t_listing | 2',
+    'authenticated | authenticated | t_narrowed | 3',
     'authenticated | authenticated | t_open | 3',
     'authenticated | authenticated | v_definer | 3',
   ];
@@ -228,7 +242,7 @@ try {
     sameLines(
       'a name in skip is neither counted nor reported',
       psql(DB, asDashboard(skipping)),
-      COUNTS.filter((line) => !line.includes('t_open')).map((line) => line.replace('(objects counted) | 7', '(objects counted) | 6')),
+      COUNTS.filter((line) => !line.includes('t_open')).map((line) => line.replace('(objects counted) | 9', '(objects counted) | 8')),
     );
     check('...and the test really edited the skip list', count.includes(EMPTY) && skipping !== count, '');
   }

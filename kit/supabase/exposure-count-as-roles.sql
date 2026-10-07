@@ -15,6 +15,8 @@
 --     Do not run it against a project that is not yours.
 --  It runs count(*) on every table and view in `public` that the two roles hold
 --  SELECT on. On very large tables that takes time; list them in `skip` below.
+--  Foreign tables are not counted: a count there is a query against another
+--  server. exposure-who-can-read.sql lists them.
 --
 --  HOW TO READ THE RESULT
 --    asked_as      the role this file switched to

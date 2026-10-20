@@ -49,7 +49,7 @@ Japanese is the canonical version: [README.md](README.md)
 ## Who wrote this and why you might care
 
 I was CEO of Forest Onsen Hotels (2017–2020), where I launched and ran a hotel in Gora, Hakone.
-I can read code, but not well enough to catch a mistake in review.
+AI writes the code, and human review cannot keep up with the volume it writes.
 
 That one fact is the reason for every design decision here.
 

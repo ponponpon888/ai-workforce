@@ -7,7 +7,7 @@ everywhere. Stack, directory layout and commands belong in each project's own `C
 
 ## 0. Context
 
-- The owner of this machine is not an engineer. **Do not rely on them catching your mistake in review.**
+- **Do not rely on the owner reading the code and catching your mistake in review.**
 - So "we'll review it later" is not a safety net. Correctness has to hold before the call runs.
 - Speed is already sufficient. **Never trade safety for speed.**
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * guard-secrets.mjs — Claude Code PreToolUse hook. Stops a shell command from
- * reading a secret file into the transcript.
+ * reading a secret file into the transcript, or from overwriting or deleting one.
  *
  * WHY THIS EXISTS
  * The `deny` list in settings.json can hold `Read(./.env)`, and that is real —
@@ -15,12 +15,20 @@
  *
  * THE RULE
  * Block when a command both (a) names a secret file and (b) is a shape that
- * reads a file. Either one alone is fine: `rm .env.bak` names one without
- * reading it, `grep -r createClient src/` reads without naming one.
+ * reads, writes or destroys a file. Either one alone is fine:
+ * `grep -r createClient src/` reads without naming a secret, and
+ * `Set-Content notes.txt x` writes without naming one.
+ *
+ * Writing counts because a secret that is overwritten or deleted is as gone as
+ * one that is leaked: what is in a .env is usually the only copy of it, and
+ * nothing here can put it back. `rm .env.bak` was the example this file used
+ * for something deliberately let through. It no longer is — a backup of a
+ * secret is still a secret, and deleting it is not undoable either.
  *
  * SCOPE
- * This stops accidents, not an adversary. `cp .env /tmp/x` then reading /tmp/x
- * gets through, and so does any reader not on the list below. The point is that
+ * This stops accidents, not an adversary. Any reader or writer not on the lists
+ * below gets through, and so does anything that reaches the file without naming
+ * it — a script holding the path, a wildcard. The point is that
  * the common case — a model reaching for `cat .env` because it wants a
  * connection string — hits a wall instead of pasting a service-role key into a
  * transcript that then persists.
@@ -119,6 +127,39 @@ const DOTNET_READ = /\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*Read(?:A
 /** `node < .env` reads the file without any reader on the list being present. */
 const INPUT_REDIRECT = /(?<![<>])<(?![<&])\s*([^\s;|&<>]+)/g;
 
+// ---------------------------------------------------------------------------
+// Data: what counts as writing to, or destroying, a file. Same shape as the
+// read lists above. Add to these lists, do not rewrite the logic below.
+// ---------------------------------------------------------------------------
+
+/** Matched against the first word of a command, case-insensitively. */
+const WRITE_COMMANDS = [
+  // POSIX shell
+  'tee', 'cp', 'mv', 'install', 'ln', 'rm', 'unlink', 'shred', 'truncate', 'dd',
+  // PowerShell cmdlets and the aliases people actually type. `sc` and `ac` are
+  // Set-Content and Add-Content; `ri`, `del` and `erase` are Remove-Item.
+  'set-content', 'sc', 'add-content', 'ac', 'clear-content', 'out-file',
+  'new-item', 'ni', 'copy-item', 'cpi', 'copy', 'move-item', 'mi', 'move',
+  'rename-item', 'rni', 'ren', 'remove-item', 'ri', 'del', 'erase',
+];
+
+/**
+ * `echo X=1 > .env` writes with no writer from the list present. A digit or
+ * `&` in front means a file descriptor rather than a path, which is why
+ * `2>&1` and `>&2` are not read as naming a file.
+ */
+const OUTPUT_REDIRECT = /(?<![0-9&>])>{1,2}(?![>&])\s*([^\s;|&<>]+)/g;
+
+/** PowerShell can write or delete a file without naming a cmdlet at all. */
+const DOTNET_WRITE = /\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*(?:Write(?:AllText|AllBytes|AllLines)|Append(?:AllText|AllLines)|Delete|Copy|Move|Replace)/i;
+
+/**
+ * These overwrite or remove the file in the working tree. `git add .env` and
+ * `git commit -m "... .env ..."` name the path without changing it, so `git`
+ * alone is not enough to count as a write.
+ */
+const GIT_WRITE_SUBCOMMANDS = ['checkout', 'restore', 'rm', 'mv'];
+
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
 
 // ---------------------------------------------------------------------------
@@ -145,6 +186,30 @@ function deny(command, hit) {
       `  4. To set a value, use the tool that owns it rather than the file:\n` +
       `       vercel env add / supabase secrets set / gh secret set\n` +
       `  5. If this file is not a secret, name it as one that is not:\n` +
+      `       .env.example  .env.sample  .env.template  .env.dist\n`
+  );
+  process.exit(2);
+}
+
+function denyWrite(command, hit) {
+  let snippet = command.trim();
+  if (snippet.length > 400) snippet = snippet.slice(0, 400) + ' ...';
+
+  process.stderr.write(
+    `[guard-secrets] BLOCKED: this command writes to or deletes a secret file.\n\n` +
+      `Command:\n  ${snippet}\n\n` +
+      `Matched:\n` +
+      `  file       : ${hit.path}  (${hit.label})\n` +
+      `  written by : ${hit.writer}\n\n` +
+      `What to do:\n` +
+      `  1. To change a value, ask the human to edit the file themselves. What\n` +
+      `     is in a secret file is usually the only copy of it there is.\n` +
+      `  2. To set an environment variable, use the tool that owns it rather\n` +
+      `     than the file:\n` +
+      `       vercel env add / supabase secrets set / gh secret set\n` +
+      `  3. If a new environment needs one, ask them to copy .env.example\n` +
+      `     themselves and fill it in.\n` +
+      `  4. If this file is not a secret, name it as one that is not:\n` +
       `       .env.example  .env.sample  .env.template  .env.dist\n`
   );
   process.exit(2);
@@ -234,6 +299,27 @@ function readerIn(segment) {
   return null;
 }
 
+/** Why this segment counts as a write, or null if it does not. */
+function writerIn(segment) {
+  const word = commandWord(segment);
+
+  if (WRITE_COMMANDS.includes(word)) return word;
+
+  if (word === 'git') {
+    const sub = gitSubcommand(segment);
+    if (GIT_WRITE_SUBCOMMANDS.includes(sub)) return `git ${sub}`;
+  }
+  if (DOTNET_WRITE.test(segment)) return '[IO.File]::Write/Delete/...';
+
+  OUTPUT_REDIRECT.lastIndex = 0;
+  let m;
+  while ((m = OUTPUT_REDIRECT.exec(segment)) !== null) {
+    if (secretPathIn(m[1])) return 'output redirection';
+  }
+
+  return null;
+}
+
 /**
  * One command line can be several commands. Splitting on the separators keeps
  * `cat .env | head` and `KEY=$(cat .env)` from hiding behind a harmless first
@@ -276,8 +362,13 @@ try {
     const path = secretPathIn(segment);
     if (!path) continue;
 
+    // Reading is decided first, so a shape that both reads and writes --
+    // `sed -i` on a secret -- keeps the message it has always had.
     const reader = readerIn(segment);
     if (reader) deny(command, { ...path, reader });
+
+    const writer = writerIn(segment);
+    if (writer) denyWrite(command, { ...path, writer });
   }
 
   process.exit(0);

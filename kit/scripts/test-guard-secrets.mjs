@@ -131,19 +131,82 @@ assert('Windows code under secrets', ALLOW,
 assert('Windows prose under secrets', ALLOW,
   callHook('PowerShell', { command: String.raw`Get-Content C:\Dev\app\secrets\README.md` }));
 
+// Overwriting or deleting a secret loses it as surely as reading it leaks it.
+// Every shape here was measured against all four hooks first and reached the
+// filesystem unopposed; the table is in the record for this.
+console.log('\nmust block (writes and deletes):');
+for (const [name, command] of [
+  ['Set-Content', 'Set-Content .env "X=1"'],
+  ['sc alias', "sc .env 'X=1'"],
+  ['Add-Content', 'Add-Content .env "X=1"'],
+  ['ac alias', "ac .env 'X=1'"],
+  ['Out-File', "'X=1' | Out-File .env"],
+  ['PowerShell redirect', "'X=1' > .env"],
+  ['PowerShell append redirect', "'X=1' >> .env"],
+  ['Clear-Content', 'Clear-Content .env'],
+  ['New-Item -Force', "New-Item .env -Force -Value 'X=1'"],
+  ['Copy-Item onto a secret', 'Copy-Item tmp.txt .env'],
+  ['cpi alias', 'cpi tmp.txt .env'],
+  ['Move-Item onto a secret', 'Move-Item tmp.txt .env'],
+  ['Rename-Item onto a secret', 'Rename-Item tmp.txt .env'],
+  ['Remove-Item', 'Remove-Item .env'],
+  ['del alias', 'del .env'],
+  ['ri alias', 'ri .env'],
+  ['[IO.File]::WriteAllText', "[IO.File]::WriteAllText('.env','X=1')"],
+  ['[IO.File]::Delete', "[System.IO.File]::Delete('.env')"],
+  ['[IO.File]::Copy', "[IO.File]::Copy('a','.env',$true)"],
+]) assert(name, BLOCK, callHook('PowerShell', { command }));
+
+for (const [name, command] of [
+  ['echo redirect', 'echo X=1 > .env'],
+  ['echo append', 'echo "KEY=1" >> .env'],
+  ['printf redirect', "printf 'X=1' > .env"],
+  ['tee', 'tee .env < /dev/null'],
+  ['tee -a', 'echo X=1 | tee -a .env'],
+  ['cp onto a secret', 'cp tmp.txt .env'],
+  ['copying the example onto .env', 'cp .env.example .env'],
+  ['mv onto a secret', 'mv tmp .env'],
+  ['install', 'install -m 600 tmp .env'],
+  ['ln -sf', 'ln -sf tmp .env'],
+  ['rm', 'rm .env'],
+  ['rm -f', 'rm -f .env'],
+  // A backup of a secret is still a secret, and deleting it is not undoable.
+  ['deleting a backup', 'rm .env.bak'],
+  ['unlink', 'unlink .env'],
+  ['shred', 'shred -u .env'],
+  ['truncate', 'truncate -s 0 .env'],
+  ['dd of=', 'dd if=/dev/null of=.env'],
+  ['git checkout a path', 'git checkout .env'],
+  ['git restore', 'git restore .env'],
+  ['git rm', 'git rm .env'],
+  ['a private key', 'rm server.pem'],
+  ['a file under secrets/', 'Set-Content secrets/prod.yaml x'],
+]) assert(name, BLOCK, callHook('Bash', { command }));
+
 console.log('\nmust allow:');
 assert('.env.example', ALLOW, callHook('Bash', { command: 'cat .env.example' }));
+// Writing to a file named as public is the move this hook tells people to make.
+assert('writing .env.example', ALLOW,
+  callHook('PowerShell', { command: 'Set-Content .env.example "X="' }));
+assert('writing a non-secret', ALLOW,
+  callHook('PowerShell', { command: "Set-Content notes.txt 'x'" }));
+assert('redirect to a log', ALLOW, callHook('Bash', { command: 'echo x > out.log' }));
+assert('backing up the example', ALLOW,
+  callHook('Bash', { command: 'cp .env.example .env.example.bak' }));
+assert('deleting a build artefact', ALLOW, callHook('Bash', { command: 'rm build.log' }));
+// A stream redirection names a descriptor, not a file, and must not be read
+// as a destination just because a secret is mentioned elsewhere on the line.
+assert('2>&1 next to a secret name', ALLOW,
+  callHook('Bash', { command: 'npm run build .env 2>&1' }));
 assert('.env.sample', ALLOW, callHook('Bash', { command: 'cat .env.sample' }));
 assert('.env.template', ALLOW, callHook('Bash', { command: 'cat .env.template' }));
-assert('copying the example', ALLOW, callHook('Bash', { command: 'cp .env.example .env' }));
-assert('appending to .env', ALLOW, callHook('Bash', { command: 'echo "KEY=1" >> .env' }));
+// A tool that owns the secret is the answer this hook points people at, so it
+// has to keep working. `vercel env pull` writes .env.local by design.
 assert('vercel env pull', ALLOW, callHook('Bash', { command: 'vercel env pull .env.local' }));
-assert('deleting a backup', ALLOW, callHook('Bash', { command: 'rm .env.bak' }));
 assert('git status', ALLOW, callHook('Bash', { command: 'git status' }));
 // Naming the path is not printing it, and a subcommand word inside a commit
 // message is not a subcommand.
 assert('git log --oneline', ALLOW, callHook('Bash', { command: 'git log --oneline -5' }));
-assert('git checkout a path', ALLOW, callHook('Bash', { command: 'git checkout .env' }));
 assert('git add a path', ALLOW, callHook('Bash', { command: 'git add .env' }));
 assert('subcommand word in a message', ALLOW,
   callHook('Bash', { command: 'git commit -m "document the .env format"' }));
@@ -160,9 +223,6 @@ assert('npm run build', ALLOW, callHook('Bash', { command: 'npm run build' }));
 // `env` is a common word. Neither of these is a dotfile, and neither may match.
 assert('src/lib/env.ts', ALLOW, callHook('Bash', { command: 'cat src/lib/env.ts' }));
 assert('docs/environment.md', ALLOW, callHook('Bash', { command: 'cat docs/environment.md' }));
-// Writing to a secret file is not reading it.
-assert('PowerShell Set-Content', ALLOW,
-  callHook('PowerShell', { command: 'Set-Content .env "KEY=1"' }));
 assert('PowerShell reads a doc', ALLOW,
   callHook('PowerShell', { command: 'Get-Content README.md' }));
 assert('unrelated MCP tool', ALLOW,

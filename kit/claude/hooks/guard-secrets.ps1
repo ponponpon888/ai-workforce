@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     Claude Code PreToolUse hook. Stops a shell command from reading a secret
-    file into the transcript.
+    file into the transcript, or from overwriting or deleting one.
 
 .DESCRIPTION
     The 'deny' list in settings.json can hold Read(./.env), and that is real --
@@ -16,12 +16,20 @@
 
     THE RULE
     Block when a command both (a) names a secret file and (b) is a shape that
-    reads a file. Either one alone is fine: 'rm .env.bak' names one without
-    reading it, 'grep -r createClient src/' reads without naming one.
+    reads, writes or destroys a file. Either one alone is fine:
+    'grep -r createClient src/' reads without naming a secret, and
+    'Set-Content notes.txt x' writes without naming one.
+
+    Writing counts because a secret that is overwritten or deleted is as gone
+    as one that is leaked: what is in a .env is usually the only copy of it,
+    and nothing here can put it back. 'rm .env.bak' was the example this file
+    used for something deliberately let through. It no longer is -- a backup of
+    a secret is still a secret, and deleting it is not undoable either.
 
     NOTE ON SCOPE
-    This stops accidents, not an adversary. 'cp .env /tmp/x' then reading /tmp/x
-    gets through, and so does any reader not on the list below. The point is that
+    This stops accidents, not an adversary. Any reader or writer not on the
+    lists below gets through, and so does anything that reaches the file
+    without naming it -- a script holding the path, a wildcard. The point is that
     the common case -- a model reaching for 'cat .env' because it wants a
     connection string -- hits a wall instead of pasting a service-role key into a
     transcript that then persists.
@@ -125,6 +133,35 @@ $DotNetRead = '\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*Read(?:AllText
 $InputRedirect = '(?<![<>])<(?![<&])\s*([^\s;|&<>]+)'
 
 # ---------------------------------------------------------------------------
+# Data: what counts as writing to, or destroying, a file. Same shape as the
+# read lists above. Add to these lists, do not rewrite the logic below.
+# ---------------------------------------------------------------------------
+
+# Matched against the first word of a command, case-insensitively.
+$WriteCommands = @(
+    # POSIX shell
+    'tee', 'cp', 'mv', 'install', 'ln', 'rm', 'unlink', 'shred', 'truncate', 'dd',
+    # PowerShell cmdlets and the aliases people actually type. 'sc' and 'ac' are
+    # Set-Content and Add-Content; 'ri', 'del' and 'erase' are Remove-Item.
+    'set-content', 'sc', 'add-content', 'ac', 'clear-content', 'out-file',
+    'new-item', 'ni', 'copy-item', 'cpi', 'copy', 'move-item', 'mi', 'move',
+    'rename-item', 'rni', 'ren', 'remove-item', 'ri', 'del', 'erase'
+)
+
+# 'echo X=1 > .env' writes with no writer from the list present. A digit or '&'
+# in front means a file descriptor rather than a path, which is why '2>&1' and
+# '>&2' are not read as naming a file.
+$OutputRedirect = '(?<![0-9&>])>{1,2}(?![>&])\s*([^\s;|&<>]+)'
+
+# PowerShell can write or delete a file without naming a cmdlet at all.
+$DotNetWrite = '\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*(?:Write(?:AllText|AllBytes|AllLines)|Append(?:AllText|AllLines)|Delete|Copy|Move|Replace)'
+
+# These overwrite or remove the file in the working tree. 'git add .env' and
+# 'git commit -m "... .env ..."' name the path without changing it, so 'git'
+# alone is not enough to count as a write.
+$GitWriteSubcommands = @('checkout', 'restore', 'rm', 'mv')
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -154,6 +191,35 @@ What to do:
   4. To set a value, use the tool that owns it rather than the file:
        vercel env add / supabase secrets set / gh secret set
   5. If this file is not a secret, name it as one that is not:
+       .env.example  .env.sample  .env.template  .env.dist
+"@
+    [Console]::Error.WriteLine($msg)
+    exit 2
+}
+
+function DenyWrite([string] $Command, [string] $Path, [string] $Label, [string] $Writer) {
+    $snippet = $Command.Trim()
+    if ($snippet.Length -gt 400) { $snippet = $snippet.Substring(0, 400) + ' ...' }
+
+    $msg = @"
+[guard-secrets] BLOCKED: this command writes to or deletes a secret file.
+
+Command:
+  $snippet
+
+Matched:
+  file       : $Path  ($Label)
+  written by : $Writer
+
+What to do:
+  1. To change a value, ask the human to edit the file themselves. What
+     is in a secret file is usually the only copy of it there is.
+  2. To set an environment variable, use the tool that owns it rather
+     than the file:
+       vercel env add / supabase secrets set / gh secret set
+  3. If a new environment needs one, ask them to copy .env.example
+     themselves and fill it in.
+  4. If this file is not a secret, name it as one that is not:
        .env.example  .env.sample  .env.template  .env.dist
 "@
     [Console]::Error.WriteLine($msg)
@@ -257,6 +323,25 @@ function Find-Reader([string] $Segment) {
     return $null
 }
 
+# Why this segment counts as a write, or $null if it does not.
+function Find-Writer([string] $Segment) {
+    $word = Get-CommandWord $Segment
+
+    if ($WriteCommands -contains $word) { return $word }
+
+    if ($word -eq 'git') {
+        $sub = Get-GitSubcommand $Segment
+        if ($GitWriteSubcommands -contains $sub) { return "git $sub" }
+    }
+    if ($Segment -match $DotNetWrite) { return '[IO.File]::Write/Delete/...' }
+
+    foreach ($m in [regex]::Matches($Segment, $OutputRedirect)) {
+        if ($null -ne (Find-SecretPath $m.Groups[1].Value)) { return 'output redirection' }
+    }
+
+    return $null
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -294,8 +379,13 @@ try {
         $hit = Find-SecretPath $segment
         if ($null -eq $hit) { continue }
 
+        # Reading is decided first, so a shape that both reads and writes --
+        # 'sed -i' on a secret -- keeps the message it has always had.
         $reader = Find-Reader $segment
         if ($reader) { Deny $command $hit.Path $hit.Label $reader }
+
+        $writer = Find-Writer $segment
+        if ($writer) { DenyWrite $command $hit.Path $hit.Label $writer }
     }
 
     exit 0

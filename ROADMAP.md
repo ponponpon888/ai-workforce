@@ -388,7 +388,10 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
 - 前身 `ai-workforce-os` のログ整理は別リポジトリの作業として扱う。今回は削除していない。
 - サブディレクトリ・dot ディレクトリの「通るはず」対照の再設計（実測第2回で対照がディレクトリ全体を
   覆う別の deny 行の中に置かれてしまい機能しなかった）。PowerShell ツール経由の書き込み
-  （`Set-Content` 等）が Edit / Write ツールの deny を迂回できるかの検証も未着手。
+  （`Set-Content` 等）が Edit / Write ツールの deny を迂回できるかは測った（2026-10-20）。
+  迂回できる。40 の形を 4 つのフックに当てて、35 がどれにも止められないことを確認し、
+  `guard-secrets` を「読む」から「読む・書く・消す」に広げて塞いだ
+  （[hook-017](data/pitfalls/hook-017.json)）。
 - ~~`actions/checkout@v4` / `actions/setup-node@v4` が Node.js 20 廃止に伴い Node 24 に
   強制されている旨の warning が CI に出ている（実害なし）。手が空いたときにバージョンを上げる。~~
   → 上げた（2026-09-22、[PR #47](https://github.com/ponponpon888/ai-workforce/pull/47)）。

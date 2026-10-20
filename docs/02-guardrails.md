@@ -768,6 +768,47 @@ Read ツールで `src/lib/secrets/masker.ts` を開くと落ち、`cat` する�
 直せる側だけ直したからです。`deny` の方は Claude Code 本体が判定するので、
 こちらからは狭められません。
 
+### 読む側だけ塞いで、消す側が開いたままでした
+
+`deny` には `Edit(.env)` もあります。`Read(...)` の deny が Edit / Write ツールにも
+効くことは測ってあるので、「AI が `.env` を書き換えること」は止まっているつもりで
+いました。ところが deny が届かないのはシェル経由だけではなく、**このフック自体も
+「読む形」しか見ていませんでした**。ヘッダには `rm .env.bak` が「通す例」として
+書いてありました。
+
+40 の形を、4 つのフック（`guard-secrets` / `guard-destructive` / `guard-config` /
+`guard-sql`）すべてに当てて測りました。コマンドは 1 つも実行していません。
+JSON のペイロードとして渡し、終了コードだけを見ています。
+
+**35 の形が、どのフックにも止められずに通りました。**
+
+| 通っていた形 | 例 |
+|---|---|
+| PowerShell の書き込み | `Set-Content .env 'X=1'`、`Add-Content`、`Clear-Content`、`New-Item -Force`、`'X=1' > .env` |
+| PowerShell のコピー・改名 | `Copy-Item tmp .env`、`Move-Item`、`Rename-Item` |
+| .NET の直呼び | `[IO.File]::WriteAllText('.env',...)`、`::Delete`、`::Copy` |
+| Bash の書き込み | `echo X=1 > .env`、`>>`、`printf`、`tee .env`、`tee -a` |
+| Bash のコピー・削除 | `cp`、`mv`、`install`、`ln -sf`、`rm`、`rm -f`、`unlink`、`shred -u`、`truncate -s 0`、`dd of=` |
+| git | `git checkout -- .env`、`git restore .env`、`git rm .env` |
+
+止まっていた 5 件も、理由は期待と違いました。`Remove-Item .env` / `del` / `ri` の
+3 件は **`guard-destructive` が偶然止めていた**もので、`guard-secrets` は通して
+います。残る 2 件（`cat > .env <<EOF`、`sed -i ... .env`）は、`cat` と `sed` が
+読む形だから止まっていただけです。
+
+規則を「読む、または書き込む・上書きする・削除する・移動する」に広げました。
+判定は読む側と同じくデータの一覧（`WRITE_COMMANDS`、`OUTPUT_REDIRECT`、
+`DOTNET_WRITE`、`GIT_WRITE_SUBCOMMANDS`）で持ち、秘密ファイルかどうかの判定は
+1 か所のままにしています。`2>&1` や `>&2` は記述子であってパスではないので、
+行き先としては読みません。
+
+**`rm .env.bak` は今回から止まります。** バックアップでも中身は秘密で、消したら
+戻らないからです。ヘッダの「通す例」も書き換えました。
+
+`vercel env pull .env.local` は通します。これはフックが代わりに勧めている
+「その値を持っているツールを使う」そのものだからです
+（[hook-017](../data/pitfalls/hook-017.json)）。
+
 ---
 
 ## 塞いだつもりのものが、`git show` で 1 手で開きました

@@ -1,0 +1,48 @@
+{
+  "id": "hook-017",
+  "title": "guard-secretsは秘密ファイルを「読む」形しか見ておらず、上書き・削除・移動はどのフックも止めていなかった",
+  "summary": "settings.json の deny には Edit(.env) 系があり、Read(...) の deny が Edit / Write ツールにも効くことは実測済みなので、キットは「AI が秘密ファイルを書き換えること」を止めるつもりでいた。しかし deny はファイル操作ツールにしか効かず、Bash / PowerShell のコマンドには効かない（perm-006）。そのシェル側を見ているのが guard-secrets だが、その規則は「秘密ファイルの名前が出ていて、かつ読む形のとき」だけで、書き込み・上書き・削除・移動は対象外だった。ヘッダにも rm .env.bak は通す例として明記されていた。着手前に40の形を4つのフック（guard-secrets / guard-destructive / guard-config / guard-sql）すべてに当てて実測したところ、35の形がどのフックにも止められずに通った。残る5件のうち Remove-Item / del / ri の3件は guard-destructive が偶然止めていたもので、guard-secrets ではない。秘密ファイルは中身が唯一の控えであることが多く、上書き・削除は読み取りと同じく取り返しがつかない。guard-secrets の規則を「読む、または書き込む・上書きする・削除する・移動する」に広げて塞いだ。",
+  "layer": "hook",
+  "kind": "limitation",
+  "severity": "medium",
+  "confidence": "measured",
+  "origin": "record",
+  "measured_on": "2026-10-20",
+  "environment": {
+    "os": "Windows 11 Home 10.0.26200",
+    "shell": "Git Bash (MINGW64)",
+    "shell_version": "5.2.37(1)-release",
+    "claude_code_version": "2.1.304",
+    "node_version": "v24.11.1"
+  },
+  "repro": [
+    "測定は使い捨てのスクリプトで行い、対象のコマンドは一度も実行していない。各フックに JSON ペイロード（tool_name=Bash または PowerShell、tool_input.command）を標準入力で渡し、終了コードだけを見ている",
+    "対象ファイルは .env / server.pem / secrets/prod.yaml の3つ。40の形すべてで3ファイルとも同じ結果になった",
+    "修正前: 40の形のうち35が guard-secrets / guard-destructive / guard-config / guard-sql のどれにも止められず exit 0。例: Set-Content .env 'X=1' / 'X=1' > .env / Add-Content / Clear-Content / New-Item -Force / Copy-Item / Move-Item / Rename-Item / [IO.File]::WriteAllText / [IO.File]::Delete / echo X=1 > .env / tee .env / cp / mv / install / ln -sf / rm / rm -f / unlink / shred -u / truncate -s 0 / dd of= / git checkout -- .env / git restore / git rm",
+    "修正前に止まっていた5件の内訳: Remove-Item .env / del .env / ri .env の3件は guard-destructive が exit 2（guard-secrets は exit 0）。cat > .env <<EOF と sed -i 's/a/b/' .env の2件は、cat と sed が読む形なので guard-secrets が exit 2",
+    "対照（修正前・修正後とも同じ）: cat .env と Get-Content .env は guard-secrets が exit 2。Set-Content notes.txt 'x' / echo x > out.log / cp .env.example .env.example.bak / rm build.log は exit 0",
+    "修正後: 40の形すべてで guard-secrets が exit 2。対照の通すべき形はすべて exit 0 のまま",
+    "再現テストとしての確認: 増やした41件の block ケースを修正前のフックに当てると41件とも落ちる（pass 66 / fail 41）。修正後は pass 107 / fail 0"
+  ],
+  "status": "closed",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-secrets.mjs",
+    "pattern": "const WRITE_COMMANDS = [",
+    "expect": "present",
+    "message": "秘密ファイルを書き換える・消す形の一覧。これを消すと、Set-Content .env や rm .env がどのフックにも止められない状態に戻る。判定は読む側と同じくデータの一覧で持ち、ロジックを増やさないこと。"
+  },
+  "related": [
+    "perm-006",
+    "hook-010"
+  ],
+  "tags": [
+    "guard-secrets",
+    "secrets",
+    "powershell",
+    "shell",
+    "destructive"
+  ],
+  "fix": "guard-secrets.mjs / .ps1 に、読む側（READ_COMMANDS / INPUT_REDIRECT / DOTNET_READ / GIT_CONTENT_SUBCOMMANDS）と同じ形で書く側のデータを足した: WRITE_COMMANDS（POSIX の tee / cp / mv / install / ln / rm / unlink / shred / truncate / dd と、PowerShell の Set-Content・Add-Content・Clear-Content・Out-File・New-Item・Copy-Item・Move-Item・Rename-Item・Remove-Item とその別名）、OUTPUT_REDIRECT（> と >>。先頭が数字や & のものは記述子であってパスではないので 2>&1 と >&2 は行き先として読まない）、DOTNET_WRITE（[IO.File]::Write* / Append* / Delete / Copy / Move / Replace）、GIT_WRITE_SUBCOMMANDS（checkout / restore / rm / mv。git add と git commit は通す）。判定は writerIn() / Find-Writer() に閉じ、秘密ファイルの判定（SECRET_PATTERNS と .env.example などの除外）は1か所のままにした。読む判定を先に行うので、sed -i のように読みも書きもする形は従来どおりの「読む」メッセージになる。止めたときのメッセージは読む場合と分け、人間に編集を頼む・vercel env add などその値を持つツールで設定する・新しい環境なら .env.example を人間にコピーしてもらう、を案内する。テストは1つのケース集合を両実装に当てる形のまま 65 -> 107 件に増やした。"
+}

@@ -49,13 +49,15 @@ Japanese is the canonical version: [README.md](README.md)
 ## Who wrote this and why you might care
 
 I was CEO of Forest Onsen Hotels (2017–2020), where I launched and ran a hotel in Gora, Hakone.
-AI writes the code, and human review cannot keep up with the volume it writes.
+Today I build and run several web products alone, with AI writing the code.
 
-That one fact is the reason for every design decision here.
+AI writes faster than any human can review. That one fact is the reason for every design
+decision here.
 
-The usual "how to develop with AI" advice quietly assumes **a human who can review the output** —
-someone who looks at the SQL and notices the missing `WHERE`. I can't. So the only option was to
-build a structure that does not break even when I fail to notice.
+The usual "how to develop with AI" advice quietly assumes **a human who reviews every line** —
+someone who looks at the SQL and notices the missing `WHERE`. At the volume AI writes, that
+human does not exist, me included. So the only option was to build a structure that does not
+break even when the review misses something.
 
 I run several products in production this way: Next.js + Supabase + Vercel. This repository is
 the exact setup that makes that survivable.
@@ -109,12 +111,14 @@ DDL is different: it passes only with a **human approval token**. You read the S
 once, within 15 minutes, then deletes the token. One character different and the hash changes.
 
 The tests matter more than the hook. **The false-positive half is the important half** — a guard
-that fires on correct SQL gets switched off, and then you have no guard at all. Two cases are a
-known, deliberately unfixed false positive ([hook-010](data/pitfalls/hook-010.json)): a shell
-command that merely mentions an SQL client name and a DDL keyword as plain text — not SQL actually
-sent to that client — still gets blocked, because shell-grammar text is never neutralized (fixing
-that safely needs the same real lexer guard-destructive has; a quick regex once reopened a worse
-hole, letting `TRUNCATE` slip past `--sql`).
+that fires on correct SQL gets switched off, and then you have no guard at all. Two cases used to
+be a known false positive ([hook-010](data/pitfalls/hook-010.json)): a shell command that merely
+mentioned an SQL client name and a DDL keyword as plain text — not SQL actually sent to that
+client — still got blocked, because shell-grammar text is never neutralized. **That one is now
+closed**: guard-sql lexes the command line with the same shared lexer guard-destructive uses and
+inspects only the arguments actually handed to a database client, so both cases now pass. The
+command line itself is still never rewritten, so the old failure that reopened a worse hole — an
+option such as `--sql` swallowed whole, taking its `TRUNCATE` out of view — cannot recur.
 
 ```bash
 node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
@@ -293,9 +297,6 @@ than guessed:
   through Git only and protect `main` with a ruleset — not a Vercel setting.
 - I could not confirm whether Vercel's MCP supports per-tool restriction or project-scoped
   tokens, so `docs/07` says so instead of guessing.
-- `guard-sql` has a known false positive: when SQL arrives through a shell tool, string
-  literals are not masked, so a harmless `has_schema_privilege(..., 'CREATE')` reads as DDL.
-  Left open and recorded rather than patched in a hurry.
 
 A setup presented as airtight looks better. But anyone copying it would get hurt by the parts
 I quietly left out. Knowing where the machine stops and the discipline starts is worth more than

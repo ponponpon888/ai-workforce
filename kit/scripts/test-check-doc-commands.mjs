@@ -97,6 +97,34 @@ test('a suite that prints no result line is reported, not treated as passing', (
     root => assert.match(checkCommands(root).findings[0].why, /printed no result line/));
 });
 
+// A case the machine cannot run (no symlink permission, say) is skipped,
+// not failed and not silently dropped. The page documents what runs where
+// everything is available, so pass + skip is what the page is compared to.
+const skipSuite = (pass, fail, skip) =>
+  `console.log("  SKIP  a case (symlink not permitted on this machine)");` +
+  `console.log("pass: ${pass}   fail: ${fail}   skip: ${skip}");`;
+
+test('a case skipped on this machine still counts toward the documented number', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 53   fail: 0') },
+    { 'test-a.mjs': skipSuite(50, 0, 3) },
+    root => {
+      const { findings, notes } = checkCommands(root);
+      assert.deepEqual(findings, []);
+      // Accepted, but never silently: the skip has to be said out loud.
+      assert.equal(notes.length, 1);
+      assert.ok(notes[0].why.includes('pass: 50 + skip: 3 matches the documented pass: 53'));
+    });
+});
+
+test('a skip does not paper over a real shortfall', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 53   fail: 0') },
+    { 'test-a.mjs': skipSuite(49, 0, 3) },
+    root => {
+      const [f] = checkCommands(root).findings;
+      assert.match(f.why, /prints pass: 49 {2}fail: 0 {2}skip: 3/);
+    });
+});
+
 // The guard suites use this repository's own runner; everything else is a
 // node:test file and prints TAP. Reading only one shape would quietly stop
 // checking half the suites.
@@ -120,6 +148,38 @@ test('TAP with failures is read as failures, not as unreadable', () => {
 
 test('half a TAP summary is not guessed at', () => {
   run({}, { 'test-a.mjs': 'console.log("# pass 3");\n' },
+    root => assert.match(runSuite(root, 'test-a.mjs').why, /printed no result line/));
+});
+
+// Node 24 changed the default node:test reporter from TAP to spec. The
+// numbers are the same; only the prefix differs. Reading one shape and not
+// the other is what made every node:test suite unreadable there (doc-005).
+const spec = (pass, fail) =>
+  `console.log("ℹ tests ${pass + fail}");` +
+  `console.log("ℹ suites 0");` +
+  `console.log("ℹ pass ${pass}");` +
+  `console.log("ℹ fail ${fail}");` +
+  `console.log("ℹ cancelled 0");` +
+  `console.log("ℹ skipped 0");`;
+
+test('a node:test suite in the spec reporter is read from its summary', () => {
+  run({}, { 'test-a.mjs': spec(30, 0) },
+    root => assert.deepEqual(runSuite(root, 'test-a.mjs'), { pass: 30, fail: 0 }));
+});
+
+test('a spec suite whose count disagrees with the page is reported', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 26   fail: 0') },
+    { 'test-a.mjs': spec(30, 0) },
+    root => assert.match(checkCommands(root).findings[0].why, /says pass: 26.*prints pass: 30/));
+});
+
+test('spec with failures is read as failures, not as unreadable', () => {
+  run({}, { 'test-a.mjs': spec(37, 1) + 'process.exitCode = 1;\n' },
+    root => assert.deepEqual(runSuite(root, 'test-a.mjs'), { pass: 37, fail: 1 }));
+});
+
+test('half a spec summary is not guessed at', () => {
+  run({}, { 'test-a.mjs': 'console.log(\"ℹ pass 3\"); \n' },
     root => assert.match(runSuite(root, 'test-a.mjs').why, /printed no result line/));
 });
 

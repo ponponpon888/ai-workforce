@@ -11,6 +11,18 @@
 
 ## 未リリース
 
+- **文書の実行結果の照合が Windows で 5 件落ちていた件（[doc-005](data/pitfalls/doc-005.json)）のうち、4 件を直した。**
+  `test-guard-config` の symlink の 3 ケースが、symlink を張れない環境では 1 行の SKIP にまとめられ、
+  走った数だけを出していた。走らなかったケースを数えて名前と理由つきで出すようにし
+  （`pass: 50   fail: 0   skip: 3`）、`check-doc-commands` は `fail: 0` かつ `pass + skip` が
+  文書の数と一致すれば合格とし、スキップがあったことを必ず1行出すようにした。文書の 53 は、
+  すべて走る環境での正しい数なので変えていない。
+- **残る 1 件も直した。** `docs/13` が引く node:test のスイートが読めなかったのは、Node 24 で既定の
+  レポーターが TAP（`# pass N`）から spec（`ℹ pass N`）に変わったためで、OS でも改行コードでもなかった。
+  `check-doc-commands` が両方の形を読むようにし、どちらも「pass と fail が両方そろったときだけ読む」
+  ままにした。これで Windows / Node 24 でも `check-doc-commands` は 0 件・exit 0 になる
+  （[doc-005](data/pitfalls/doc-005.json) は `closed`）。
+
 ## v0.2.0 — 2026-10-20
 
 ガードレールの穴を塞ぎ、検査の届く範囲を広げた版です。`guard-sql` が MySQL / SQLite を読み分けるようになり（MCP 経由の呼び出しも検査対象に入れました）、シェル経由の誤検知（[hook-010](data/pitfalls/hook-010.json)）を塞ぎました。

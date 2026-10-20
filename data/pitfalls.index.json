@@ -18,9 +18,9 @@
       "unverified": 1
     },
     "by_status": {
-      "closed": 38,
+      "closed": 39,
       "open_recorded": 3,
-      "untouched": 4,
+      "untouched": 3,
       "none": 5
     },
     "by_kind": {
@@ -460,24 +460,26 @@
       "id": "doc-005",
       "set": "pitfalls",
       "file": "data/pitfalls/doc-005.json",
-      "title": "文書に書いた実行結果の照合は Ubuntu でしか走らず、Windows では 5 件が合わない",
+      "title": "文書に書いた実行結果の照合が、走らなかったケースと node:test の出力形式で合わない",
       "layer": "instruction",
       "kind": "trap",
       "severity": "medium",
       "confidence": "measured",
-      "status": "untouched",
+      "status": "closed",
       "stale_risk": "ok",
       "origin": "record",
       "has_prose": false,
       "checkable": false,
       "related": [
-        "doc-002"
+        "doc-002",
+        "doc-006"
       ],
       "tags": [
         "docs",
         "windows",
         "ci",
-        "cross-platform"
+        "cross-platform",
+        "node-version"
       ]
     },
     {

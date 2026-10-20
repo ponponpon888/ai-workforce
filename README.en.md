@@ -1,9 +1,11 @@
 # AI Workforce
 
-**The operating kit a non-engineer uses to run several production products alone.**
+**The operating kit I use to run several production products alone.**
 
 AI writes the code. The human decides what to build and installs the mechanical stops that keep
 AI from breaking production. This repository is those stops and that workflow, in runnable form.
+
+Made by [Shingo Kumon](#author) — more projects on [GitHub](https://github.com/ponponpon888)
 
 ## Things I found out the hard way
 
@@ -46,8 +48,8 @@ Japanese is the canonical version: [README.md](README.md)
 
 ## Who wrote this and why you might care
 
-I am not an engineer. I spent 13 years as a hotel and ryokan general manager. I can read code,
-but not well enough to catch a mistake in review.
+I was CEO of Forest Onsen Hotels (2017–2020), where I launched and ran a hotel in Gora, Hakone.
+I can read code, but not well enough to catch a mistake in review.
 
 That one fact is the reason for every design decision here.
 
@@ -312,16 +314,8 @@ Hands-on support is available when the standard kit is not enough:
 - Validate an AI workflow through a small, focused business demo
 
 I also build the products themselves — the Next.js + Supabase + Vercel platforms described in
-the case studies. Indicative ranges, scoped per project:
-
-| Scope | Range (JPY) | Approx. (USD) |
-|---|---|---|
-| Guardrail and workflow review — audit an existing setup, deliver a written plan | ¥300,000 – ¥600,000 | ~$2,000 – $4,000 |
-| A working product — auth, database, admin, email, deployed | ¥600,000 – ¥1,500,000 | ~$4,000 – $10,000 |
-| Multi-sided platform, integrations, ongoing build | ¥1,500,000+ | ~$10,000+ |
-| Maintenance | from ¥30,000 / month | from ~$200 / month |
-
-USD figures are approximate and track the exchange rate; the JPY figures are the actual ones.
+the case studies.
+Rates and availability are listed at [shingokumon.com/work](https://www.shingokumon.com/work) (in Japanese).
 
 An initial conversation does not require a purchase. We will first separate what the open-source kit already solves from what needs environment-specific implementation.
 
@@ -329,12 +323,24 @@ An initial conversation does not require a purchase. We will first separate what
 
 ---
 
+## Related projects
+
+| Project | What it does |
+|---|---|
+| [SUMI Orchestrator](https://github.com/ponponpon888/sumi-orchestrator-oss) | A CLI that decides and records what is done and what comes next in AI-assisted development, from the state of Git, CI, Vercel and Supabase |
+| [SUMI Guard](https://github.com/ponponpon888/sumi-guard) | A local monitoring prototype that records an application's pre-execution events and OS process observations separately, then reconciles them |
+| [Machine shop quote assistant](https://github.com/ponponpon888/mfg-quote-assistant) | A demo that answers from manufacturing documents (PDF) with citations and drafts a quote. The arithmetic is deterministic; the LLM only formats |
+| [IR review and translation agent](https://github.com/ponponpon888/ir-review-agent) | A document tool for IR disclosures that separates mechanical checks of figures and terminology from LLM review of meaning |
+
 ## Author
 
-**Shingo Kumon** — 13 years as a hotel general manager, not an engineer, ships production
-software with AI. [shingokumon.com](https://www.shingokumon.com)
+**Shingo Kumon** (公門 慎吾)
 
-Available for product and platform work, in Japan and internationally.
+Builds web services and business tools with AI-assisted development, and runs several of them in production.
+
+- More projects: [GitHub profile](https://github.com/ponponpon888)
+- Web: [shingokumon.com](https://www.shingokumon.com) / X: [@shingo_kumon](https://x.com/shingo_kumon)
+- Work enquiries (contract, fully remote): [contact](https://www.shingokumon.com/contact)
 
 ## Contributing
 

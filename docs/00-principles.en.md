@@ -4,8 +4,8 @@
 
 ## The premise
 
-I am not an engineer. I spent 13 years as a hotel and ryokan general manager.
-I can read code, but not to the level where I would catch a mistake in review.
+I run several production products alone. AI writes the code.
+Human review cannot keep up with the volume AI writes. I do not treat noticing a mistake in review as a premise for safety.
 
 That single fact is the reason for everything in this repository.
 
@@ -32,8 +32,8 @@ In practice, that turned out to be four things.
 
 This one cannot be handed over. Hand it over and you get something plausible that nobody uses.
 
-My input here is not code, it is the floor. Thirteen years in hotels means I know what actually
-happens in the building the moment a booking lands. That is the only edge I have.
+My input here is not code, it is the floor. Having launched and run a hotel means I know what
+actually happens in the building the moment a booking lands. That is the only edge I have.
 
 ### 2. Stopping it before it touches production
 

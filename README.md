@@ -5,6 +5,8 @@
 コードを書くのは AI。人間がやるのは、判断と、AI が事故らないための機械的な歯止めを敷くこと。
 このリポジトリは、その「歯止め」と「段取り」を、動く形で公開しています。
 
+作った人: [公門 慎吾（Shingo Kumon）](#作った人) ／ ほかの作品は [GitHub プロフィール](https://github.com/ponponpon888)
+
 ## 実際に踏んだこと
 
 - **無効な設定を1つ書くと、`settings.json` が丸ごと無視される。** `disableAutoMode: true`
@@ -290,14 +292,7 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 - 小さな業務デモから始めるAI活用の検証
 
 事例にある Next.js + Supabase + Vercel のプロダクトそのものの開発も請けています。
-規模別の目安です（要件により前後します）。
-
-| 規模 | 目安 |
-|---|---|
-| ガードレール・運用のレビュー（既存環境の診断と改善案の提出） | 30〜60万円 |
-| 動くプロダクト（認証・DB・管理画面・メール送信まで含めて公開） | 60〜150万円 |
-| 多面プラットフォーム、外部連携、継続的な開発 | 150万円〜 |
-| 保守 | 月3万円〜 |
+費用と稼働条件は [shingokumon.com/work](https://www.shingokumon.com/work) に載せています。
 
 相談時点で発注を決める必要はありません。現在の運用と困っていることを確認し、OSSの範囲で解決できるか、個別実装が必要かを切り分けます。
 
@@ -305,15 +300,24 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 
 ---
 
+## 関連する作品
+
+| 作品 | 何をするか |
+|---|---|
+| [SUMI Orchestrator](https://github.com/ponponpon888/sumi-orchestrator-oss) | AI 支援開発で「どこまで終わったか・次に何をするか」を、Git・CI・Vercel・Supabase の状態から決めて記録する CLI |
+| [SUMI Guard](https://github.com/ponponpon888/sumi-guard) | アプリの実行前イベントと OS のプロセス観測を別々に記録し、突き合わせるローカル監視の試作 |
+| [町工場の見積アシスタント](https://github.com/ponponpon888/mfg-quote-assistant) | 製造業の書類（PDF）から根拠つきで答え、見積の下書きを作るデモ。計算は決定的、LLM は整形だけ |
+| [IR レビュー・翻訳エージェント](https://github.com/ponponpon888/ir-review-agent) | IR 開示資料の数値・用語の検査と、LLM による文意レビューを分けた文書処理ツール |
+
 ## 作った人
 
-**公門 慎吾 (Shingo Kumon)** — くもん しんご
+**公門 慎吾（Shingo Kumon）** — くもん しんご
 
-- 13 年、ホテル・旅館の支配人
-- Next.js + Supabase + Vercel で、複数のサービスを 1 人で本番運用
-- [shingokumon.com](https://www.shingokumon.com) / Threads [@shingokumon](https://www.threads.net/@shingokumon)
+AI を使った開発で、Web サービスと業務の仕組みを作り、複数のサービスを本番で運用しています。
 
-開発の相談は上記サイトから。国内・海外どちらでも。
+- ほかの作品: [GitHub プロフィール](https://github.com/ponponpon888)
+- Web: [shingokumon.com](https://www.shingokumon.com) / X: [@shingo_kumon](https://x.com/shingo_kumon)
+- 開発の相談（業務委託・フルリモート）: [お問い合わせ](https://www.shingokumon.com/contact)
 
 ---
 

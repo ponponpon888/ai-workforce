@@ -58,12 +58,18 @@ const COMMAND = /^\s*node\s+kit\/scripts\/(test-[a-z0-9-]+\.mjs)\s+#\s*pass:\s*(
 // Two suite families print their totals differently, and a checker that knew
 // only one would quietly treat the other as unreadable. The guard suites use
 // this repository's own runner ("pass: 91   fail: 0"); the rest are node:test
-// files, which print TAP ("# pass 30" and "# fail 0" on separate lines).
+// files, which print their totals on separate lines. Node 24 changed the
+// default node:test reporter from TAP ("# pass 30") to spec ("ℹ pass 30"):
+// same numbers, different prefix. Reading only TAP made every node:test
+// suite unreadable there, which is the half of doc-005 that outlived the
+// skip counting. Both shapes are read, so the Node version stops mattering.
 // A suite may also end with "   skip: N" for cases it could not run here
 // (a symlink it may not create, say). Those are counted, never hidden.
 const RESULT = /^pass:\s*(\d+)\s+fail:\s*(\d+)(?:\s+skip:\s*(\d+))?\s*$/m;
 const TAP_PASS = /^# pass (\d+)$/m;
 const TAP_FAIL = /^# fail (\d+)$/m;
+const SPEC_PASS = /^ℹ pass (\d+)$/m;
+const SPEC_FAIL = /^ℹ fail (\d+)$/m;
 
 /** {pass, fail} from either output shape, or null if neither is there. */
 function resultIn(stdout) {
@@ -73,9 +79,12 @@ function resultIn(stdout) {
     if (own[3] !== undefined) r.skip = Number(own[3]);
     return r;
   }
-  const pass = TAP_PASS.exec(stdout);
-  const fail = TAP_FAIL.exec(stdout);
-  if (pass && fail) return { pass: Number(pass[1]), fail: Number(fail[1]) };
+  for (const [passRe, failRe] of [[TAP_PASS, TAP_FAIL], [SPEC_PASS, SPEC_FAIL]]) {
+    const pass = passRe.exec(stdout);
+    const fail = failRe.exec(stdout);
+    // Half a summary is not guessed at: both halves or nothing.
+    if (pass && fail) return { pass: Number(pass[1]), fail: Number(fail[1]) };
+  }
   return null;
 }
 

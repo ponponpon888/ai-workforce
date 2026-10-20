@@ -1,7 +1,7 @@
 {
   "id": "doc-005",
-  "title": "文書に書いた実行結果の照合が、Windows では 3 件のスキップと node:test の出力形式で合わない",
-  "summary": "文書はコマンドの隣に実行結果を書いていて、check-doc-commands がそれを実際に走らせて照合する（doc-002）。この照合は docs ワークフローの Ubuntu でしか走らず、Windows では 5 件が合わず exit 1 になっていた。原因は 2 つで、どちらも「Windows だから」ではなかった。4 件は test-guard-config で、symlink を張る 3 ケースが Windows の非特権ユーザーでは symlinkSync に失敗し、1 行の SKIP として黙って落ちていた。走った数 50 だけを出すので、文書の 53 と合わなかった。残る 1 件は docs/13 が引いている test-check-doc-links で、これは node:test のファイル。Node 24 の既定レポーターが spec（「ℹ pass 30」）になり、check-doc-commands が読む TAP（「# pass 30」）を出さない。Node のバージョンの違いであって OS の違いではなく、Linux でも Node 24 なら同じく読めない。",
+  "title": "文書に書いた実行結果の照合が、走らなかったケースと node:test の出力形式で合わない",
+  "summary": "文書はコマンドの隣に実行結果を書いていて、check-doc-commands がそれを実際に走らせて照合する（doc-002）。この照合は docs ワークフローの Ubuntu でしか走らず、Windows では 5 件が合わず exit 1 になっていた。原因は 2 つで、どちらも「Windows だから」ではなかった。4 件は test-guard-config で、symlink を張る 3 ケースが Windows の非特権ユーザーでは symlinkSync に失敗し、1 行の SKIP として黙って落ちていた。走った数 50 だけを出すので、文書の 53 と合わなかった。残る 1 件は docs/13 が引いている test-check-doc-links で、これは node:test のファイル。Node 24 の既定レポーターが spec（「ℹ pass 30」）になり、check-doc-commands が読む TAP（「# pass 30」）を出さない。Node のバージョンの違いであって OS の違いではなく、Linux でも Node 24 なら同じく読めない。どちらも直し、Windows / Node 24 でも 0 件・exit 0 になる。",
   "layer": "instruction",
   "kind": "trap",
   "severity": "medium",
@@ -19,9 +19,10 @@
     "node kit/scripts/check-doc-commands.mjs を実行すると 5 documented result(s) wrong; 16 checked across 5 suite(s). / exit 1",
     "node kit/scripts/test-guard-config.mjs の出力の末尾は「installed behind a symlink:」の節で「SKIP symlinks are not available to this user」1 行だけを出し、pass: 50 fail: 0 で終わる。この節の else 側には assert が 3 件あり、symlinkSync が EPERM で落ちると 3 件とも走らない",
     "node kit/scripts/test-check-doc-links.mjs の末尾は「ℹ pass 30」「ℹ fail 0」。node --test-reporter=tap kit/scripts/test-check-doc-links.mjs にすると「# pass 30」「# fail 0」になり、check-doc-commands が読める",
-    "対照: 同じコミットを Linux（Ubuntu 24.04 / Node v22.22.0）で実行すると 0 documented result(s) wrong / exit 0"
+    "対照: 同じコミットを Linux（Ubuntu 24.04 / Node v22.22.0）で実行すると 0 documented result(s) wrong / exit 0",
+    "修正後: node kit/scripts/check-doc-commands.mjs は 0 documented result(s) wrong; 16 checked across 5 suite(s). / exit 0。走らなかった 3 ケースは findings ではなく注記として 4 ページぶん出る"
   ],
-  "status": "open_recorded",
+  "status": "closed",
   "detection": {
     "checkable": false,
     "kind": "manual",
@@ -38,6 +39,5 @@
     "cross-platform",
     "node-version"
   ],
-  "fix": "test-guard-config は、走らなかったケースを数えて名前と理由つきで出すようにした（「SKIP <ケース名> (symlink not permitted on this machine)」）。集計行は pass: 50   fail: 0   skip: 3 の形になる。check-doc-commands は、文書の pass: N と比べるとき fail が 0 で pass + skip が N と一致すれば合格とし、スキップがあったことを必ず1行出す（隠さない）。文書の 53 は、すべて走る環境での正しい数なので変えていない。これで 4 件は解消した。",
-  "why_not_closed": "docs/13 の 1 件が残っている。原因は node:test の既定レポーターが Node 24 で spec に変わったことで、CRLF でも OS でもない。直し方が 2 通りあり（check-doc-commands に spec 形式も読ませる／該当スイートを --test-reporter=tap で走らせる）、どちらも検査の対象を広げる設計判断になるため、本人の判断を待って別途対応する。それまで Windows / Node 24 では check-doc-commands は exit 1 のままになる。"
+  "fix": "test-guard-config は、走らなかったケースを数えて名前と理由つきで出すようにした（「SKIP <ケース名> (symlink not permitted on this machine)」）。集計行は pass: 50   fail: 0   skip: 3 の形になる。check-doc-commands は、文書の pass: N と比べるとき fail が 0 で pass + skip が N と一致すれば合格とし、スキップがあったことを必ず1行出す（隠さない）。文書の 53 は、すべて走る環境での正しい数なので変えていない。これで 4 件は解消した。残る 1 件は check-doc-commands に node:test の spec 形式（「ℹ pass N」「ℹ fail N」）も読ませて解消した。TAP（「# pass N」）はそのまま読める。どちらの形でも「両方そろったときだけ読む」ようにし、片方だけの出力は従来どおり読めないものとして扱う。これで Node の既定レポーターが変わっても照合が止まらない。test-check-doc-commands に spec 形式のケースを 4 件足した（32 → 38 件）。"
 }

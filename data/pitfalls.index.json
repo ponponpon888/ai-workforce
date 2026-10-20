@@ -18,8 +18,8 @@
       "unverified": 1
     },
     "by_status": {
-      "closed": 38,
-      "open_recorded": 4,
+      "closed": 39,
+      "open_recorded": 3,
       "untouched": 3,
       "none": 5
     },
@@ -460,12 +460,12 @@
       "id": "doc-005",
       "set": "pitfalls",
       "file": "data/pitfalls/doc-005.json",
-      "title": "文書に書いた実行結果の照合が、Windows では 3 件のスキップと node:test の出力形式で合わない",
+      "title": "文書に書いた実行結果の照合が、走らなかったケースと node:test の出力形式で合わない",
       "layer": "instruction",
       "kind": "trap",
       "severity": "medium",
       "confidence": "measured",
-      "status": "open_recorded",
+      "status": "closed",
       "stale_risk": "ok",
       "origin": "record",
       "has_prose": false,

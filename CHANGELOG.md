@@ -16,8 +16,12 @@
   走った数だけを出していた。走らなかったケースを数えて名前と理由つきで出すようにし
   （`pass: 50   fail: 0   skip: 3`）、`check-doc-commands` は `fail: 0` かつ `pass + skip` が
   文書の数と一致すれば合格とし、スキップがあったことを必ず1行出すようにした。文書の 53 は、
-  すべて走る環境での正しい数なので変えていない。残る 1 件は Node 24 の node:test の出力形式の件で、
-  原因だけ記録して判断待ち（レコードは `open_recorded`）。
+  すべて走る環境での正しい数なので変えていない。
+- **残る 1 件も直した。** `docs/13` が引く node:test のスイートが読めなかったのは、Node 24 で既定の
+  レポーターが TAP（`# pass N`）から spec（`ℹ pass N`）に変わったためで、OS でも改行コードでもなかった。
+  `check-doc-commands` が両方の形を読むようにし、どちらも「pass と fail が両方そろったときだけ読む」
+  ままにした。これで Windows / Node 24 でも `check-doc-commands` は 0 件・exit 0 になる
+  （[doc-005](data/pitfalls/doc-005.json) は `closed`）。
 
 ## v0.2.0 — 2026-10-20
 

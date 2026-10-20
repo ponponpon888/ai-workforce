@@ -151,6 +151,38 @@ test('half a TAP summary is not guessed at', () => {
     root => assert.match(runSuite(root, 'test-a.mjs').why, /printed no result line/));
 });
 
+// Node 24 changed the default node:test reporter from TAP to spec. The
+// numbers are the same; only the prefix differs. Reading one shape and not
+// the other is what made every node:test suite unreadable there (doc-005).
+const spec = (pass, fail) =>
+  `console.log("ℹ tests ${pass + fail}");` +
+  `console.log("ℹ suites 0");` +
+  `console.log("ℹ pass ${pass}");` +
+  `console.log("ℹ fail ${fail}");` +
+  `console.log("ℹ cancelled 0");` +
+  `console.log("ℹ skipped 0");`;
+
+test('a node:test suite in the spec reporter is read from its summary', () => {
+  run({}, { 'test-a.mjs': spec(30, 0) },
+    root => assert.deepEqual(runSuite(root, 'test-a.mjs'), { pass: 30, fail: 0 }));
+});
+
+test('a spec suite whose count disagrees with the page is reported', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 26   fail: 0') },
+    { 'test-a.mjs': spec(30, 0) },
+    root => assert.match(checkCommands(root).findings[0].why, /says pass: 26.*prints pass: 30/));
+});
+
+test('spec with failures is read as failures, not as unreadable', () => {
+  run({}, { 'test-a.mjs': spec(37, 1) + 'process.exitCode = 1;\n' },
+    root => assert.deepEqual(runSuite(root, 'test-a.mjs'), { pass: 37, fail: 1 }));
+});
+
+test('half a spec summary is not guessed at', () => {
+  run({}, { 'test-a.mjs': 'console.log(\"ℹ pass 3\"); \n' },
+    root => assert.match(runSuite(root, 'test-a.mjs').why, /printed no result line/));
+});
+
 test('a documented script that does not exist is reported', () => {
   run({ 'docs/a.md': fence('node kit/scripts/test-gone.mjs   # pass: 1   fail: 0') }, {},
     root => assert.match(checkCommands(root).findings[0].why, /no such script/));

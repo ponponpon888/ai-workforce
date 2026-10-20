@@ -6,32 +6,32 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 50,
+    "total": 51,
     "by_set": {
-      "pitfalls": 37,
+      "pitfalls": 38,
       "app-pitfalls": 13
     },
     "by_confidence": {
-      "measured": 30,
+      "measured": 31,
       "inferred": 15,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 39,
+      "closed": 40,
       "open_recorded": 3,
       "untouched": 3,
       "none": 5
     },
     "by_kind": {
       "trap": 39,
-      "limitation": 6,
+      "limitation": 7,
       "behaviour": 5
     },
     "by_layer": {
       "instruction": 6,
       "permissions": 6,
-      "hook": 17,
+      "hook": 18,
       "runtime": 4,
       "ci": 3,
       "external": 1,
@@ -39,11 +39,11 @@
     },
     "by_stale_risk": {
       "unknown_version": 16,
-      "ok": 14,
+      "ok": 15,
       "not_applicable": 20
     },
-    "without_prose": 15,
-    "checkable": 23
+    "without_prose": 16,
+    "checkable": 24
   },
   "checks": [
     {
@@ -216,6 +216,15 @@
       "expect": "present",
       "message": "PowerShell 版のスイートからこのケースが消えると、Node 側だけが検査している状態に戻る。これは見つかった1件を押さえるだけで、次に二重リストがずれることは止められない。止めるには --target ps へ移す必要がある。",
       "severity": "low"
+    },
+    {
+      "id": "hook-017",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-secrets.mjs",
+      "pattern": "const WRITE_COMMANDS = [",
+      "expect": "present",
+      "message": "秘密ファイルを書き換える・消す形の一覧。これを消すと、Set-Content .env や rm .env がどのフックにも止められない状態に戻る。判定は読む側と同じくデータの一覧で持ち、ロジックを増やさないこと。",
+      "severity": "medium"
     },
     {
       "id": "install-001",
@@ -935,6 +944,32 @@
         "twin",
         "test-coverage",
         "drift"
+      ]
+    },
+    {
+      "id": "hook-017",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-017.json",
+      "title": "guard-secretsは秘密ファイルを「読む」形しか見ておらず、上書き・削除・移動はどのフックも止めていなかった",
+      "layer": "hook",
+      "kind": "limitation",
+      "severity": "medium",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "record",
+      "has_prose": false,
+      "checkable": true,
+      "related": [
+        "perm-006",
+        "hook-010"
+      ],
+      "tags": [
+        "guard-secrets",
+        "secrets",
+        "powershell",
+        "shell",
+        "destructive"
       ]
     },
     {

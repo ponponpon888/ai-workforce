@@ -714,6 +714,47 @@ secret. Same reasoning as exempting `.env.example`.
 narrowed the side I can narrow. `deny` is decided by Claude Code, and there is no spelling
 that makes it narrower.
 
+### I closed the reading side and left the deleting side open
+
+`deny` also holds `Edit(.env)`, and I had measured that a `Read(...)` deny binds the Edit
+and Write tools too — so I believed "the model cannot rewrite `.env`" was already true.
+But the shell is not the only thing `deny` fails to reach: **this hook only looked at
+shapes that read.** Its own header offered `rm .env.bak` as an example of something it
+deliberately let through.
+
+I measured 40 shapes against all four hooks (`guard-secrets`, `guard-destructive`,
+`guard-config`, `guard-sql`). None of the commands was ever run: each one was handed to a
+hook as a JSON payload, and only the exit code was read.
+
+**35 of them reached the filesystem with nothing in the way.**
+
+| What got through | Examples |
+|---|---|
+| PowerShell writes | `Set-Content .env 'X=1'`, `Add-Content`, `Clear-Content`, `New-Item -Force`, `'X=1' > .env` |
+| PowerShell copy and rename | `Copy-Item tmp .env`, `Move-Item`, `Rename-Item` |
+| .NET directly | `[IO.File]::WriteAllText('.env',...)`, `::Delete`, `::Copy` |
+| Bash writes | `echo X=1 > .env`, `>>`, `printf`, `tee .env`, `tee -a` |
+| Bash copy and delete | `cp`, `mv`, `install`, `ln -sf`, `rm`, `rm -f`, `unlink`, `shred -u`, `truncate -s 0`, `dd of=` |
+| git | `git checkout -- .env`, `git restore .env`, `git rm .env` |
+
+The five that did stop were not stopped for the reason I expected. `Remove-Item .env`,
+`del` and `ri` were caught by **`guard-destructive`**, by coincidence — `guard-secrets`
+allowed all three. The other two (`cat > .env <<EOF`, `sed -i ... .env`) stopped only
+because `cat` and `sed` are shapes that read.
+
+The rule is now "reads, writes or destroys". The decision is held the same way as the
+reading side, as lists of data (`WRITE_COMMANDS`, `OUTPUT_REDIRECT`, `DOTNET_WRITE`,
+`GIT_WRITE_SUBCOMMANDS`), and what counts as a secret file is still decided in one place.
+`2>&1` and `>&2` name a descriptor rather than a path, so they are not read as a
+destination.
+
+**`rm .env.bak` is blocked from now on.** A backup of a secret is still a secret, and
+deleting it is not undoable either. The header example changed with it.
+
+`vercel env pull .env.local` is still allowed: it is exactly the move the hook tells
+people to make instead — use the tool that owns the value
+([hook-017](../data/pitfalls/hook-017.json)).
+
 ---
 
 ## What I thought I had closed opened in one move with `git show`

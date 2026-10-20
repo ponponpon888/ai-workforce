@@ -110,7 +110,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 | フック | 何を止めるか |
 |---|---|
 | `guard-sql` | `DROP` / `TRUNCATE` / `WHERE` のない `UPDATE`・`DELETE`、承認のない DDL。Postgres / MySQL / SQLite を読み分け、方言固有の取り消せない文（`RENAME TABLE`・`REPLACE`・`ATTACH`・状態を変える `PRAGMA` など）も承認対象にする |
-| `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと。`deny` の `Read(./.env)` は Read ツールにしか効かず、`cat .env` も `Get-Content .env` も素通りしていた |
+| `guard-secrets` | `.env` や秘密鍵を**シェル経由で**読むこと、および**上書き・削除・移動**すること。`deny` の `Read(./.env)` も `Edit(.env)` も Read / Edit ツールにしか効かず、`cat .env` も `Set-Content .env` も `rm .env` も素通りしていた |
 | `guard-config` | エージェントが**自分のガードレールを書き換える**こと。`settings.json`・`CLAUDE.md`・`hooks/`・DDL の承認ファイル置き場が対象。`settings.json` は起動していない間の書き換えも `SessionStart` で検知（警告のみ） |
 | `guard-destructive` | `deny` に書いてある破壊系コマンドが、**`deny` の一致しない書き方**で来たとき。`bash -c 'rm -rf x'`、`/bin/rm`、`sudo`、`npx rimraf`、`git -C . push --force`、`rm -rfv`、`cmd /c rd /s`、`node -e` の `rmSync` など。あわせて、`deny` には無いが同じく取り消せない `find -delete`、`git stash drop` / `clear`、`gh repo sync --force`、`gh repo delete` |
 
@@ -125,7 +125,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
-node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 107   fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```

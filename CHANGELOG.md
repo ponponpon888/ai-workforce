@@ -11,6 +11,16 @@
 
 ## 未リリース
 
+- **`guard-secrets` が秘密ファイルを「読む」形しか見ていなかったのを、「書く・消す」にも広げた**
+  （[hook-017](data/pitfalls/hook-017.json)）。`deny` の `Edit(.env)` はファイル操作ツールにしか
+  効かず、シェル経由の書き込みはこのフックの担当だが、規則が読む形だけだった。40 の形を 4 つのフック
+  すべてに当てて測ったところ、**35 がどのフックにも止められずに通っていた**（`Set-Content .env`、
+  `echo X=1 > .env`、`cp`、`mv`、`rm`、`truncate`、`git checkout -- .env`、
+  `[IO.File]::WriteAllText` など）。止まっていた 5 件のうち 3 件は `guard-destructive` が
+  偶然止めていたもので、`guard-secrets` ではなかった。書く側の判定も読む側と同じくデータの一覧で持ち、
+  秘密ファイルの判定は 1 か所のままにしている。`2>&1` や `>&2` は行き先として読まない。
+  `rm .env.bak` は今回から止まる（バックアップでも中身は秘密で、消したら戻らないため）。
+  `vercel env pull .env.local` は通す。テストは 65 → 107 件。
 - **文書の実行結果の照合が Windows で 5 件落ちていた件（[doc-005](data/pitfalls/doc-005.json)）のうち、4 件を直した。**
   `test-guard-config` の symlink の 3 ケースが、symlink を張れない環境では 1 行の SKIP にまとめられ、
   走った数だけを出していた。走らなかったケースを数えて名前と理由つきで出すようにし

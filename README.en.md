@@ -132,7 +132,7 @@ Three more hooks have the same shape. **All four are decided the same way, and t
 | Hook | What it refuses |
 |---|---|
 | `guard-sql` | `DROP`, `TRUNCATE`, `UPDATE`/`DELETE` without `WHERE`, DDL without an approval token. Reads Postgres, MySQL and SQLite separately, and gates the statements that only exist in one of them (`RENAME TABLE`, `REPLACE`, `ATTACH`, a `PRAGMA` that sets state, ...) |
-| `guard-secrets` | reading `.env` or a private key **through a shell**. The `Read(./.env)` line in `deny` binds the Read tool alone, so `cat .env` and `Get-Content .env` walked straight past it |
+| `guard-secrets` | reading `.env` or a private key **through a shell**, and **overwriting, deleting or moving** one. The `Read(./.env)` and `Edit(.env)` lines in `deny` bind the Read and Edit tools alone, so `cat .env`, `Set-Content .env` and `rm .env` all walked straight past them |
 | `guard-config` | the agent **rewriting its own guardrails**: `settings.json`, `CLAUDE.md`, `hooks/`, and the DDL approval store. Also detects (warns only) a `settings.json` edit made while Claude Code was not running, via `SessionStart` |
 | `guard-destructive` | the destructive commands already in `deny`, **in the shapes deny does not match**: `bash -c 'rm -rf x'`, `/bin/rm`, `sudo`, `npx rimraf`, `git -C . push --force`, `rm -rfv`, `cmd /c rd /s`, `node -e` with `rmSync`. Also four that `deny` never covered and that cannot be undone either: `find -delete`, `git stash drop`/`clear`, `gh repo sync --force`, `gh repo delete` |
 
@@ -147,7 +147,7 @@ stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c
 
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
-node kit/scripts/test-guard-secrets.mjs       # pass: 65    fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 107   fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```

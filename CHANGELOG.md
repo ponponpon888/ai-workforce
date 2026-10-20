@@ -32,6 +32,27 @@
   `check-doc-commands` が両方の形を読むようにし、どちらも「pass と fail が両方そろったときだけ読む」
   ままにした。これで Windows / Node 24 でも `check-doc-commands` は 0 件・exit 0 になる
   （[doc-005](data/pitfalls/doc-005.json) は `closed`）。
+- **フック3本を Claude Code 2.1.304 本体につないだ実地確認の記録を足した**
+  （[記録](measurements/2026-10-20-live-hooks-scratch-project.md)）。`~/.claude` は入れ替えず、
+  使い捨てフォルダの `.claude/settings.json` にリポジトリのフックを絶対パスで登録する形で確認した
+  （元に戻す作業が要らない）。止まるべき 15 件はすべて PreToolUse で止まり、通るべき 4 件は3本とも
+  exit 0（19/19 期待どおり）。`ROADMAP.md` の「Windows は未検証」「残るのは実地確認」も実際の状態に
+  直した。分かったこととして、3本は並行に走って終了順が入れ替わること、自動承認モードでは
+  「止まらなかったものは人間が止める」が働かないこと、`guard-sql` の `Statement:` 表示が2通りあるのは
+  [hook-005](data/pitfalls/hook-005.json) の修正（承認の対象そのものを表示する）による意図どおりの形
+  であることを記録した（表示は直していない）。
+- **ヒアドキュメントの本文が独立したコマンドとして読まれ、`guard-secrets` が誤検知していたのを直した**
+  （[hook-018](data/pitfalls/hook-018.json)）。上の実地確認で、報告ファイル自身を
+  `cat > report.md <<'EOF' ... EOF` で書こうとして止められたのが発端。本文に `echo X=1 > .env` という
+  **文字列**が引用されていただけだった。11 の形を修正前の `.mjs` / `.ps1` に当てて測ると、止まっては
+  いけない6件のうち**5件が誤検知**だった。本文をデータとして受け取るコマンド（`cat` / `tee` /
+  `git commit -F -` など）に渡る本文だけを取り除く形にし、`bash` / `sh` / `python -` のように本文を
+  実行するコマンドに渡る本文は従来どおり読む。読み飛ばしてよいコマンドは読む側と同じくデータの一覧
+  （`HEREDOC_DATA_COMMANDS`）で持ち、一覧に無いものは読む。行き先の判定は変えていないので
+  `cat > .env <<'EOF'` は今も止まる。終端の行が見つからないヒアドキュメントと、引用符の中の `<<` は
+  読み飛ばさない。PowerShell の here-string も同じ規則（`| Set-Content` は読み飛ばし、`| iex` は読む）。
+  本文の範囲は共有レクサーの `skipHeredocBodies` / `Skip-GdHeredocBodies` に決めさせている。
+  テストは 107 → 120 件。
 
 ## v0.2.0 — 2026-10-20
 

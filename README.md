@@ -125,7 +125,7 @@ node kit/scripts/test-guard-sql.mjs    # pass: 94   fail: 0
 
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
-node kit/scripts/test-guard-secrets.mjs       # pass: 107   fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 120   fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```

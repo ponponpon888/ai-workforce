@@ -49,6 +49,11 @@ param()
 
 Set-StrictMode -Version Latest
 
+# Skip-GdHeredocBodies decides where a heredoc body ends. guard-sql and
+# guard-destructive already lex command lines with this; guard-secrets only
+# needs the heredoc part of it.
+. (Join-Path $PSScriptRoot (Join-Path 'lib' 'shell-lex.ps1'))
+
 # ---------------------------------------------------------------------------
 # Data: what counts as a secret file.
 # ---------------------------------------------------------------------------
@@ -160,6 +165,50 @@ $DotNetWrite = '\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*(?:Write(?:Al
 # 'git commit -m "... .env ..."' name the path without changing it, so 'git'
 # alone is not enough to count as a write.
 $GitWriteSubcommands = @('checkout', 'restore', 'rm', 'mv')
+
+# ---------------------------------------------------------------------------
+# Data: which commands take a heredoc body as data rather than as code.
+# ---------------------------------------------------------------------------
+
+# A heredoc body is text until something runs it. "cat > notes.md <<'EOF'" with
+# "echo X=1 > .env" inside it writes a Markdown file, and the .env there is a
+# quotation. Reading every body line as its own command is what stopped this
+# project's own report from being written (data/pitfalls/hook-018.json).
+#
+# So the body is skipped -- but only when it is handed to a command on this
+# list, which consumes it as data and never executes or interprets it.
+# Everything else keeps the old behaviour: "bash <<'EOF'" runs its body,
+# "python - <<'EOF'" runs its body, and a secret named in there is as real as
+# one named on the command line. 'sed -f -', 'awk -f -' and 'jq -f -' take the
+# body as a program, so those are absent too. An unknown command reads, because
+# reading costs a false positive and skipping costs a miss.
+#
+# The destination is judged as it always was: the body is removed, the command
+# line around it is not, so "cat > .env <<'EOF'" still blocks.
+$HeredocDataCommands = @(
+    # POSIX: stdin is a document to copy, count or search, not code.
+    'cat', 'tac', 'tee', 'nl', 'head', 'tail', 'wc', 'rev', 'sort', 'uniq',
+    'base64', 'fold', 'column', 'cmp', 'diff', 'grep', 'egrep', 'fgrep', 'rg',
+    # The body is a message. 'git commit -F -' is how a long one gets written.
+    'git commit', 'git tag', 'git notes',
+    # PowerShell here-strings: the body is piped to something that stores or
+    # prints it. iex, powershell and node are deliberately absent.
+    'set-content', 'sc', 'add-content', 'ac', 'out-file', 'tee-object',
+    'write-output', 'write-host', 'out-null', 'out-string', 'new-item', 'ni',
+    'select-string', 'sls'
+)
+
+# One command line can be several commands. Splitting on these separators keeps
+# 'cat .env | head' and 'KEY=$(cat .env)' from hiding behind a harmless first
+# word. Parentheses are deliberately NOT separators: splitting on them tears
+# 'python -c "print(open(''.env'').read())"' apart and the path stops being
+# visible from the interpreter that reads it.
+$SegmentSeparator = '\$\(|[;|&\r\n]'
+
+# @' or @" with nothing after it on the line opens a PowerShell here-string.
+$PsHereOpener = [regex] '@([''"])[ \t]*\r?(?=\n)'
+$PsHereCloseSingle = [regex] '\r?\n[ \t]*''@'
+$PsHereCloseDouble = [regex] '\r?\n[ \t]*"@'
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -342,6 +391,152 @@ function Find-Writer([string] $Segment) {
     return $null
 }
 
+# The segment of $Line that spans index $At.
+function Get-SegmentAt([string] $Line, [int] $At) {
+    $before = @($Line.Substring(0, $At) -split $SegmentSeparator)[-1]
+    $after = @($Line.Substring($At) -split $SegmentSeparator)[0]
+    return "$before$after"
+}
+
+# The command a body is handed to. 'git commit' is one name, not two.
+function Get-HeredocReceiver([string] $Segment) {
+    $word = Get-CommandWord $Segment
+    if ($word -eq 'git') { return ('git ' + (Get-GitSubcommand $Segment)).Trim() }
+    return $word
+}
+
+function Test-ConsumesAsData([string] $Segment) {
+    return ($HeredocDataCommands -contains (Get-HeredocReceiver $Segment))
+}
+
+# Heredoc openers on one line, in order. Quoted text is skipped: 'grep "a << b"'
+# opens nothing, and reading it as an opener would swallow the rest of the
+# command -- including any real command on the next line.
+function Get-HeredocOpeners([string] $Line) {
+    $found = [System.Collections.Generic.List[object]]::new()
+    $i = 0
+    while ($i -lt $Line.Length) {
+        $c = $Line[$i]
+        if ($c -eq '\') { $i += 2; continue }
+        if ($c -eq "'" -or $c -eq '"') {
+            $end = $Line.IndexOf([string] $c, $i + 1)
+            if ($end -lt 0) { break }
+            $i = $end + 1
+            continue
+        }
+        if ($c -ne '<') { $i++; continue }
+
+        $j = $i
+        while ($j -lt $Line.Length -and $Line[$j] -eq '<') { $j++ }
+        # '<<<' is a here-string, which holds no body to skip.
+        if (($j - $i) -ne 2) { $i = $j; continue }
+
+        $strip = ($j -lt $Line.Length -and $Line[$j] -eq '-')
+        if ($strip) { $j++ }
+        while ($j -lt $Line.Length -and ($Line[$j] -eq ' ' -or $Line[$j] -eq "`t")) { $j++ }
+
+        $m = [regex]::Match($Line.Substring($j), '^(?:''([^'']*)''|"([^"]*)"|([^\s;&|<>()]+))')
+        if (-not $m.Success) { $i = $j; continue }
+        if ($m.Groups[1].Success) { $delim = $m.Groups[1].Value }
+        elseif ($m.Groups[2].Success) { $delim = $m.Groups[2].Value }
+        else { $delim = $m.Groups[3].Value -replace '[''"\\]', '' }
+
+        [void] $found.Add(@{ Delim = $delim; Strip = $strip; At = $i })
+        $i = $j + $m.Length
+    }
+    return $found.ToArray()
+}
+
+# Whether the skipped text really ended on the delimiter line. An unterminated
+# heredoc means the line was misread, and dropping the rest of the command
+# would hide whatever came after it.
+function Test-ClosedBy([string] $Body, [object] $Heredoc) {
+    $lines = @($Body -split "`n")
+    if ($lines[$lines.Count - 1] -eq '') {
+        if ($lines.Count -le 1) { return $false }
+        $lines = @($lines[0..($lines.Count - 2)])
+    }
+    $last = $lines[$lines.Count - 1]
+    if ($last.EndsWith("`r")) { $last = $last.Substring(0, $last.Length - 1) }
+    if ($Heredoc.Strip) { $last = $last -creplace '^\t+', '' }
+    return ($last -ceq $Heredoc.Delim)
+}
+
+# The command with the heredoc bodies that are only data removed.
+# Skip-GdHeredocBodies from the shared lexer decides where a body ends, so the
+# delimiter rules -- '<<-' and tabs, CRLF -- are stated in one place.
+function Remove-DataHeredocs([string] $Command) {
+    if ($Command.IndexOf('<<') -lt 0) { return $Command }
+
+    $out = New-Object System.Text.StringBuilder
+    $i = 0
+    while ($i -lt $Command.Length) {
+        $nl = $Command.IndexOf("`n", $i)
+        if ($nl -lt 0) {
+            [void] $out.Append($Command.Substring($i))
+            break
+        }
+        $line = $Command.Substring($i, $nl - $i)
+        [void] $out.Append($Command.Substring($i, $nl - $i + 1))
+        $i = $nl + 1
+
+        $openers = @(Get-HeredocOpeners $line)
+        if ($openers.Count -eq 0) { continue }
+
+        $end = Skip-GdHeredocBodies $Command $i $openers
+        $body = $Command.Substring($i, $end - $i)
+        $data = Test-ClosedBy $body $openers[$openers.Count - 1]
+        foreach ($o in $openers) {
+            if (-not (Test-ConsumesAsData (Get-SegmentAt $line $o.At))) { $data = $false }
+        }
+        if (-not $data) { [void] $out.Append($body) }
+        $i = $end
+    }
+    return $out.ToString()
+}
+
+# The same rule for PowerShell here-strings. "@' ... '@ | Set-Content notes.md"
+# writes a file and the body is its contents; "@' ... '@ | iex" runs the body,
+# so that one is still read. The text after '@ is left in place, which is what
+# keeps the destination judged as it always was.
+function Remove-DataHereStrings([string] $Command) {
+    $out = New-Object System.Text.StringBuilder
+    $i = 0
+    while ($i -lt $Command.Length) {
+        $open = $PsHereOpener.Match($Command, $i)
+        if (-not $open.Success) {
+            [void] $out.Append($Command.Substring($i))
+            break
+        }
+        $nl = $Command.IndexOf("`n", $open.Index)
+        $closer = $PsHereCloseDouble
+        if ($open.Groups[1].Value -eq "'") { $closer = $PsHereCloseSingle }
+        $close = $closer.Match($Command, $nl)
+        if (-not $close.Success) {
+            [void] $out.Append($Command.Substring($i))
+            break
+        }
+        [void] $out.Append($Command.Substring($i, $nl - $i + 1))
+
+        $afterEnd = $close.Index + $close.Length
+        $tail = @($Command.Substring($afterEnd) -split '[\r\n]')[0]
+        $lineStart = 0
+        if ($open.Index -gt 0) { $lineStart = $Command.LastIndexOf("`n", $open.Index - 1) + 1 }
+        $statement = $Command.Substring($lineStart, $open.Index - $lineStart) + $tail
+
+        $data = $true
+        foreach ($segment in ($statement -split $SegmentSeparator)) {
+            $word = Get-HeredocReceiver $segment
+            if ($word -and -not ($HeredocDataCommands -contains $word)) { $data = $false }
+        }
+        if (-not $data) {
+            [void] $out.Append($Command.Substring($nl + 1, $afterEnd - ($nl + 1)))
+        }
+        $i = $afterEnd
+    }
+    return $out.ToString()
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -368,12 +563,13 @@ try {
     }
     if (-not $command.Trim()) { exit 0 }
 
-    # One command line can be several commands. Splitting on the separators keeps
-    # 'cat .env | head' and 'KEY=$(cat .env)' from hiding behind a harmless first
-    # word. Parentheses are deliberately NOT separators: splitting on them tears
-    # 'python -c "print(open(''.env'').read())"' apart and the path stops being
-    # visible from the interpreter that reads it.
-    foreach ($segment in ($command -split '\$\(|[;|&\r\n]')) {
+    # One command line can be several commands, and a heredoc body that is only
+    # data is removed first so that its lines are not read as commands of their
+    # own. See $SegmentSeparator and $HeredocDataCommands above.
+    if ($toolName -eq 'PowerShell') { $code = Remove-DataHereStrings $command }
+    else { $code = Remove-DataHeredocs $command }
+
+    foreach ($segment in ($code -split $SegmentSeparator)) {
         if (-not $segment.Trim()) { continue }
 
         $hit = Find-SecretPath $segment

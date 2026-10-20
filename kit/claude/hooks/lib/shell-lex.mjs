@@ -136,7 +136,13 @@ function closeParen(src, i, ps) {
   return src.length;
 }
 
-function skipHeredocBodies(src, i, heredocs) {
+/**
+ * Index just past the bodies of `heredocs`, starting at i. Exported because
+ * guard-secrets needs only this part of the lexer: it removes a body that is
+ * data before judging the rest of the line, and the delimiter rules (`<<-` and
+ * tabs, CRLF) must not be written twice.
+ */
+export function skipHeredocBodies(src, i, heredocs) {
   for (const h of heredocs) {
     while (i < src.length) {
       let j = src.indexOf('\n', i);

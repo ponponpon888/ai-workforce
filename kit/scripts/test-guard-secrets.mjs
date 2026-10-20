@@ -229,5 +229,48 @@ assert('unrelated MCP tool', ALLOW,
   callHook('mcp__GitHub__search_code', { query: 'cat .env' }));
 assert('empty input', ALLOW, callHook('Bash', { command: '' }));
 
+
+// A heredoc body is data until something runs it, and every line of one used
+// to be read as a command of its own. Writing the live-check report with
+// `cat > report.md <<'EOF'` was blocked because the body quoted
+// `echo X=1 > .env` (data/pitfalls/hook-018.json). The pairs below are what
+// tells the two apart: `cat` and `tee` store the body, `bash` and `sh` run it.
+console.log('\nmust allow (heredoc and here-string bodies):');
+
+/** A multi-line command, written the way the shell would see it. */
+const heredoc = (...lines) => lines.join('\n') + '\n';
+
+for (const [name, tool, command] of [
+  ['body quotes a redirect to .env', 'Bash',
+    heredoc("cat > notes.md <<'EOF'", 'echo X=1 > .env', 'EOF')],
+  ['body quotes cat .env', 'Bash',
+    heredoc("cat > notes.md <<'EOF'", 'cat .env', 'EOF')],
+  ['redirect written after the heredoc', 'Bash',
+    heredoc("cat <<'EOF' > notes.md", 'rm .env', 'EOF')],
+  ['tee stores the body', 'Bash',
+    heredoc("tee notes.md <<'EOF'", 'Set-Content .env x', 'EOF')],
+  ['git commit -F - takes the body as a message', 'Bash',
+    heredoc("git commit -F - <<'EOF'", 'block rm .env', 'EOF')],
+  ['PowerShell here-string piped to Set-Content', 'PowerShell',
+    heredoc("@'", 'echo X=1 > .env', "'@ | Set-Content notes.md")],
+]) assert(name, ALLOW, callHook(tool, { command }));
+
+console.log('\nmust block (a body that runs, or a secret destination):');
+for (const [name, tool, command] of [
+  ['the heredoc destination is the secret', 'Bash',
+    heredoc("cat > .env <<'EOF'", 'X=1', 'EOF')],
+  ['bash runs the body', 'Bash', heredoc("bash <<'EOF'", 'rm .env', 'EOF')],
+  ['sh -s runs the body', 'Bash', heredoc("sh -s <<'EOF'", 'cat .env', 'EOF')],
+  ['a real command on the line after the heredoc', 'Bash',
+    heredoc("cat <<'EOF'", 'x', 'EOF', 'rm .env')],
+  // Skipping a body must not become a way of hiding one. These three are the
+  // edges of the skip itself rather than shapes anyone writes on purpose.
+  ['an unterminated heredoc is read, not skipped', 'Bash',
+    heredoc("cat <<'EOF'", 'x', 'rm .env')],
+  ['a quoted << does not open a heredoc', 'Bash',
+    heredoc('grep "a << b" notes.md', 'rm .env')],
+  ['here-string piped to iex', 'PowerShell',
+    heredoc("@'", 'rm .env', "'@ | iex")],
+]) assert(name, BLOCK, callHook(tool, { command }));
 console.log(`\npass: ${pass}   fail: ${fail}\n`);
 process.exit(fail > 0 ? 1 : 0);

@@ -755,6 +755,33 @@ deleting it is not undoable either. The header example changed with it.
 people to make instead — use the tool that owns the value
 ([hook-017](../data/pitfalls/hook-017.json)).
 
+### A heredoc body is skipped, but only on a condition
+
+The hook splits a line on `;`, `|`, `&`, a newline and `$(`, and judges each piece.
+**That meant every line of a heredoc body was read as a command of its own.** During
+the live check on 2026-10-20 the report file itself could not be written with
+`cat > report.md <<'EOF' ... EOF`: the body merely quoted the *string*
+`echo X=1 > .env`.
+
+What may be skipped is a body handed to a command that takes it **as data**. `cat`,
+`tee` and `git commit -F -` only store it, so their bodies are skipped; `bash`, `sh`,
+`python -` and `node` run it, so their bodies are read as before. The distinction is
+held as a list of data, `HEREDOC_DATA_COMMANDS`, in the same shape as `READ_COMMANDS`
+on the reading side. A command that is not on the list is read: reading only costs a
+false positive, while skipping costs a miss. `sed -f -`, `awk -f -` and `jq -f -` take
+the body as a program, so they are not on the list.
+
+The destination is judged as it always was. Only the body is removed and the command
+line around it is kept, so `cat > .env <<'EOF'` still blocks, and so does a real
+command written *after* the heredoc. PowerShell here-strings (`@' ... '@`) follow the
+same rule: `| Set-Content notes.md` skips the body, `| iex` reads it.
+
+Where a body ends is decided by the shared lexer (`skipHeredocBodies` /
+`Skip-GdHeredocBodies` in `lib/shell-lex.*`), so `<<-` with tabs and CRLF are not
+spelled out twice. A heredoc whose delimiter line is never found is not skipped: the
+line was probably misread, and skipping would hide whatever real command came after it
+([hook-018](../data/pitfalls/hook-018.json)).
+
 ---
 
 ## What I thought I had closed opened in one move with `git show`

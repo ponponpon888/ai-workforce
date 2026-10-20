@@ -1,0 +1,49 @@
+{
+  "id": "hook-018",
+  "title": "guard-secretsがヒアドキュメントの本文の各行も独立したコマンドとして読み、本文に引用された秘密ファイル名で誤検知する",
+  "summary": "guard-secrets はコマンド行を `;` `|` `&` 改行 `$(` で分けて1つずつ判定している。ヒアドキュメントを認識しないため、本文の各行も独立したコマンドとして読まれていた。結果として「`.env` について書かれた文章をファイルに書き出す」操作が `.env` への書き込み・読み取りと誤判定される。2026-10-20 の実地確認（measurements/2026-10-20-live-hooks-scratch-project.md）で、その報告ファイル自身を `cat > report.md <<'EOF' ... EOF` で書こうとして止められたのが発端。本文に `echo X=1 > .env` という文字列が引用されていただけだった。安全側に倒れる誤検知であり、危険なコマンドを通す方向の穴ではない。11 の形を修正前の .mjs / .ps1 両方に当てて実測したところ、止まってはいけない6件のうち5件が誤検知だった。本文をデータとして受け取るコマンド（`cat` / `tee` / `git commit -F -` など）に渡る本文だけを、既存の segmentsOf() に渡す前に取り除く形で塞いだ。`bash` / `sh` / `python -` のように本文を実行するコマンドに渡る本文は、従来どおり読む。",
+  "layer": "hook",
+  "kind": "limitation",
+  "severity": "low",
+  "confidence": "measured",
+  "origin": "docs/02-guardrails.md#ヒアドキュメントの本文は条件付きで読み飛ばします",
+  "measured_on": "2026-10-20",
+  "environment": {
+    "os": "Windows 11 Home 10.0.26200",
+    "shell": "Git Bash (MINGW64)",
+    "shell_version": "5.2.37(1)-release",
+    "claude_code_version": "2.1.304",
+    "node_version": "v24.11.1"
+  },
+  "repro": [
+    "発端は実地確認そのもの: 使い捨てフォルダのプロジェクト設定にこのキットの3本を登録して Claude Code 2.1.304 で確認したあと、報告ファイルを `cat > \"<Downloads>/report_aiwf_live_hooks_20261020.md\" <<'EOF' ... EOF` で書き出そうとしたところ、`[guard-secrets] BLOCKED: this command writes to or deletes a secret file. / file: .env / written by: output redirection` で止まった。リダイレクト先は Downloads の .md で、`.env` はヒアドキュメントの本文（確認したコマンドの一覧）にしか出てこない",
+    "測定は使い捨てのスクリプトで行い、対象のコマンドは一度も実行していない。各フックに JSON ペイロード（tool_name と tool_input.command）を標準入力で渡し、終了コードだけを見ている",
+    "修正前（.mjs / .ps1 とも同じ結果）: 止まってはいけない6件のうち5件が exit 2。`cat > notes.md <<'EOF'` ＋ 本文 `echo X=1 > .env`（output redirection として誤検知）/ 同 ＋ 本文 `cat .env`（cat の読み取りとして誤検知）/ `cat <<'EOF' > notes.md` ＋ 本文 `rm .env`（rm として誤検知）/ `tee notes.md <<'EOF'` ＋ 本文 `Set-Content .env x`（set-content として誤検知）/ PowerShell の `@' ... '@ | Set-Content notes.md` ＋ 本文 `echo X=1 > .env`（output redirection として誤検知）",
+    "修正前に通っていた1件: `git commit -F - <<'EOF'` ＋ 本文 `block rm .env` は exit 0。本文の行頭が読む形も書く形でもない `block` だったからで、設計上通っていたわけではない",
+    "対照（修正前・修正後とも exit 2）: `cat > .env <<'EOF'`（行き先が .env）/ `bash <<'EOF'` ＋ 本文 `rm .env` / `sh -s <<'EOF'` ＋ 本文 `cat .env` / `cat <<'EOF'` の終端の次の行に `rm .env`",
+    "修正後: 止まってはいけない6件すべてが exit 0、止まるべき4件すべてが exit 2。.mjs と .ps1 で結果は一致",
+    "範囲外として記録のみ: `python - <<'EOF'` ＋ 本文 `open('.env').read()` は修正前も修正後も exit 0。`python -` は INLINE_CODE_FLAG（`-c` / `-e` / `-r`）に一致せず、本文の行も読む形に一致しないため。本文を実行するコマンドなので本文は読んでいるが、読んだ結果が一致しない別の穴であり、今回は触っていない",
+    "再現テストとしての確認: 増やした allow 側6件を修正前のフックに当てると5件が落ちる（pass 115 / fail 5）。block 側7件は修正前・修正後とも通る。修正後は両実装とも pass 120 / fail 0"
+  ],
+  "status": "closed",
+  "detection": {
+    "checkable": true,
+    "kind": "file-content",
+    "target": "kit/claude/hooks/guard-secrets.mjs",
+    "pattern": "const HEREDOC_DATA_COMMANDS = [",
+    "expect": "present",
+    "message": "本文を読み飛ばしてよいコマンドの一覧。これを消すと、.env について書かれた文章を cat > notes.md <<'EOF' で書き出す操作がブロックされる誤検知に戻る。逆に bash / sh / python / node をこの一覧に足すと、本文として渡したコマンドが検査を素通りする。一覧に無いものは読む側に倒すこと。"
+  },
+  "related": [
+    "hook-017",
+    "hook-010"
+  ],
+  "tags": [
+    "guard-secrets",
+    "false-positive",
+    "heredoc",
+    "powershell",
+    "shell"
+  ],
+  "fix": "guard-secrets.mjs の withoutDataHeredocs() / withoutDataHereStrings()、guard-secrets.ps1 の Remove-DataHeredocs / Remove-DataHereStrings が、segmentsOf() に渡す前に本文の範囲だけを取り除く。コマンド行そのものは書き換えないので、行き先の判定（`cat > .env <<'EOF'`）とヒアドキュメントの後ろにある本物のコマンドは従来どおり止まる。読み飛ばしてよいコマンドは HEREDOC_DATA_COMMANDS / $HeredocDataCommands というデータの一覧で持ち、読む側の READ_COMMANDS と同じ形にした（POSIX の cat / tee / tac / nl / head / tail / wc / rev / sort / uniq / base64 / fold / column / cmp / diff / grep 系、git commit / git tag / git notes、PowerShell の Set-Content / Add-Content / Out-File / Tee-Object / Write-Output / New-Item / Select-String とその別名）。bash / sh / python / node / psql / mysql / sqlite3 や sed -f - / awk -f - / jq -f - は本文を実行・解釈するので一覧に入れず、一覧に無いコマンドは読む。本文の範囲は共有レクサーの skipHeredocBodies() / Skip-GdHeredocBodies に決めさせ（shell-lex.mjs では未 export だったので export した）、`<<-` とタブ・CRLF の扱いを2か所に書かないようにした。読み飛ばしが見逃しに化けないよう、終端の行が見つからないヒアドキュメントは読み飛ばさず、`<<` が引用符の中にある行はヒアドキュメントの開始として読まない。PowerShell の here-string は本文が渡る先が Set-Content などデータの書き込み先のときだけ読み飛ばし、iex に渡るなら読む。guard-secrets を shell-lex に全面移行するのは大きい変更なので今回の範囲外。テストは1つのケース集合を両実装に当てる形のまま 107 → 120 件に増やした。"
+}

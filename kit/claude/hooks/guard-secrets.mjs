@@ -37,6 +37,8 @@
  * Any internal failure exits 0: a broken guard must not brick the toolchain.
  */
 
+import { skipHeredocBodies } from './lib/shell-lex.mjs';
+
 // ---------------------------------------------------------------------------
 // Data: what counts as a secret file.
 // ---------------------------------------------------------------------------
@@ -159,6 +161,41 @@ const DOTNET_WRITE = /\[\s*(?:System\s*\.\s*)?IO\s*\.\s*File\s*\]\s*::\s*(?:Writ
  * alone is not enough to count as a write.
  */
 const GIT_WRITE_SUBCOMMANDS = ['checkout', 'restore', 'rm', 'mv'];
+
+// ---------------------------------------------------------------------------
+// Data: which commands take a heredoc body as data rather than as code.
+// ---------------------------------------------------------------------------
+
+/**
+ * A heredoc body is text until something runs it. `cat > notes.md <<'EOF'`
+ * with `echo X=1 > .env` inside it writes a Markdown file, and the `.env`
+ * there is a quotation. Reading every body line as its own command is what
+ * stopped this project's own report from being written
+ * (data/pitfalls/hook-018.json).
+ *
+ * So the body is skipped -- but only when it is handed to a command on this
+ * list, which consumes it as data and never executes or interprets it.
+ * Everything else keeps the old behaviour: `bash <<'EOF'` runs its body,
+ * `python - <<'EOF'` runs its body, and a secret named in there is as real as
+ * one named on the command line. `sed -f -`, `awk -f -` and `jq -f -` take the
+ * body as a program, so those are absent too. An unknown command reads,
+ * because reading costs a false positive and skipping costs a miss.
+ *
+ * The destination is judged as it always was: the body is removed, the command
+ * line around it is not, so `cat > .env <<'EOF'` still blocks.
+ */
+const HEREDOC_DATA_COMMANDS = [
+  // POSIX: stdin is a document to copy, count or search, not code.
+  'cat', 'tac', 'tee', 'nl', 'head', 'tail', 'wc', 'rev', 'sort', 'uniq',
+  'base64', 'fold', 'column', 'cmp', 'diff', 'grep', 'egrep', 'fgrep', 'rg',
+  // The body is a message. `git commit -F -` is how a long one gets written.
+  'git commit', 'git tag', 'git notes',
+  // PowerShell here-strings: the body is piped to something that stores or
+  // prints it. `iex`, `powershell` and `node` are deliberately absent.
+  'set-content', 'sc', 'add-content', 'ac', 'out-file', 'tee-object',
+  'write-output', 'write-host', 'out-null', 'out-string', 'new-item', 'ni',
+  'select-string', 'sls',
+];
 
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
 
@@ -327,8 +364,154 @@ function writerIn(segment) {
  * `python -c "print(open('.env').read())"` apart and the path stops being
  * visible from the interpreter that reads it.
  */
+const SEGMENT_SEPARATOR = /\$\(|[;|&\n\r]/;
+
 function segmentsOf(command) {
-  return command.split(/\$\(|[;|&\n\r]/);
+  return command.split(SEGMENT_SEPARATOR);
+}
+
+/** The segment of `line` that spans index `at`. */
+function segmentAt(line, at) {
+  const before = line.slice(0, at).split(SEGMENT_SEPARATOR).pop();
+  const after = line.slice(at).split(SEGMENT_SEPARATOR)[0];
+  return before + after;
+}
+
+/** The command a body is handed to. `git commit` is one name, not two. */
+function heredocReceiver(segment) {
+  const word = commandWord(segment);
+  if (word === 'git') return `git ${gitSubcommand(segment)}`.trim();
+  return word;
+}
+
+const consumesAsData = (segment) =>
+  HEREDOC_DATA_COMMANDS.includes(heredocReceiver(segment));
+
+/**
+ * Heredoc openers on one line, in order. Quoted text is skipped: `grep "a << b"`
+ * opens nothing, and reading it as an opener would swallow the rest of the
+ * command -- including any real command on the next line.
+ */
+function heredocOpenersIn(line) {
+  const out = [];
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'" || c === '"') {
+      const end = line.indexOf(c, i + 1);
+      if (end < 0) break;
+      i = end;
+      continue;
+    }
+    if (c !== '<') continue;
+    let j = i;
+    while (line[j] === '<') j++;
+    // `<<<` is a here-string, which holds no body to skip.
+    if (j - i !== 2) { i = j - 1; continue; }
+    const strip = line[j] === '-';
+    if (strip) j++;
+    while (line[j] === ' ' || line[j] === '\t') j++;
+    const m = /^(?:'([^']*)'|"([^"]*)"|([^\s;&|<>()]+))/.exec(line.slice(j));
+    if (!m) continue;
+    out.push({
+      heredoc: { delim: m[1] ?? m[2] ?? m[3].replace(/['"\\]/g, ''), strip },
+      at: i,
+    });
+    i = j + m[0].length - 1;
+  }
+  return out;
+}
+
+/**
+ * Whether the skipped text really ended on the delimiter line. An unterminated
+ * heredoc means the line was misread, and dropping the rest of the command
+ * would hide whatever came after it.
+ */
+function closedBy(body, heredoc) {
+  const lines = body.split('\n');
+  if (lines[lines.length - 1] === '') lines.pop();
+  let last = (lines.pop() ?? '').replace(/\r$/, '');
+  if (heredoc.strip) last = last.replace(/^\t+/, '');
+  return last === heredoc.delim;
+}
+
+/**
+ * The command with the heredoc bodies that are only data removed.
+ * `skipHeredocBodies()` from the shared lexer decides where a body ends, so
+ * the delimiter rules -- `<<-` and tabs, CRLF -- are stated in one place.
+ */
+function withoutDataHeredocs(command) {
+  if (!command.includes('<<')) return command;
+
+  let out = '';
+  let i = 0;
+  while (i < command.length) {
+    const nl = command.indexOf('\n', i);
+    if (nl < 0) {
+      out += command.slice(i);
+      break;
+    }
+    const line = command.slice(i, nl);
+    out += command.slice(i, nl + 1);
+    i = nl + 1;
+
+    const openers = heredocOpenersIn(line);
+    if (!openers.length) continue;
+
+    const end = skipHeredocBodies(command, i, openers.map((o) => o.heredoc));
+    const body = command.slice(i, end);
+    const data =
+      closedBy(body, openers[openers.length - 1].heredoc) &&
+      openers.every((o) => consumesAsData(segmentAt(line, o.at)));
+    if (!data) out += body;
+    i = end;
+  }
+  return out;
+}
+
+/** `@'` or `@"` with nothing after it on the line opens a here-string. */
+const PS_HERESTRING_OPENER = /@(['"])[ \t]*\r?(?=\n)/g;
+
+/**
+ * The same rule for PowerShell here-strings. `@' ... '@ | Set-Content notes.md`
+ * writes a file and the body is its contents; `@' ... '@ | iex` runs the body,
+ * so that one is still read. The text after `'@` is left in place, which is
+ * what keeps the destination judged as it always was.
+ */
+function withoutDataHereStrings(command) {
+  let out = '';
+  let i = 0;
+  while (i < command.length) {
+    PS_HERESTRING_OPENER.lastIndex = i;
+    const open = PS_HERESTRING_OPENER.exec(command);
+    if (!open) {
+      out += command.slice(i);
+      break;
+    }
+
+    const nl = command.indexOf('\n', open.index);
+    const close = open[1] === "'" ? /\r?\n[ \t]*'@/g : /\r?\n[ \t]*"@/g;
+    close.lastIndex = nl;
+    const end = close.exec(command);
+    if (!end) {
+      out += command.slice(i);
+      break;
+    }
+
+    out += command.slice(i, nl + 1);
+    const after = command.slice(end.index + end[0].length);
+    const lineStart = command.lastIndexOf('\n', Math.max(open.index - 1, 0)) + 1;
+    const statement =
+      command.slice(lineStart, open.index) + after.split(/[\r\n]/)[0];
+    const data = segmentsOf(statement)
+      .map(heredocReceiver)
+      .filter(Boolean)
+      .every((word) => HEREDOC_DATA_COMMANDS.includes(word));
+
+    if (!data) out += command.slice(nl + 1, end.index + end[0].length);
+    i = end.index + end[0].length;
+  }
+  return out;
 }
 
 function readStdin() {
@@ -356,7 +539,14 @@ try {
     toolInput && typeof toolInput.command === 'string' ? toolInput.command : '';
   if (!command.trim()) process.exit(0);
 
-  for (const segment of segmentsOf(command)) {
+  // A heredoc body that is only data is removed first, so its lines are
+  // not read as commands of their own.
+  const code =
+    toolName === 'PowerShell'
+      ? withoutDataHereStrings(command)
+      : withoutDataHeredocs(command);
+
+  for (const segment of segmentsOf(code)) {
     if (!segment.trim()) continue;
 
     const path = secretPathIn(segment);

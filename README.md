@@ -262,7 +262,7 @@ node kit/scripts/probe-guards.mjs       # 登録されたフックに実際に�
 | [20 Supabase の公開範囲を数える](docs/20-supabase-exposure-check.md) | 公開鍵と、登録しただけの他人から、何が何行読めるか。自分で流す SQL 3 本 |
 | [事例](docs/case-studies/) | 実プロダクトからの引用 |
 | [99 FAQ](docs/99-faq.md) | よくある質問 |
-| [CHANGELOG](CHANGELOG.md) | 各版に何が入っているか。現在は v0.1.0 |
+| [CHANGELOG](CHANGELOG.md) | 各版に何が入っているか。現在は v0.2.0 |
 | [ROADMAP](ROADMAP.md) | 何を判断して、何を残したか |
 
 ---

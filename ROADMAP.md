@@ -371,7 +371,11 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
   SQL を 3 本足した（2026-10-07、[20](docs/20-supabase-exposure-check.md)）。コードを読まないと
   分からない側は、当て方がまだ手作業で、ほかのリポジトリに当てる手段が無い（`lint-pitfalls` は自分の
   ルートしか読まない）。SQL の 3 本は、Supabase の SQL Editor に貼って流した結果をまだ確かめていない。
-  Windows で文書の実行結果が合わない件（[doc-005](data/pitfalls/doc-005.json)）は直していない。
+  Windows で文書の実行結果が合わない件（[doc-005](data/pitfalls/doc-005.json)）は、5 件のうち 4 件を
+  直した（2026-10-20）。symlink を張れない環境で黙って落ちていた 3 ケースを、数えて理由つきで出すように
+  し、`check-doc-commands` が `pass + skip` で照合するようにした。残る 1 件は `docs/13` が引いている
+  node:test のスイートで、Node 24 の既定レポーターが TAP でなくなったことが原因。OS ではなく Node の
+  バージョンの違いで、直し方が 2 通りあるため判断待ち。
 - 案件別テンプレート。pull-all の shell 版（POSIX シェル版。Node 版と同じフィクスチャで 73/73）と
   MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。残っているのは Claude Code 本体での実地確認。
 - 落とし穴レコードの追加、Issue からの受け入れ手順。英訳は `docs/01`・`docs/03`・`docs/05`・

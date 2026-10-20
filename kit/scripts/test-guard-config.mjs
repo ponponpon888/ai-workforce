@@ -29,6 +29,7 @@ const ALLOW = 0;
 
 let pass = 0;
 let fail = 0;
+let skip = 0;
 
 function runHook(payload) {
   const r = spawnSync(process.execPath, [HOOK], {
@@ -66,6 +67,13 @@ function callSessionStart(startupType, { home = CLAUDE_HOME } = {}) {
     env: { ...process.env, AIWF_CLAUDE_HOME: home },
   });
   return { code: r.status, out: r.stdout || '', err: r.stderr || '' };
+}
+
+// A case that cannot run on this machine is counted and named, not dropped.
+// Printing "pass: 50" alone would read as three cases that never existed.
+function skipCase(name, why) {
+  console.log(`  SKIP  ${name} (${why})`);
+  skip++;
 }
 
 function assert(name, expected, result) {
@@ -276,7 +284,11 @@ console.log('\ninstalled behind a symlink:');
   if (!linked) {
     // Windows without developer mode refuses symlinks to unprivileged users.
     // Skipping is honest; claiming a pass we never ran is not.
-    console.log('  SKIP  symlinks are not available to this user');
+    for (const name of [
+      'the spelling this hook was invoked by',
+      'the spelling it resolves to',
+      'an ordinary file behind the symlink is still allowed',
+    ]) skipCase(name, 'symlink not permitted on this machine');
   } else {
     const callVia = (hookPath, filePath) => {
       const env = { ...process.env };
@@ -315,5 +327,5 @@ console.log('\ninstalled behind a symlink:');
 
 rmSync(CLAUDE_HOME, { recursive: true, force: true });
 
-console.log(`\npass: ${pass}   fail: ${fail}\n`);
+console.log(`\npass: ${pass}   fail: ${fail}   skip: ${skip}\n`);
 process.exit(fail > 0 ? 1 : 0);

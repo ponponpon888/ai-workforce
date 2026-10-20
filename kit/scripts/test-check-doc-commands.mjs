@@ -97,6 +97,34 @@ test('a suite that prints no result line is reported, not treated as passing', (
     root => assert.match(checkCommands(root).findings[0].why, /printed no result line/));
 });
 
+// A case the machine cannot run (no symlink permission, say) is skipped,
+// not failed and not silently dropped. The page documents what runs where
+// everything is available, so pass + skip is what the page is compared to.
+const skipSuite = (pass, fail, skip) =>
+  `console.log("  SKIP  a case (symlink not permitted on this machine)");` +
+  `console.log("pass: ${pass}   fail: ${fail}   skip: ${skip}");`;
+
+test('a case skipped on this machine still counts toward the documented number', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 53   fail: 0') },
+    { 'test-a.mjs': skipSuite(50, 0, 3) },
+    root => {
+      const { findings, notes } = checkCommands(root);
+      assert.deepEqual(findings, []);
+      // Accepted, but never silently: the skip has to be said out loud.
+      assert.equal(notes.length, 1);
+      assert.ok(notes[0].why.includes('pass: 50 + skip: 3 matches the documented pass: 53'));
+    });
+});
+
+test('a skip does not paper over a real shortfall', () => {
+  run({ 'docs/a.md': fence('node kit/scripts/test-a.mjs   # pass: 53   fail: 0') },
+    { 'test-a.mjs': skipSuite(49, 0, 3) },
+    root => {
+      const [f] = checkCommands(root).findings;
+      assert.match(f.why, /prints pass: 49 {2}fail: 0 {2}skip: 3/);
+    });
+});
+
 // The guard suites use this repository's own runner; everything else is a
 // node:test file and prints TAP. Reading only one shape would quietly stop
 // checking half the suites.

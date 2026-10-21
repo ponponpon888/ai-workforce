@@ -6,32 +6,32 @@
   ],
   "schema_version": 1,
   "counts": {
-    "total": 51,
+    "total": 52,
     "by_set": {
-      "pitfalls": 38,
+      "pitfalls": 39,
       "app-pitfalls": 13
     },
     "by_confidence": {
-      "measured": 31,
+      "measured": 32,
       "inferred": 15,
       "documented": 4,
       "unverified": 1
     },
     "by_status": {
-      "closed": 40,
+      "closed": 41,
       "open_recorded": 3,
       "untouched": 3,
       "none": 5
     },
     "by_kind": {
       "trap": 39,
-      "limitation": 7,
+      "limitation": 8,
       "behaviour": 5
     },
     "by_layer": {
       "instruction": 6,
       "permissions": 6,
-      "hook": 18,
+      "hook": 19,
       "runtime": 4,
       "ci": 3,
       "external": 1,
@@ -39,11 +39,11 @@
     },
     "by_stale_risk": {
       "unknown_version": 16,
-      "ok": 15,
+      "ok": 16,
       "not_applicable": 20
     },
     "without_prose": 16,
-    "checkable": 24
+    "checkable": 25
   },
   "checks": [
     {
@@ -225,6 +225,15 @@
       "expect": "present",
       "message": "秘密ファイルを書き換える・消す形の一覧。これを消すと、Set-Content .env や rm .env がどのフックにも止められない状態に戻る。判定は読む側と同じくデータの一覧で持ち、ロジックを増やさないこと。",
       "severity": "medium"
+    },
+    {
+      "id": "hook-018",
+      "kind": "file-content",
+      "target": "kit/claude/hooks/guard-secrets.mjs",
+      "pattern": "const HEREDOC_DATA_COMMANDS = [",
+      "expect": "present",
+      "message": "本文を読み飛ばしてよいコマンドの一覧。読み飛ばす条件4つのうちの2番目で、これを消すと、.env について書かれた文章を cat > notes.md <<'EOF' で書き出す操作がブロックされる誤検知に戻る。逆に bash / sh / python / node をこの一覧に足すと、本文として渡したコマンドが検査を素通りする。一覧に無いものは読む側に倒すこと。この一覧だけでは足りない（`cat <<'EOF' | bash` は cat に渡る）ので、RUNS_CODE_COMMANDS と引用符つきの区切りの判定も一緒に残すこと。",
+      "severity": "low"
     },
     {
       "id": "install-001",
@@ -970,6 +979,32 @@
         "powershell",
         "shell",
         "destructive"
+      ]
+    },
+    {
+      "id": "hook-018",
+      "set": "pitfalls",
+      "file": "data/pitfalls/hook-018.json",
+      "title": "guard-secretsがヒアドキュメントの本文の各行も独立したコマンドとして読み、本文に引用された秘密ファイル名で誤検知する",
+      "layer": "hook",
+      "kind": "limitation",
+      "severity": "low",
+      "confidence": "measured",
+      "status": "closed",
+      "stale_risk": "ok",
+      "origin": "docs/02-guardrails.md#ヒアドキュメントの本文は条件付きで読み飛ばします",
+      "has_prose": true,
+      "checkable": true,
+      "related": [
+        "hook-017",
+        "hook-010"
+      ],
+      "tags": [
+        "guard-secrets",
+        "false-positive",
+        "heredoc",
+        "powershell",
+        "shell"
       ]
     },
     {

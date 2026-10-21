@@ -152,7 +152,7 @@ Node 版のファイルにしか当てられない）。フック本体は
 **残り（このPRの外）:**
 
 
-## guard-sql の方言対応（MySQL / SQLite）— 実装済み、Windows は未検証
+## guard-sql の方言対応（MySQL / SQLite）— 実装済み、Windows と実地確認も完了
 
 **2026-09-21、「基本版以降」にあった「MySQL / SQLite の SQL 検査」に着手した。** 着手前に、
 修正前のフックへ実際にペイロードを流して何が通るかを測ったところ、想定していた「方言固有の文が
@@ -188,7 +188,16 @@ BLOCK  mysql -f app -e "select 1"            <- ただの SELECT（-f は --forc
 で Ubuntu / Windows / macOS の3ジョブとも成功した。Windows ジョブの `shell: powershell`
 （**Windows PowerShell 5.1**、出力は `5.1.26100.6584`）でも `test-guard-sql.ps1` 87/87、
 guard-config 45、sql-boundaries 33、pull-all 60、guard-secrets 65、guard-destructive 218。
-残るのは Claude Code 本体に接続しての実地確認。
+Windows PowerShell 5.1 は PR #38 の CI ジョブで確認済みなので、「Windows は未検証」ではない。
+
+Claude Code 本体に接続しての実地確認も、2026-10-20 に終えた
+（[記録](measurements/2026-10-20-live-hooks-scratch-project.md)）。使い捨てフォルダの
+`.claude/settings.json` にこのリポジトリのフック3本を登録し、Claude Code 2.1.304 で
+止まるべき 15 件・通るべき 4 件を確認した（19/19 期待どおり）。方言対応にあたるのは
+`sqlite3` の DROP / PRAGMA writable_schema / ATTACH、`mysql -e` の DROP DATABASE /
+RENAME TABLE / `#` コメント入りの WHERE なし DELETE で、いずれも PreToolUse で止まった。
+[hook-012](data/pitfalls/hook-012.json)（`mysql -f` の誤爆）の再発もない。
+このとき `guard-secrets` の誤検知を1件踏んでいる（[hook-018](data/pitfalls/hook-018.json)）。
 
 ## 基本開発で完了したこと
 
@@ -377,7 +386,9 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
   スイートが読めなかった件も直した。原因は Node 24 で既定のレポーターが TAP から spec に変わったことで、
   OS の違いではなかった。両方の形を読むようにして、Windows / Node 24 でも 0 件・exit 0 になる。
 - 案件別テンプレート。pull-all の shell 版（POSIX シェル版。Node 版と同じフィクスチャで 73/73）と
-  MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。残っているのは Claude Code 本体での実地確認。
+  MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。MySQL / SQLite 側は Claude Code 本体での
+  実地確認も終えた（2026-10-20、[記録](measurements/2026-10-20-live-hooks-scratch-project.md)）。
+  残っているのは pull-all の shell 版の実地確認。
 - 落とし穴レコードの追加、Issue からの受け入れ手順。英訳は `docs/01`・`docs/03`・`docs/05`・
   `docs/06`・`docs/07` を足して、4 本柱のうち 1・2・3 とチャット側の穴の話が英語で読める
   状態にした。→ `docs/04`・`08` も足した（2026-09-22、

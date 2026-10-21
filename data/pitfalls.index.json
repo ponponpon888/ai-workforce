@@ -232,7 +232,7 @@
       "target": "kit/claude/hooks/guard-secrets.mjs",
       "pattern": "const HEREDOC_DATA_COMMANDS = [",
       "expect": "present",
-      "message": "本文を読み飛ばしてよいコマンドの一覧。これを消すと、.env について書かれた文章を cat > notes.md <<'EOF' で書き出す操作がブロックされる誤検知に戻る。逆に bash / sh / python / node をこの一覧に足すと、本文として渡したコマンドが検査を素通りする。一覧に無いものは読む側に倒すこと。",
+      "message": "本文を読み飛ばしてよいコマンドの一覧。読み飛ばす条件4つのうちの2番目で、これを消すと、.env について書かれた文章を cat > notes.md <<'EOF' で書き出す操作がブロックされる誤検知に戻る。逆に bash / sh / python / node をこの一覧に足すと、本文として渡したコマンドが検査を素通りする。一覧に無いものは読む側に倒すこと。この一覧だけでは足りない（`cat <<'EOF' | bash` は cat に渡る）ので、RUNS_CODE_COMMANDS と引用符つきの区切りの判定も一緒に残すこと。",
       "severity": "low"
     },
     {

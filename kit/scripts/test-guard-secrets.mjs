@@ -251,6 +251,9 @@ for (const [name, tool, command] of [
     heredoc("tee notes.md <<'EOF'", 'Set-Content .env x', 'EOF')],
   ['git commit -F - takes the body as a message', 'Bash',
     heredoc("git commit -F - <<'EOF'", 'block rm .env', 'EOF')],
+  // Piping a body on is fine for as long as everything it reaches stores it.
+  ['a pipeline whose every command stores the body', 'Bash',
+    heredoc("cat <<'EOF' | sort | tee notes.md", 'echo X=1 > .env', 'EOF')],
   ['PowerShell here-string piped to Set-Content', 'PowerShell',
     heredoc("@'", 'echo X=1 > .env', "'@ | Set-Content notes.md")],
 ]) assert(name, ALLOW, callHook(tool, { command }));
@@ -271,6 +274,45 @@ for (const [name, tool, command] of [
     heredoc('grep "a << b" notes.md', 'rm .env')],
   ['here-string piped to iex', 'PowerShell',
     heredoc("@'", 'rm .env', "'@ | iex")],
+]) assert(name, BLOCK, callHook(tool, { command }));
+
+// The first version of the skip asked which command the body is handed to and
+// looked no further, so every shape below was allowed by it while both the
+// version before it and the version after it block. The table they come from
+// is in data/pitfalls/hook-018.json.
+console.log('\nmust block (the body reaches something that runs it):');
+for (const [name, tool, command] of [
+  ['the body is piped from cat into bash', 'Bash',
+    heredoc("cat <<'EOF' | bash", 'rm .env', 'EOF')],
+  ['the body is piped from cat into sh', 'Bash',
+    heredoc("cat <<'EOF' | sh", 'cat .env', 'EOF')],
+  ['the body is piped from tee into bash', 'Bash',
+    heredoc("tee /dev/stderr <<'EOF' | bash", 'rm .env', 'EOF')],
+  ['the body is written to a file and that file is run', 'Bash',
+    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'bash run.sh')],
+  ['the file is run with no interpreter named', 'Bash',
+    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', './run.sh')],
+  ['making the file executable counts as running it', 'Bash',
+    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'chmod +x run.sh')],
+  ['an unquoted delimiter expands $(...) in the body', 'Bash',
+    heredoc('cat <<EOF > notes.md', '$(cat .env)', 'EOF')],
+  // Falling to the reading side is the point of the rule, not a cost of it:
+  // an unquoted delimiter means the shell may expand the body, and nothing
+  // here can tell a body it would expand from one it would leave alone.
+  ['an unquoted delimiter blocks even a body of plain prose', 'Bash',
+    heredoc('cat <<EOF > notes.md', 'echo X=1 > .env', 'EOF')],
+  ['the body reaches a process substitution', 'Bash',
+    heredoc("cat <<'EOF' | tee >(bash)", 'rm .env', 'EOF')],
+  // xargs is handed the body as an argument list rather than as code, so the
+  // command it builds is what has to be judged.
+  ['the body is the argument list of xargs rm', 'Bash',
+    heredoc("cat <<'EOF' | xargs rm", '.env', 'EOF')],
+  ['the body is the argument list of xargs with options', 'Bash',
+    heredoc("cat <<'EOF' | xargs -r -n 1 rm -f", '.env', 'EOF')],
+  // PowerShell expands $(...) inside @" ... "@, which is the here-string
+  // counterpart of an unquoted heredoc delimiter.
+  ['an expandable here-string reads the file before anything stores it', 'PowerShell',
+    heredoc('@"', '$(Get-Content .env)', '"@ | Set-Content notes.md')],
 ]) assert(name, BLOCK, callHook(tool, { command }));
 console.log(`\npass: ${pass}   fail: ${fail}\n`);
 process.exit(fail > 0 ? 1 : 0);

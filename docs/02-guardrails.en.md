@@ -763,24 +763,72 @@ the live check on 2026-10-20 the report file itself could not be written with
 `cat > report.md <<'EOF' ... EOF`: the body merely quoted the *string*
 `echo X=1 > .env`.
 
-What may be skipped is a body handed to a command that takes it **as data**. `cat`,
-`tee` and `git commit -F -` only store it, so their bodies are skipped; `bash`, `sh`,
-`python -` and `node` run it, so their bodies are read as before. The distinction is
-held as a list of data, `HEREDOC_DATA_COMMANDS`, in the same shape as `READ_COMMANDS`
-on the reading side. A command that is not on the list is read: reading only costs a
-false positive, while skipping costs a miss. `sed -f -`, `awk -f -` and `jq -f -` take
-the body as a program, so they are not on the list.
+What may be skipped is a body that meets **all four** of these:
+
+1. **The delimiter is quoted** (`<<'EOF'`, `<<"EOF"`, `<<\EOF`, and the `<<-` forms of
+   each). An unquoted `<<EOF` *expands* `$(...)` and backticks in the body, which makes
+   that body code. PowerShell has only `@' ... '@`; `@" ... "@` expands `$(...)` the
+   same way, so it is read.
+2. **The command the body is handed to is on `HEREDOC_DATA_COMMANDS`.** `cat`, `tee`
+   and `git commit -F -` only store it. `bash`, `sh`, `python -` and `node` run it, so
+   they are not on the list, and neither are `sed -f -`, `awk -f -` and `jq -f -`,
+   which take the body as a program. A command that is not on the list is read.
+3. **Nothing outside that list is downstream of it in the pipeline.**
+   `cat <<'EOF' | sort | tee notes.md` is all data, so it is skipped;
+   `cat <<'EOF' | bash` is read. A process substitution (`>(...)`, `<(...)`) is read.
+4. **Nothing on the command line runs a file or its standard input**
+   (`RUNS_CODE_COMMANDS`: `bash`, `sh`, `eval`, `xargs`, `python`, `node`, `iex`,
+   `chmod` and the rest, plus a file run by extension such as `./run.sh`).
+   `cat > run.sh <<'EOF' ... EOF` next to `bash run.sh` is code. This one is judged on
+   the text **with the bodies removed**, because a `bash` quoted inside a body tipping
+   its own body to the reading side is the hook-018 false positive all over again.
+
+Only condition 2 was in the first version of this; 1, 3 and 4 were added to close
+what a review found ([below](#the-skip-was-decided-by-where-the-body-went-and-no-further)).
+Each is held as a list of data, in the same shape as `READ_COMMANDS` on the reading
+side, and anything uncertain falls to the reading side: reading only costs a false
+positive, while skipping costs a miss.
+
+`xargs` is the odd shape. The body reaches it as neither code nor data but as an
+**argument list**, so reading the body's lines finds nothing — `.env` alone is not a
+reader or a writer. For `cat <<'EOF' | xargs rm` the command xargs would build
+(`rm .env`) is written out as a line of its own so the rest of the hook can see it.
 
 The destination is judged as it always was. Only the body is removed and the command
 line around it is kept, so `cat > .env <<'EOF'` still blocks, and so does a real
-command written *after* the heredoc. PowerShell here-strings (`@' ... '@`) follow the
-same rule: `| Set-Content notes.md` skips the body, `| iex` reads it.
+command written *after* the heredoc.
 
 Where a body ends is decided by the shared lexer (`skipHeredocBodies` /
 `Skip-GdHeredocBodies` in `lib/shell-lex.*`), so `<<-` with tabs and CRLF are not
 spelled out twice. A heredoc whose delimiter line is never found is not skipped: the
 line was probably misread, and skipping would hide whatever real command came after it
 ([hook-018](../data/pitfalls/hook-018.json)).
+
+### The skip was decided by where the body went, and no further
+
+The first version of the fix above checked condition 2 and nothing else. **It looked at
+the command the body is handed to and never at what that command does with it.** Shapes
+that blocked before it started getting through. The same payloads against the version
+before it and that first version, measured rather than reasoned about (`.mjs` and `.ps1`
+agree, and none of the commands was ever run):
+
+| # | Command (`\n` is a newline) | main | first version | now |
+|---|---|---|---|---|
+| R1 | `cat <<'EOF' \| bash` + body `rm .env` | 2 | **0** | 2 |
+| R2 | `cat <<'EOF' \| sh` + body `cat .env` | 2 | **0** | 2 |
+| R3 | `tee /dev/stderr <<'EOF' \| bash` + body `rm .env` | 2 | **0** | 2 |
+| R4 | `cat > run.sh <<'EOF'` + body `rm .env` + `bash run.sh` | 2 | **0** | 2 |
+| R5 | `cat <<EOF > notes.md` + body `$(cat .env)` | 2 | **0** | 2 |
+| R6 | `cat <<'EOF' \| xargs rm` + body `.env` | 0 | 0 | 2 |
+
+In R1 to R3 the body does reach `cat` or `tee` — and their output goes straight into a
+shell through a pipe. R4 writes the body to a file and runs that file on the same
+command line. R5 has an unquoted delimiter, so `$(...)` in the body is expanded. R6 is
+older than this PR: the body reaches `rm` as a filename.
+
+**An unquoted `<<EOF` now blocks even when its body is plain prose.** There is no way
+to tell a body that would be expanded from one that would not, so it falls to the
+reading side. The test names say so, to make clear that blocking is the intent there.
 
 ---
 

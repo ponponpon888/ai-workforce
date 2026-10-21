@@ -147,7 +147,7 @@ stops `cd /tmp && rm -rf x` and `timeout 30 rm -rf x`; it does not stop `bash -c
 
 ```bash
 node kit/scripts/test-guard-sql.mjs           # pass: 94    fail: 0
-node kit/scripts/test-guard-secrets.mjs       # pass: 120   fail: 0
+node kit/scripts/test-guard-secrets.mjs       # pass: 133   fail: 0
 node kit/scripts/test-guard-config.mjs        # pass: 53    fail: 0
 node kit/scripts/test-guard-destructive.mjs   # pass: 219   fail: 0
 ```

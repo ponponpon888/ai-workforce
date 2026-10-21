@@ -173,13 +173,20 @@ const GIT_WRITE_SUBCOMMANDS = ['checkout', 'restore', 'rm', 'mv'];
  * stopped this project's own report from being written
  * (data/pitfalls/hook-018.json).
  *
- * So the body is skipped -- but only when it is handed to a command on this
- * list, which consumes it as data and never executes or interprets it.
- * Everything else keeps the old behaviour: `bash <<'EOF'` runs its body,
- * `python - <<'EOF'` runs its body, and a secret named in there is as real as
- * one named on the command line. `sed -f -`, `awk -f -` and `jq -f -` take the
- * body as a program, so those are absent too. An unknown command reads,
- * because reading costs a false positive and skipping costs a miss.
+ * So a body can be skipped -- but only when all four conditions below hold.
+ * This list is the second of them: the command the body is handed to consumes
+ * it as data and never executes or interprets it. Everything else keeps the
+ * old behaviour: `bash <<'EOF'` runs its body, `python - <<'EOF'` runs its
+ * body, and a secret named in there is as real as one named on the command
+ * line. `sed -f -`, `awk -f -` and `jq -f -` take the body as a program, so
+ * those are absent too. An unknown command reads, because reading costs a
+ * false positive and skipping costs a miss.
+ *
+ * Naming the receiving command was all the first version of this checked, and
+ * that was not enough: `cat <<'EOF' | bash` hands the body to `cat`, which
+ * copies it straight into a shell. The other three conditions
+ * (RUNS_CODE_COMMANDS, PIPELINE_SEPARATOR, and the quoted delimiter in
+ * heredocOpenersIn) are what close that.
  *
  * The destination is judged as it always was: the body is removed, the command
  * line around it is not, so `cat > .env <<'EOF'` still blocks.
@@ -195,6 +202,41 @@ const HEREDOC_DATA_COMMANDS = [
   'set-content', 'sc', 'add-content', 'ac', 'out-file', 'tee-object',
   'write-output', 'write-host', 'out-null', 'out-string', 'new-item', 'ni',
   'select-string', 'sls',
+];
+
+/**
+ * Condition 4. Commands that run a file, or their own standard input, as code.
+ * A body stays data only for as long as nothing on the line can run it, and
+ * the command that receives the body is not the whole story:
+ * `cat > run.sh <<'EOF' ... EOF` followed by `bash run.sh` writes code and
+ * then runs it. So if any of these appears anywhere on the command line --
+ * judged with the bodies themselves removed, so that a word quoted inside a
+ * body cannot be what triggers it -- every body on that line is read.
+ *
+ * `chmod` is here because making a file executable is the other half of
+ * running it, and `xargs` because it builds a command out of its input.
+ */
+const RUNS_CODE_COMMANDS = [
+  'bash', 'sh', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'busybox',
+  'source', '.', 'eval', 'exec', 'xargs', 'parallel',
+  'python', 'python3', 'node', 'deno', 'bun', 'perl', 'ruby', 'php',
+  'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression',
+  'invoke-command', 'icm', 'start-process', 'saps', 'chmod',
+];
+
+/**
+ * `./run.sh` runs a file with no interpreter named at all, which is the same
+ * move with one word removed. Only the extension is checked, because a command
+ * word has already been reduced to its leaf by the time it gets here and the
+ * leading `./` is gone with the rest of the path.
+ */
+const RUNS_A_FILE = /\.(?:sh|bash|zsh|ksh|ps1|psm1|bat|cmd|py|pl|rb|js|mjs|cjs|php)$/;
+
+/** Options of `xargs` that swallow the next word. */
+const XARGS_OPTIONS_WITH_VALUE = [
+  '-I', '-i', '-n', '-L', '-P', '-s', '-d', '-E', '-e', '-a',
+  '--replace', '--max-args', '--max-lines', '--max-procs', '--max-chars',
+  '--delimiter', '--eof', '--arg-file',
 ];
 
 const SHELL_TOOL_RE = /^(Bash|PowerShell)$/;
@@ -370,12 +412,22 @@ function segmentsOf(command) {
   return command.split(SEGMENT_SEPARATOR);
 }
 
-/** The segment of `line` that spans index `at`. */
-function segmentAt(line, at) {
-  const before = line.slice(0, at).split(SEGMENT_SEPARATOR).pop();
-  const after = line.slice(at).split(SEGMENT_SEPARATOR)[0];
+/**
+ * A pipeline is what a heredoc body flows through, so `|` is not a separator
+ * here. `;` and `&` end one; `$(` starts a command of its own, the same way it
+ * does in SEGMENT_SEPARATOR.
+ */
+const PIPELINE_SEPARATOR = /\$\(|[;&\n\r]/;
+
+/** The pipeline of `line` that spans index `at`. */
+function pipelineAt(line, at) {
+  const before = line.slice(0, at).split(PIPELINE_SEPARATOR).pop();
+  const after = line.slice(at).split(PIPELINE_SEPARATOR)[0];
   return before + after;
 }
+
+/** `>(...)` and `<(...)` run a command, so a body that reaches one is read. */
+const PROCESS_SUBSTITUTION = /[<>]\(/;
 
 /** The command a body is handed to. `git commit` is one name, not two. */
 function heredocReceiver(segment) {
@@ -384,8 +436,32 @@ function heredocReceiver(segment) {
   return word;
 }
 
-const consumesAsData = (segment) =>
-  HEREDOC_DATA_COMMANDS.includes(heredocReceiver(segment));
+/**
+ * Conditions 2 and 3: the body is handed to a command that consumes it as
+ * data, and so does everything that command pipes it on to.
+ * `cat <<'EOF' | sort | tee notes.md` stores a document; `cat <<'EOF' | bash`
+ * runs one, and naming only the receiver cannot tell the two apart.
+ */
+function pipesOnlyToData(line, at) {
+  const pipeline = pipelineAt(line, at);
+  if (PROCESS_SUBSTITUTION.test(pipeline)) return false;
+  const words = pipeline.split('|').map(heredocReceiver).filter(Boolean);
+  return words.length > 0 && words.every((w) => HEREDOC_DATA_COMMANDS.includes(w));
+}
+
+/**
+ * Condition 4: the command on this line that runs code, or null. The text
+ * passed in is the command line with every body already removed, so a word
+ * quoted inside a body is not what makes the body look like code.
+ */
+function runsCodeIn(text) {
+  for (const segment of segmentsOf(text)) {
+    const word = commandWord(segment);
+    if (!word) continue;
+    if (RUNS_CODE_COMMANDS.includes(word) || RUNS_A_FILE.test(word)) return word;
+  }
+  return null;
+}
 
 /**
  * Heredoc openers on one line, in order. Quoted text is skipped: `grep "a << b"`
@@ -414,7 +490,15 @@ function heredocOpenersIn(line) {
     const m = /^(?:'([^']*)'|"([^"]*)"|([^\s;&|<>()]+))/.exec(line.slice(j));
     if (!m) continue;
     out.push({
-      heredoc: { delim: m[1] ?? m[2] ?? m[3].replace(/['"\\]/g, ''), strip },
+      heredoc: {
+        delim: m[1] ?? m[2] ?? m[3].replace(/['"\\]/g, ''),
+        strip,
+        // Condition 1. `<<EOF` expands `$(...)` and backticks in the body, so
+        // that body is code the shell will run; any quoting in the delimiter
+        // -- `<<'EOF'`, `<<"EOF"`, `<<\EOF` -- turns the expansion off and is
+        // what makes a body text.
+        quoted: m[1] !== undefined || m[2] !== undefined || /['"\\]/.test(m[3]),
+      },
       at: i,
     });
     i = j + m[0].length - 1;
@@ -435,6 +519,50 @@ function closedBy(body, heredoc) {
   return last === heredoc.delim;
 }
 
+/** The body's lines as one argument list, without the delimiter line. */
+function bodyArguments(body) {
+  const lines = body.split('\n');
+  if (lines[lines.length - 1] === '') lines.pop();
+  lines.pop();
+  return lines.join(' ').trim();
+}
+
+/**
+ * The command `xargs` would build out of this body, or ''. A body piped to
+ * `xargs rm` is neither code nor data: it is the argument list of a command
+ * that never appears next to it. Reading the body as lines of its own finds
+ * nothing -- `.env` alone is not a reader or a writer -- so the command xargs
+ * would actually run is written out for the rest of the hook to see.
+ */
+function xargsCommandFor(segment, args) {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  let i = tokens.findIndex((t) => leafOf(t) === 'xargs');
+  if (i < 0) return '';
+  for (i += 1; i < tokens.length; i++) {
+    if (XARGS_OPTIONS_WITH_VALUE.includes(tokens[i])) {
+      i++;
+      continue;
+    }
+    if (tokens[i].startsWith('-')) continue;
+    return `${tokens.slice(i).join(' ')} ${args}\n`;
+  }
+  // `xargs` with no command of its own runs `echo`, which reads nothing.
+  return '';
+}
+
+/** Every command the `xargs` calls on this line would build, one per line. */
+function xargsCommandsFor(line, openers, body) {
+  const args = bodyArguments(body);
+  if (!args) return '';
+  let out = '';
+  for (const o of openers) {
+    for (const part of pipelineAt(line, o.at).split('|')) {
+      out += xargsCommandFor(part, args);
+    }
+  }
+  return out;
+}
+
 /**
  * The command with the heredoc bodies that are only data removed.
  * `skipHeredocBodies()` from the shared lexer decides where a body ends, so
@@ -443,49 +571,74 @@ function closedBy(body, heredoc) {
 function withoutDataHeredocs(command) {
   if (!command.includes('<<')) return command;
 
-  let out = '';
+  // First pass: where every body is, and what the command line reads like
+  // with all of them gone. Condition 4 is judged on that second text.
+  const spans = [];
+  let outside = '';
   let i = 0;
   while (i < command.length) {
     const nl = command.indexOf('\n', i);
     if (nl < 0) {
-      out += command.slice(i);
+      outside += command.slice(i);
       break;
     }
     const line = command.slice(i, nl);
-    out += command.slice(i, nl + 1);
+    outside += command.slice(i, nl + 1);
     i = nl + 1;
 
     const openers = heredocOpenersIn(line);
     if (!openers.length) continue;
 
     const end = skipHeredocBodies(command, i, openers.map((o) => o.heredoc));
-    const body = command.slice(i, end);
-    const data =
-      closedBy(body, openers[openers.length - 1].heredoc) &&
-      openers.every((o) => consumesAsData(segmentAt(line, o.at)));
-    if (!data) out += body;
+    spans.push({ line, openers, from: i, to: end });
     i = end;
   }
-  return out;
+
+  const runsCode = runsCodeIn(outside);
+
+  // Second pass: put back every body that is not data.
+  let out = '';
+  let at = 0;
+  for (const span of spans) {
+    out += command.slice(at, span.from);
+    at = span.to;
+
+    const body = command.slice(span.from, span.to);
+    const closed = closedBy(body, span.openers[span.openers.length - 1].heredoc);
+    const data =
+      closed &&
+      !runsCode &&
+      span.openers.every((o) => o.heredoc.quoted && pipesOnlyToData(span.line, o.at));
+    if (data) continue;
+
+    out += body;
+    if (closed) out += xargsCommandsFor(span.line, span.openers, body);
+  }
+  return out + command.slice(at);
 }
 
 /** `@'` or `@"` with nothing after it on the line opens a here-string. */
 const PS_HERESTRING_OPENER = /@(['"])[ \t]*\r?(?=\n)/g;
 
 /**
- * The same rule for PowerShell here-strings. `@' ... '@ | Set-Content notes.md`
- * writes a file and the body is its contents; `@' ... '@ | iex` runs the body,
- * so that one is still read. The text after `'@` is left in place, which is
- * what keeps the destination judged as it always was.
+ * The same four conditions for PowerShell here-strings.
+ * `@' ... '@ | Set-Content notes.md` writes a file and the body is its
+ * contents; `@' ... '@ | iex` runs the body, so that one is still read. A
+ * `@" ... "@` body is never data: PowerShell expands `$(...)` inside it, so
+ * `@"` with `$(Get-Content .env)` in the body reads the file before anything
+ * downstream sees a thing -- the here-string counterpart of `<<EOF`. The text
+ * after `'@` is left in place, which is what keeps the destination judged as
+ * it always was.
  */
 function withoutDataHereStrings(command) {
-  let out = '';
+  const spans = [];
+  let outside = '';
   let i = 0;
   while (i < command.length) {
     PS_HERESTRING_OPENER.lastIndex = i;
     const open = PS_HERESTRING_OPENER.exec(command);
     if (!open) {
-      out += command.slice(i);
+      outside += command.slice(i);
       break;
     }
 
@@ -494,24 +647,38 @@ function withoutDataHereStrings(command) {
     close.lastIndex = nl;
     const end = close.exec(command);
     if (!end) {
-      out += command.slice(i);
+      outside += command.slice(i);
       break;
     }
 
-    out += command.slice(i, nl + 1);
-    const after = command.slice(end.index + end[0].length);
+    const to = end.index + end[0].length;
     const lineStart = command.lastIndexOf('\n', Math.max(open.index - 1, 0)) + 1;
     const statement =
-      command.slice(lineStart, open.index) + after.split(/[\r\n]/)[0];
-    const data = segmentsOf(statement)
-      .map(heredocReceiver)
-      .filter(Boolean)
-      .every((word) => HEREDOC_DATA_COMMANDS.includes(word));
+      command.slice(lineStart, open.index) + command.slice(to).split(/[\r\n]/)[0];
 
-    if (!data) out += command.slice(nl + 1, end.index + end[0].length);
-    i = end.index + end[0].length;
+    outside += command.slice(i, nl + 1);
+    spans.push({ quote: open[1], statement, from: nl + 1, to });
+    i = to;
   }
-  return out;
+
+  const runsCode = runsCodeIn(outside);
+
+  let out = '';
+  let at = 0;
+  for (const span of spans) {
+    out += command.slice(at, span.from);
+    at = span.to;
+
+    const data =
+      span.quote === "'" &&
+      !runsCode &&
+      segmentsOf(span.statement)
+        .map(heredocReceiver)
+        .filter(Boolean)
+        .every((word) => HEREDOC_DATA_COMMANDS.includes(word));
+    if (!data) out += command.slice(span.from, span.to);
+  }
+  return out + command.slice(at);
 }
 
 function readStdin() {

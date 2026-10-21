@@ -175,13 +175,20 @@ $GitWriteSubcommands = @('checkout', 'restore', 'rm', 'mv')
 # quotation. Reading every body line as its own command is what stopped this
 # project's own report from being written (data/pitfalls/hook-018.json).
 #
-# So the body is skipped -- but only when it is handed to a command on this
-# list, which consumes it as data and never executes or interprets it.
-# Everything else keeps the old behaviour: "bash <<'EOF'" runs its body,
-# "python - <<'EOF'" runs its body, and a secret named in there is as real as
-# one named on the command line. 'sed -f -', 'awk -f -' and 'jq -f -' take the
-# body as a program, so those are absent too. An unknown command reads, because
-# reading costs a false positive and skipping costs a miss.
+# So a body can be skipped -- but only when all four conditions below hold.
+# This list is the second of them: the command the body is handed to consumes
+# it as data and never executes or interprets it. Everything else keeps the old
+# behaviour: "bash <<'EOF'" runs its body, "python - <<'EOF'" runs its body,
+# and a secret named in there is as real as one named on the command line.
+# 'sed -f -', 'awk -f -' and 'jq -f -' take the body as a program, so those are
+# absent too. An unknown command reads, because reading costs a false positive
+# and skipping costs a miss.
+#
+# Naming the receiving command was all the first version of this checked, and
+# that was not enough: "cat <<'EOF' | bash" hands the body to cat, which copies
+# it straight into a shell. The other three conditions ($RunsCodeCommands,
+# $PipelineSeparator, and the quoted delimiter in Get-HeredocOpeners) are what
+# close that.
 #
 # The destination is judged as it always was: the body is removed, the command
 # line around it is not, so "cat > .env <<'EOF'" still blocks.
@@ -198,12 +205,51 @@ $HeredocDataCommands = @(
     'select-string', 'sls'
 )
 
+# Condition 4. Commands that run a file, or their own standard input, as code.
+# A body stays data only for as long as nothing on the line can run it, and the
+# command that receives the body is not the whole story:
+# "cat > run.sh <<'EOF' ... EOF" followed by 'bash run.sh' writes code and then
+# runs it. So if any of these appears anywhere on the command line -- judged
+# with the bodies themselves removed, so that a word quoted inside a body
+# cannot be what triggers it -- every body on that line is read.
+#
+# 'chmod' is here because making a file executable is the other half of running
+# it, and 'xargs' because it builds a command out of its input.
+$RunsCodeCommands = @(
+    'bash', 'sh', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'busybox',
+    'source', '.', 'eval', 'exec', 'xargs', 'parallel',
+    'python', 'python3', 'node', 'deno', 'bun', 'perl', 'ruby', 'php',
+    'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression',
+    'invoke-command', 'icm', 'start-process', 'saps', 'chmod'
+)
+
+# './run.sh' runs a file with no interpreter named at all, which is the same
+# move with one word removed. Only the extension is checked, because a command
+# word has already been reduced to its leaf by the time it gets here and the
+# leading './' is gone with the rest of the path.
+$RunsAFile = '\.(?:sh|bash|zsh|ksh|ps1|psm1|bat|cmd|py|pl|rb|js|mjs|cjs|php)$'
+
+# Options of 'xargs' that swallow the next word.
+$XargsOptionsWithValue = @(
+    '-I', '-i', '-n', '-L', '-P', '-s', '-d', '-E', '-e', '-a',
+    '--replace', '--max-args', '--max-lines', '--max-procs', '--max-chars',
+    '--delimiter', '--eof', '--arg-file'
+)
+
 # One command line can be several commands. Splitting on these separators keeps
 # 'cat .env | head' and 'KEY=$(cat .env)' from hiding behind a harmless first
 # word. Parentheses are deliberately NOT separators: splitting on them tears
 # 'python -c "print(open(''.env'').read())"' apart and the path stops being
 # visible from the interpreter that reads it.
 $SegmentSeparator = '\$\(|[;|&\r\n]'
+
+# A pipeline is what a heredoc body flows through, so '|' is not a separator
+# here. ';' and '&' end one; '$(' starts a command of its own, the same way it
+# does in $SegmentSeparator.
+$PipelineSeparator = '\$\(|[;&\r\n]'
+
+# '>(...)' and '<(...)' run a command, so a body that reaches one is read.
+$ProcessSubstitution = '[<>]\('
 
 # @' or @" with nothing after it on the line opens a PowerShell here-string.
 $PsHereOpener = [regex] '@([''"])[ \t]*\r?(?=\n)'
@@ -391,10 +437,10 @@ function Find-Writer([string] $Segment) {
     return $null
 }
 
-# The segment of $Line that spans index $At.
-function Get-SegmentAt([string] $Line, [int] $At) {
-    $before = @($Line.Substring(0, $At) -split $SegmentSeparator)[-1]
-    $after = @($Line.Substring($At) -split $SegmentSeparator)[0]
+# The pipeline of $Line that spans index $At.
+function Get-PipelineAt([string] $Line, [int] $At) {
+    $before = @($Line.Substring(0, $At) -split $PipelineSeparator)[-1]
+    $after = @($Line.Substring($At) -split $PipelineSeparator)[0]
     return "$before$after"
 }
 
@@ -405,8 +451,33 @@ function Get-HeredocReceiver([string] $Segment) {
     return $word
 }
 
-function Test-ConsumesAsData([string] $Segment) {
-    return ($HeredocDataCommands -contains (Get-HeredocReceiver $Segment))
+# Conditions 2 and 3: the body is handed to a command that consumes it as data,
+# and so does everything that command pipes it on to.
+# "cat <<'EOF' | sort | tee notes.md" stores a document; "cat <<'EOF' | bash"
+# runs one, and naming only the receiver cannot tell the two apart.
+function Test-PipesOnlyToData([string] $Line, [int] $At) {
+    $pipeline = Get-PipelineAt $Line $At
+    if ($pipeline -match $ProcessSubstitution) { return $false }
+    $seen = 0
+    foreach ($part in $pipeline.Split('|')) {
+        $word = Get-HeredocReceiver $part
+        if (-not $word) { continue }
+        $seen++
+        if (-not ($HeredocDataCommands -contains $word)) { return $false }
+    }
+    return ($seen -gt 0)
+}
+
+# Condition 4: the command on this line that runs code, or '' if there is none.
+# The text passed in is the command line with every body already removed, so a
+# word quoted inside a body is not what makes the body look like code.
+function Find-CodeRunner([string] $Text) {
+    foreach ($segment in ($Text -split $SegmentSeparator)) {
+        $word = Get-CommandWord $segment
+        if (-not $word) { continue }
+        if (($RunsCodeCommands -contains $word) -or ($word -match $RunsAFile)) { return $word }
+    }
+    return ''
 }
 
 # Heredoc openers on one line, in order. Quoted text is skipped: 'grep "a << b"'
@@ -437,11 +508,18 @@ function Get-HeredocOpeners([string] $Line) {
 
         $m = [regex]::Match($Line.Substring($j), '^(?:''([^'']*)''|"([^"]*)"|([^\s;&|<>()]+))')
         if (-not $m.Success) { $i = $j; continue }
-        if ($m.Groups[1].Success) { $delim = $m.Groups[1].Value }
-        elseif ($m.Groups[2].Success) { $delim = $m.Groups[2].Value }
-        else { $delim = $m.Groups[3].Value -replace '[''"\\]', '' }
+        # Condition 1. '<<EOF' expands $(...) and backticks in the body, so that
+        # body is code the shell will run; any quoting in the delimiter --
+        # "<<'EOF'", '<<"EOF"', '<<\EOF' -- turns the expansion off and is what
+        # makes a body text.
+        if ($m.Groups[1].Success) { $delim = $m.Groups[1].Value; $quoted = $true }
+        elseif ($m.Groups[2].Success) { $delim = $m.Groups[2].Value; $quoted = $true }
+        else {
+            $delim = $m.Groups[3].Value -replace '[''"\\]', ''
+            $quoted = ($m.Groups[3].Value -match '[''"\\]')
+        }
 
-        [void] $found.Add(@{ Delim = $delim; Strip = $strip; At = $i })
+        [void] $found.Add(@{ Delim = $delim; Strip = $strip; At = $i; Quoted = $quoted })
         $i = $j + $m.Length
     }
     return $found.ToArray()
@@ -462,50 +540,124 @@ function Test-ClosedBy([string] $Body, [object] $Heredoc) {
     return ($last -ceq $Heredoc.Delim)
 }
 
+# The body's lines as one argument list, without the delimiter line.
+function Get-BodyArguments([string] $Body) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($l in ($Body -split "`n")) { [void] $lines.Add($l) }
+    if ($lines.Count -gt 0 -and $lines[$lines.Count - 1] -eq '') {
+        $lines.RemoveAt($lines.Count - 1)
+    }
+    if ($lines.Count -gt 0) { $lines.RemoveAt($lines.Count - 1) }
+    return (($lines -join ' ').Trim())
+}
+
+# The command 'xargs' would build out of this body, or ''. A body piped to
+# 'xargs rm' is neither code nor data: it is the argument list of a command that
+# never appears next to it. Reading the body as lines of its own finds nothing
+# -- '.env' alone is not a reader or a writer -- so the command xargs would
+# actually run is written out for the rest of the hook to see.
+function Get-XargsCommand([string] $Segment, [string] $BodyArgs) {
+    $tokens = @($Segment.Trim() -split '\s+' | Where-Object { $_ })
+    $i = -1
+    for ($k = 0; $k -lt $tokens.Count; $k++) {
+        if ((Get-Leaf $tokens[$k]) -eq 'xargs') { $i = $k; break }
+    }
+    if ($i -lt 0) { return '' }
+
+    for ($i = $i + 1; $i -lt $tokens.Count; $i++) {
+        if ($XargsOptionsWithValue -contains $tokens[$i]) { $i++; continue }
+        if ($tokens[$i].StartsWith('-')) { continue }
+        $rest = $tokens[$i..($tokens.Count - 1)] -join ' '
+        return "$rest $BodyArgs`n"
+    }
+    # 'xargs' with no command of its own runs echo, which reads nothing.
+    return ''
+}
+
+# Every command the 'xargs' calls on this line would build, one per line.
+function Get-XargsCommands([string] $Line, [object[]] $Openers, [string] $Body) {
+    $bodyArgs = Get-BodyArguments $Body
+    if (-not $bodyArgs) { return '' }
+    $out = ''
+    foreach ($o in $Openers) {
+        foreach ($part in (Get-PipelineAt $Line $o.At).Split('|')) {
+            $out += Get-XargsCommand $part $bodyArgs
+        }
+    }
+    return $out
+}
+
 # The command with the heredoc bodies that are only data removed.
 # Skip-GdHeredocBodies from the shared lexer decides where a body ends, so the
 # delimiter rules -- '<<-' and tabs, CRLF -- are stated in one place.
 function Remove-DataHeredocs([string] $Command) {
     if ($Command.IndexOf('<<') -lt 0) { return $Command }
 
-    $out = New-Object System.Text.StringBuilder
+    # First pass: where every body is, and what the command line reads like
+    # with all of them gone. Condition 4 is judged on that second text.
+    $spans = [System.Collections.Generic.List[object]]::new()
+    $outside = New-Object System.Text.StringBuilder
     $i = 0
     while ($i -lt $Command.Length) {
         $nl = $Command.IndexOf("`n", $i)
         if ($nl -lt 0) {
-            [void] $out.Append($Command.Substring($i))
+            [void] $outside.Append($Command.Substring($i))
             break
         }
         $line = $Command.Substring($i, $nl - $i)
-        [void] $out.Append($Command.Substring($i, $nl - $i + 1))
+        [void] $outside.Append($Command.Substring($i, $nl - $i + 1))
         $i = $nl + 1
 
         $openers = @(Get-HeredocOpeners $line)
         if ($openers.Count -eq 0) { continue }
 
         $end = Skip-GdHeredocBodies $Command $i $openers
-        $body = $Command.Substring($i, $end - $i)
-        $data = Test-ClosedBy $body $openers[$openers.Count - 1]
-        foreach ($o in $openers) {
-            if (-not (Test-ConsumesAsData (Get-SegmentAt $line $o.At))) { $data = $false }
-        }
-        if (-not $data) { [void] $out.Append($body) }
+        [void] $spans.Add(@{ Line = $line; Openers = $openers; From = $i; To = $end })
         $i = $end
     }
+
+    $runsCode = Find-CodeRunner $outside.ToString()
+
+    # Second pass: put back every body that is not data.
+    $out = New-Object System.Text.StringBuilder
+    $at = 0
+    foreach ($span in $spans) {
+        [void] $out.Append($Command.Substring($at, $span.From - $at))
+        $at = $span.To
+
+        $body = $Command.Substring($span.From, $span.To - $span.From)
+        $closed = Test-ClosedBy $body $span.Openers[$span.Openers.Count - 1]
+        $data = $closed -and (-not $runsCode)
+        foreach ($o in $span.Openers) {
+            if (-not $o.Quoted) { $data = $false }
+            elseif (-not (Test-PipesOnlyToData $span.Line $o.At)) { $data = $false }
+        }
+        if ($data) { continue }
+
+        [void] $out.Append($body)
+        if ($closed) {
+            [void] $out.Append((Get-XargsCommands $span.Line $span.Openers $body))
+        }
+    }
+    [void] $out.Append($Command.Substring($at))
     return $out.ToString()
 }
 
-# The same rule for PowerShell here-strings. "@' ... '@ | Set-Content notes.md"
-# writes a file and the body is its contents; "@' ... '@ | iex" runs the body,
-# so that one is still read. The text after '@ is left in place, which is what
-# keeps the destination judged as it always was.
+# The same four conditions for PowerShell here-strings.
+# "@' ... '@ | Set-Content notes.md" writes a file and the body is its contents;
+# "@' ... '@ | iex" runs the body, so that one is still read. A '@" ... "@' body
+# is never data: PowerShell expands $(...) inside it, so '@"' with
+# '$(Get-Content .env)' in the body reads the file before anything downstream
+# sees a thing -- the here-string counterpart of '<<EOF'. The text after '@ is
+# left in place, which is what keeps the destination judged as it always was.
 function Remove-DataHereStrings([string] $Command) {
-    $out = New-Object System.Text.StringBuilder
+    $spans = [System.Collections.Generic.List[object]]::new()
+    $outside = New-Object System.Text.StringBuilder
     $i = 0
     while ($i -lt $Command.Length) {
         $open = $PsHereOpener.Match($Command, $i)
         if (-not $open.Success) {
-            [void] $out.Append($Command.Substring($i))
+            [void] $outside.Append($Command.Substring($i))
             break
         }
         $nl = $Command.IndexOf("`n", $open.Index)
@@ -513,27 +665,44 @@ function Remove-DataHereStrings([string] $Command) {
         if ($open.Groups[1].Value -eq "'") { $closer = $PsHereCloseSingle }
         $close = $closer.Match($Command, $nl)
         if (-not $close.Success) {
-            [void] $out.Append($Command.Substring($i))
+            [void] $outside.Append($Command.Substring($i))
             break
         }
-        [void] $out.Append($Command.Substring($i, $nl - $i + 1))
 
-        $afterEnd = $close.Index + $close.Length
-        $tail = @($Command.Substring($afterEnd) -split '[\r\n]')[0]
+        $to = $close.Index + $close.Length
+        $tail = @($Command.Substring($to) -split '[\r\n]')[0]
         $lineStart = 0
         if ($open.Index -gt 0) { $lineStart = $Command.LastIndexOf("`n", $open.Index - 1) + 1 }
         $statement = $Command.Substring($lineStart, $open.Index - $lineStart) + $tail
 
-        $data = $true
-        foreach ($segment in ($statement -split $SegmentSeparator)) {
+        [void] $outside.Append($Command.Substring($i, $nl - $i + 1))
+        [void] $spans.Add(@{
+            Quote = $open.Groups[1].Value
+            Statement = $statement
+            From = $nl + 1
+            To = $to
+        })
+        $i = $to
+    }
+
+    $runsCode = Find-CodeRunner $outside.ToString()
+
+    $out = New-Object System.Text.StringBuilder
+    $at = 0
+    foreach ($span in $spans) {
+        [void] $out.Append($Command.Substring($at, $span.From - $at))
+        $at = $span.To
+
+        $data = ($span.Quote -eq "'") -and (-not $runsCode)
+        foreach ($segment in ($span.Statement -split $SegmentSeparator)) {
             $word = Get-HeredocReceiver $segment
             if ($word -and -not ($HeredocDataCommands -contains $word)) { $data = $false }
         }
         if (-not $data) {
-            [void] $out.Append($Command.Substring($nl + 1, $afterEnd - ($nl + 1)))
+            [void] $out.Append($Command.Substring($span.From, $span.To - $span.From))
         }
-        $i = $afterEnd
     }
+    [void] $out.Append($Command.Substring($at))
     return $out.ToString()
 }
 

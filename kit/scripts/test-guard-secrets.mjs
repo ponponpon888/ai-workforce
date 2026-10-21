@@ -237,82 +237,108 @@ assert('empty input', ALLOW, callHook('Bash', { command: '' }));
 // tells the two apart: `cat` and `tee` store the body, `bash` and `sh` run it.
 console.log('\nmust allow (heredoc and here-string bodies):');
 
-/** A multi-line command, written the way the shell would see it. */
-const heredoc = (...lines) => lines.join('\n') + '\n';
+/**
+ * Every case below is a list of lines, and each one is run twice: once with a
+ * newline after the last line and once without. A command arriving from the
+ * tool usually has no newline after the final `EOF`, and the first version of
+ * the `xargs` rule only worked when there was one -- the command it built was
+ * glued onto the delimiter line and stopped being read
+ * (data/pitfalls/hook-018.json). The expected result is the same both ways.
+ */
+function assertBothWays(name, expected, tool, lines) {
+  assert(name, expected, callHook(tool, { command: lines.join('\n') + '\n' }));
+  assert(`${name} [no trailing newline]`, expected,
+    callHook(tool, { command: lines.join('\n') }));
+}
 
-for (const [name, tool, command] of [
+for (const [name, tool, lines] of [
   ['body quotes a redirect to .env', 'Bash',
-    heredoc("cat > notes.md <<'EOF'", 'echo X=1 > .env', 'EOF')],
+    ["cat > notes.md <<'EOF'", 'echo X=1 > .env', 'EOF']],
   ['body quotes cat .env', 'Bash',
-    heredoc("cat > notes.md <<'EOF'", 'cat .env', 'EOF')],
+    ["cat > notes.md <<'EOF'", 'cat .env', 'EOF']],
   ['redirect written after the heredoc', 'Bash',
-    heredoc("cat <<'EOF' > notes.md", 'rm .env', 'EOF')],
+    ["cat <<'EOF' > notes.md", 'rm .env', 'EOF']],
   ['tee stores the body', 'Bash',
-    heredoc("tee notes.md <<'EOF'", 'Set-Content .env x', 'EOF')],
+    ["tee notes.md <<'EOF'", 'Set-Content .env x', 'EOF']],
   ['git commit -F - takes the body as a message', 'Bash',
-    heredoc("git commit -F - <<'EOF'", 'block rm .env', 'EOF')],
+    ["git commit -F - <<'EOF'", 'block rm .env', 'EOF']],
   // Piping a body on is fine for as long as everything it reaches stores it.
   ['a pipeline whose every command stores the body', 'Bash',
-    heredoc("cat <<'EOF' | sort | tee notes.md", 'echo X=1 > .env', 'EOF')],
+    ["cat <<'EOF' | sort | tee notes.md", 'echo X=1 > .env', 'EOF']],
   ['PowerShell here-string piped to Set-Content', 'PowerShell',
-    heredoc("@'", 'echo X=1 > .env', "'@ | Set-Content notes.md")],
-]) assert(name, ALLOW, callHook(tool, { command }));
+    ["@'", 'echo X=1 > .env', "'@ | Set-Content notes.md"]],
+]) assertBothWays(name, ALLOW, tool, lines);
 
 console.log('\nmust block (a body that runs, or a secret destination):');
-for (const [name, tool, command] of [
+for (const [name, tool, lines] of [
   ['the heredoc destination is the secret', 'Bash',
-    heredoc("cat > .env <<'EOF'", 'X=1', 'EOF')],
-  ['bash runs the body', 'Bash', heredoc("bash <<'EOF'", 'rm .env', 'EOF')],
-  ['sh -s runs the body', 'Bash', heredoc("sh -s <<'EOF'", 'cat .env', 'EOF')],
+    ["cat > .env <<'EOF'", 'X=1', 'EOF']],
+  ['bash runs the body', 'Bash', ["bash <<'EOF'", 'rm .env', 'EOF']],
+  ['sh -s runs the body', 'Bash', ["sh -s <<'EOF'", 'cat .env', 'EOF']],
   ['a real command on the line after the heredoc', 'Bash',
-    heredoc("cat <<'EOF'", 'x', 'EOF', 'rm .env')],
+    ["cat <<'EOF'", 'x', 'EOF', 'rm .env']],
   // Skipping a body must not become a way of hiding one. These three are the
   // edges of the skip itself rather than shapes anyone writes on purpose.
   ['an unterminated heredoc is read, not skipped', 'Bash',
-    heredoc("cat <<'EOF'", 'x', 'rm .env')],
+    ["cat <<'EOF'", 'x', 'rm .env']],
   ['a quoted << does not open a heredoc', 'Bash',
-    heredoc('grep "a << b" notes.md', 'rm .env')],
+    ['grep "a << b" notes.md', 'rm .env']],
   ['here-string piped to iex', 'PowerShell',
-    heredoc("@'", 'rm .env', "'@ | iex")],
-]) assert(name, BLOCK, callHook(tool, { command }));
+    ["@'", 'rm .env', "'@ | iex"]],
+]) assertBothWays(name, BLOCK, tool, lines);
 
 // The first version of the skip asked which command the body is handed to and
 // looked no further, so every shape below was allowed by it while both the
 // version before it and the version after it block. The table they come from
 // is in data/pitfalls/hook-018.json.
 console.log('\nmust block (the body reaches something that runs it):');
-for (const [name, tool, command] of [
+for (const [name, tool, lines] of [
   ['the body is piped from cat into bash', 'Bash',
-    heredoc("cat <<'EOF' | bash", 'rm .env', 'EOF')],
+    ["cat <<'EOF' | bash", 'rm .env', 'EOF']],
   ['the body is piped from cat into sh', 'Bash',
-    heredoc("cat <<'EOF' | sh", 'cat .env', 'EOF')],
+    ["cat <<'EOF' | sh", 'cat .env', 'EOF']],
   ['the body is piped from tee into bash', 'Bash',
-    heredoc("tee /dev/stderr <<'EOF' | bash", 'rm .env', 'EOF')],
+    ["tee /dev/stderr <<'EOF' | bash", 'rm .env', 'EOF']],
   ['the body is written to a file and that file is run', 'Bash',
-    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'bash run.sh')],
+    ["cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'bash run.sh']],
   ['the file is run with no interpreter named', 'Bash',
-    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', './run.sh')],
+    ["cat > run.sh <<'EOF'", 'rm .env', 'EOF', './run.sh']],
   ['making the file executable counts as running it', 'Bash',
-    heredoc("cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'chmod +x run.sh')],
+    ["cat > run.sh <<'EOF'", 'rm .env', 'EOF', 'chmod +x run.sh']],
+  // Something else running the file later is still the file being run.
+  ['the file is registered with crontab', 'Bash',
+    ["cat <<'EOF' > n.md", 'rm .env', 'EOF', 'crontab n.md']],
+  ['the file is queued with at', 'Bash',
+    ["cat <<'EOF' > n.md", 'rm .env', 'EOF', 'at -f n.md now']],
+  ['the file is queued with batch', 'Bash',
+    ["cat <<'EOF' > n.md", 'rm .env', 'EOF', 'batch -f n.md']],
+  ['the file is a makefile', 'Bash',
+    ["cat <<'EOF' > n.mk", 'rm .env', 'EOF', 'make -f n.mk']],
+  ['the file is handed to systemd-run', 'Bash',
+    ["cat <<'EOF' > n.sh", 'rm .env', 'EOF', 'systemd-run n.sh']],
+  // The same rule on the PowerShell side: the here-string is stored, and the
+  // file it was stored in is then registered to run.
+  ['a here-string is stored in a file registered with schtasks', 'PowerShell',
+    ["@'", 'rm .env', "'@ | Set-Content n.cmd", 'schtasks /create /tr n.cmd /sc daily /tn t']],
   ['an unquoted delimiter expands $(...) in the body', 'Bash',
-    heredoc('cat <<EOF > notes.md', '$(cat .env)', 'EOF')],
+    ['cat <<EOF > notes.md', '$(cat .env)', 'EOF']],
   // Falling to the reading side is the point of the rule, not a cost of it:
   // an unquoted delimiter means the shell may expand the body, and nothing
   // here can tell a body it would expand from one it would leave alone.
   ['an unquoted delimiter blocks even a body of plain prose', 'Bash',
-    heredoc('cat <<EOF > notes.md', 'echo X=1 > .env', 'EOF')],
+    ['cat <<EOF > notes.md', 'echo X=1 > .env', 'EOF']],
   ['the body reaches a process substitution', 'Bash',
-    heredoc("cat <<'EOF' | tee >(bash)", 'rm .env', 'EOF')],
+    ["cat <<'EOF' | tee >(bash)", 'rm .env', 'EOF']],
   // xargs is handed the body as an argument list rather than as code, so the
   // command it builds is what has to be judged.
   ['the body is the argument list of xargs rm', 'Bash',
-    heredoc("cat <<'EOF' | xargs rm", '.env', 'EOF')],
+    ["cat <<'EOF' | xargs rm", '.env', 'EOF']],
   ['the body is the argument list of xargs with options', 'Bash',
-    heredoc("cat <<'EOF' | xargs -r -n 1 rm -f", '.env', 'EOF')],
+    ["cat <<'EOF' | xargs -r -n 1 rm -f", '.env', 'EOF']],
   // PowerShell expands $(...) inside @" ... "@, which is the here-string
   // counterpart of an unquoted heredoc delimiter.
   ['an expandable here-string reads the file before anything stores it', 'PowerShell',
-    heredoc('@"', '$(Get-Content .env)', '"@ | Set-Content notes.md')],
-]) assert(name, BLOCK, callHook(tool, { command }));
+    ['@"', '$(Get-Content .env)', '"@ | Set-Content notes.md']],
+]) assertBothWays(name, BLOCK, tool, lines);
 console.log(`\npass: ${pass}   fail: ${fail}\n`);
 process.exit(fail > 0 ? 1 : 0);

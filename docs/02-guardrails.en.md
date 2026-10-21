@@ -779,9 +779,15 @@ What may be skipped is a body that meets **all four** of these:
 4. **Nothing on the command line runs a file or its standard input**
    (`RUNS_CODE_COMMANDS`: `bash`, `sh`, `eval`, `xargs`, `python`, `node`, `iex`,
    `chmod` and the rest, plus a file run by extension such as `./run.sh`).
-   `cat > run.sh <<'EOF' ... EOF` next to `bash run.sh` is code. This one is judged on
-   the text **with the bodies removed**, because a `bash` quoted inside a body tipping
-   its own body to the reading side is the hook-018 false positive all over again.
+   `cat > run.sh <<'EOF' ... EOF` next to `bash run.sh` is code. **Registering a file
+   to be run later counts the same** (`crontab`, `at`, `batch`, `make`, `systemd-run`,
+   `systemctl`, `launchctl`, `schtasks`): a body handed to cron runs just as surely as
+   one handed to a shell, and whether it runs now or later changes nothing. Wrappers
+   that run whatever follows them (`nohup`, `timeout`, `env`) and commands that take a
+   program file (`sed -f`, `awk -f`, `jq -f`) are on the list too. This condition is
+   judged on the text **with the bodies removed**, because a `bash` quoted inside a
+   body tipping its own body to the reading side is the hook-018 false positive all
+   over again.
 
 Only condition 2 was in the first version of this; 1, 3 and 4 were added to close
 what a review found ([below](#the-skip-was-decided-by-where-the-body-went-and-no-further)).
@@ -797,6 +803,10 @@ reader or a writer. For `cat <<'EOF' | xargs rm` the command xargs would build
 The destination is judged as it always was. Only the body is removed and the command
 line around it is kept, so `cat > .env <<'EOF'` still blocks, and so does a real
 command written *after* the heredoc.
+
+**All this hook sees is the command of one tool call.** Writing a file in one call and
+running it in a *different* one — the Write tool creates `run.sh`, the next call is
+`bash run.sh` — is outside its reach.
 
 Where a body ends is decided by the shared lexer (`skipHeredocBodies` /
 `Skip-GdHeredocBodies` in `lib/shell-lex.*`), so `<<-` with tabs and CRLF are not

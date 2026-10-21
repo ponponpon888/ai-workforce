@@ -215,12 +215,30 @@ $HeredocDataCommands = @(
 #
 # 'chmod' is here because making a file executable is the other half of running
 # it, and 'xargs' because it builds a command out of its input.
+#
+# Running it later still counts. "cat <<'EOF' > j && crontab j" hands the body
+# to cron rather than to a shell, and the body runs all the same.
 $RunsCodeCommands = @(
+    # Runs a file, or its own standard input, as code.
     'bash', 'sh', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'busybox',
     'source', '.', 'eval', 'exec', 'xargs', 'parallel',
     'python', 'python3', 'node', 'deno', 'bun', 'perl', 'ruby', 'php',
+    'lua', 'tclsh', 'rscript', 'osascript', 'npx',
     'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression',
-    'invoke-command', 'icm', 'start-process', 'saps', 'chmod'
+    'invoke-command', 'icm', 'start-process', 'saps', 'chmod',
+    # Registers a file so that something else runs it later.
+    'crontab', 'at', 'batch', 'systemd-run', 'systemctl', 'launchctl',
+    'schtasks', 'register-scheduledtask', 'register-scheduledjob',
+    # A file of build steps is a file of commands.
+    'make', 'gmake', 'ninja',
+    # Runs whatever command comes after it.
+    'nohup', 'setsid', 'timeout', 'env', 'stdbuf', 'nice', 'ionice', 'watch',
+    'time', 'script',
+    # Takes a program file: 'sed -f p.sed', 'awk -f p.awk', 'jq -f p.jq'. These
+    # are far more often used to filter data, and naming one here costs a false
+    # positive on a line that only happens to hold a data heredoc as well. The
+    # body being read is the cheaper of the two mistakes, so they are here.
+    'sed', 'awk', 'jq'
 )
 
 # './run.sh' runs a file with no interpreter named at all, which is the same
@@ -636,7 +654,15 @@ function Remove-DataHeredocs([string] $Command) {
 
         [void] $out.Append($body)
         if ($closed) {
-            [void] $out.Append((Get-XargsCommands $span.Line $span.Openers $body))
+            $built = Get-XargsCommands $span.Line $span.Openers $body
+            # The delimiter line is the last thing in $body, and a command line
+            # arriving from the tool usually has no newline after it. Appending
+            # without one glued 'EOF' to the command built here -- 'EOFrm .env'
+            # is not a command the rest of the hook can read.
+            if ($built) {
+                if (-not $body.EndsWith("`n")) { [void] $out.Append("`n") }
+                [void] $out.Append($built)
+            }
         }
     }
     [void] $out.Append($Command.Substring($at))

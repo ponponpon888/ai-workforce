@@ -7,6 +7,8 @@
 
 作った人: [公門 慎吾（Shingo Kumon）](#作った人) ／ ほかの作品は [GitHub プロフィール](https://github.com/ponponpon888)
 
+解説記事: [Claude Code の deny を Windows 実機で測ったら、思っていたより効いていなかった（Zenn）](https://zenn.dev/shingokumon/articles/95dff2530556ce)
+
 ## 実際に踏んだこと
 
 - **無効な設定を1つ書くと、`settings.json` が丸ごと無視される。** `disableAutoMode: true`

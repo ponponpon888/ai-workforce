@@ -89,6 +89,7 @@ jobs:
           node kit/scripts/test-pull-all.mjs
           node kit/scripts/test-pull-all.mjs --target sh
           node kit/scripts/test-probe-guards.mjs
+          node kit/scripts/test-compare-probe-reports.mjs
 
       - name: Test PowerShell implementations under pwsh
         shell: pwsh

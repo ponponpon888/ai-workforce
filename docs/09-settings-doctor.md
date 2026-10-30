@@ -63,6 +63,41 @@ static-pass に見えますが、ここで落ちます。
 - **Claude Code 本体がフックを呼ぶことの証明にはなりません。** それができるのは本体だけです。
   ここで分かるのは「settings.json に書いてあるとおりに起動したとき、フックは仕事をする」まで
 
+### 保存した結果を比較する
+
+`--json` は標準出力へ比較可能なレポートを出します。保存は利用者が明示して行います。probe は前回結果を
+自動保存・上書きせず、比較も指定した2ファイルだけを読みます。
+
+```powershell
+node kit/scripts/probe-guards.mjs --claude-home 'C:\Users\example\.claude' --json > before.json
+# 更新または調査の後に、利用者が明示して別名へ保存する
+node kit/scripts/probe-guards.mjs --claude-home 'C:\Users\example\.claude' --json > after.json
+node kit/scripts/compare-probe-reports.mjs --previous before.json --current after.json
+node kit/scripts/compare-probe-reports.mjs --previous before.json --current after.json --json
+```
+
+レポートには schema と固定 probe ID、probe 定義版、日時、OS、Node 版、実際にフックで使った
+PowerShell 実行ファイルと版（取得できなければ `unknown`）、設定・対象ガード・使用した共有 lexer の
+SHA256だけを残します。設定本文や秘密情報は出力しません。probe 中にこれらをハッシュできない、または
+前後で変わった場合は `incomplete` として、同一条件の成功にはしません。
+前後のハッシュ一致は、probe の途中で変更して元に戻したことまで検知する保証ではありません。監査や
+同時変更の完全な検出ではなく、その実行の開始時・終了時の比較可能性を示すものです。
+
+比較は guard 名と固定 ID で行うため配列順や日時だけの違いは結果差分にしません。想定外の許可、誤検知、
+実行異常、未検証、追加・欠落を分け、実行環境・probe 定義・ハッシュの差は条件差として別表示します。
+ハッシュが違っても結果自体は比較できますが、同一条件とは言いません。両方が fail のままなら
+`UNCHANGED FAILURE` と表示し、正常とは扱いません。不正 JSON、重複 ID、未対応 schema、固定 ID のない
+旧レポートは比較不能（終了コード 2）です。
+
+| 終了コード | 比較結果 |
+|---|---|
+| 0 | 比較可能で、結果・条件差がなく、今回の全 probe が pass |
+| 1 | 比較はできたが差分がある、または今回が fail / incomplete |
+| 2 | 引数または入力レポートが比較不能 |
+
+この比較コマンドはフック、Claude Code、本番環境、ペイロード内のコマンドを起動しません。前節と同様、
+probe の結果は Claude Code 本体との接続確認ではありません。
+
 ### guard-config が守るのは「入れた場所」です（以前は違いました）
 
 この検査を最初に流したときに見つかり、その場で直した1件です。

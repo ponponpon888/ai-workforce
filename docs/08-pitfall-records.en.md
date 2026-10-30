@@ -248,6 +248,50 @@ Reporting from an issue alone is fine too; turning it into a record is our job
 
 ---
 
+## Taking a report from an issue
+
+This is the order for deciding whether an outside report has enough evidence to become a record.
+The report itself is valuable, but **a report arriving**, **a report being reproduced or checked**,
+and **a fix being verified** are different things.
+
+1. Search `data/pitfalls/`, `data/app-pitfalls/`, `data/pitfalls.index.json`, and existing Issues
+   for the same symptom, cause, or mitigation. For a duplicate, do not mint a new ID; consider
+   linking the existing record and Issue instead.
+2. Establish the OS, versions of Claude Code / PowerShell / Node and other tools, command used,
+   expected result, and actual result. Reduce it to a minimum reproduction with connection
+   strings, keys, customer data, and real production paths removed. Read an external report's
+   command before handling it; if it needs checking, use an isolated environment. Do not run a
+   dangerous reproduction against production merely to verify the report.
+3. A report that cannot be reproduced may remain an Issue. If it becomes a record, use a real
+   `issue:<number>` as `origin`, and do not call it `measured` or `closed` without reproduction.
+   Use `confidence: measured` only when the run has a date, environment, and recorded repro.
+   Use `documented` with `sources` for official material, `inferred` with `inferred_from` for a
+   derivation from code or records, and `unverified` when the report's evidence cannot be checked.
+4. Use `trap` for something that becomes an accident, `limitation` for a product or operational
+   limit, and `behaviour` for something that is not a hole. `trap` and `limitation` require a
+   `status`; `behaviour` must not have one. `closed` requires a `fix` and evidence for the
+   mitigation. Use `open_recorded` with `why_not_closed` when leaving it open, or `untouched`
+   when it is not addressed. Do not invent schema values or attach `status` to `behaviour`.
+5. When fixing it, add or run both the case that **must block** and the correct case that **must
+   pass** in the relevant existing tests. Do not call an unreproducible report checked or fixed.
+6. When adding a record, validate it and rebuild the existing index.
+
+   ```bash
+   node kit/scripts/validate-pitfalls.mjs
+   node kit/scripts/test-validate-pitfalls.mjs
+   node kit/scripts/build-pitfall-index.mjs
+   ```
+
+   The last command regenerates `data/pitfalls.index.json`. Put the record ID and what was
+   checked on the Issue; link both the Issue and record from the PR. Calling work complete needs
+   traceable evidence for the cause, mitigation, and the block/pass checks.
+
+This procedure is for tool-operation pitfalls in `data/pitfalls/`. Put application-side reports
+in `data/app-pitfalls/` as described next, and remember that their `status` names the case-study
+application, not this kit.
+
+---
+
 ## Application-side records
 
 `data/app-pitfalls/` holds pitfalls stepped into on **the application an AI was asked to

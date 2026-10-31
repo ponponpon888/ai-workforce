@@ -65,16 +65,23 @@ static-pass に見えますが、ここで落ちます。
 
 ### 保存した結果を比較する
 
-`--json` は標準出力へ比較可能なレポートを出します。保存は利用者が明示して行います。probe は前回結果を
-自動保存・上書きせず、比較も指定した2ファイルだけを読みます。
+`record-probe-reports.mjs` は、保存と比較をまとめるためのCLIです。対象と保存先は毎回明示し、
+更新前後は別の呼び出しにします。既存ファイルを上書きせず、基準と出力に同じファイルを指定すると
+拒否します。ガード・設定の更新、設定の書き換え、自動ロールバックは行いません。
 
 ```powershell
-node kit/scripts/probe-guards.mjs --claude-home 'C:\Users\example\.claude' --json > before.json
-# 更新または調査の後に、利用者が明示して別名へ保存する
-node kit/scripts/probe-guards.mjs --claude-home 'C:\Users\example\.claude' --json > after.json
-node kit/scripts/compare-probe-reports.mjs --previous before.json --current after.json
-node kit/scripts/compare-probe-reports.mjs --previous before.json --current after.json --json
+# 更新前: 成功した基準、または失敗を明示した基準レポートを別名で保存する
+node kit/scripts/record-probe-reports.mjs before --claude-home 'C:\Users\example\.claude' --output .\before.json
+# 利用者がここで必要なガード更新・調査を手で行う。CLIは更新しない。
+# 更新後: 同じ対象を別名へ記録し、明示した基準だけと比較する
+node kit/scripts/record-probe-reports.mjs after --claude-home 'C:\Users\example\.claude' --previous .\before.json --output .\after.json
 ```
+
+`before` が `error` ならレポートは保存しますが、成功した基準とは表示せず終了コード 1 です。
+`incomplete`、起動失敗、タイムアウト、壊れたレポート、保存失敗は終了コード 2 とし、有効な
+probeレポートとして出力先に残しません。`after` は保存済みの基準JSONを検証してから同じ対象を
+probeし、結果差分と条件差を分けて出します。`--json` を付けると保存先・probe状態・比較結果をJSONで
+出します。保存済みJSONだけを読む `compare-probe-reports.mjs` は従来どおりフックを起動しません。
 
 レポートには schema と固定 probe ID、probe 定義版、日時、OS、Node 版、実際にフックで使った
 PowerShell 実行ファイルと版（取得できなければ `unknown`）、設定・対象ガード・使用した共有 lexer の

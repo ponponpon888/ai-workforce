@@ -19,10 +19,7 @@ function usage() {
     'Exit: 0 equal, fully passing reports; 1 a valid comparison found a difference or current failure; 2 invalid input.';
 }
 
-function readReport(path, label) {
-  let report;
-  try { report = JSON.parse(readFileSync(path, 'utf8')); }
-  catch { throw new Error(`${label} report is not valid JSON`); }
+export function validateReport(report, label) {
   if (!report || report.schemaVersion !== SCHEMA_VERSION) throw new Error(`${label} report has unsupported schemaVersion`);
   if (!Number.isInteger(report.probeDefinitionVersion)) throw new Error(`${label} report has no supported probe definition version`);
   if (typeof report.generatedAt !== 'string' || Number.isNaN(Date.parse(report.generatedAt))) throw new Error(`${label} report has no valid generatedAt`);
@@ -56,6 +53,13 @@ function readReport(path, label) {
     : hasUnverified || report.integrity.state === 'unverified' || runtimeUnverified ? 'incomplete' : 'probe-pass';
   if (report.status !== expectedStatus) throw new Error(`${label} report has inconsistent aggregate status`);
   return { report, guards };
+}
+
+export function readReport(path, label) {
+  let report;
+  try { report = JSON.parse(readFileSync(path, 'utf8')); }
+  catch { throw new Error(`${label} report is not valid JSON`); }
+  return validateReport(report, label);
 }
 
 function validateRuntime(runtime, label) {
@@ -149,7 +153,7 @@ export function compare(previousInput, currentInput) {
   return { schemaVersion: SCHEMA_VERSION, comparable: true, resultChanges: changes, conditionChanges: conditions, currentFullyPassing, exitCode };
 }
 
-function printHuman(result) {
+export function printComparison(result) {
   console.log(`Probe report comparison: ${result.exitCode === 0 ? 'EQUAL AND PASSING' : 'ATTENTION REQUIRED'}`);
   for (const change of result.resultChanges) {
     const label = change.type === 'unchanged-failure' ? 'UNCHANGED FAILURE' : change.type.toUpperCase();
@@ -171,7 +175,7 @@ export function main(args = process.argv.slice(2)) {
   if (!previousPath || !currentPath) { console.error(usage()); return 2; }
   try {
     const result = compare(readReport(previousPath, 'previous'), readReport(currentPath, 'current'));
-    if (json) console.log(JSON.stringify(result, null, 2)); else printHuman(result);
+    if (json) console.log(JSON.stringify(result, null, 2)); else printComparison(result);
     return result.exitCode;
   } catch (error) {
     console.error(`compare-probe-reports: ${error.message}`);

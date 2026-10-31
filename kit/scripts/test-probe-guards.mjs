@@ -108,12 +108,28 @@ try {
     const { status, report } = runProbe(home);
     assert.equal(report.status, 'probe-pass', JSON.stringify(report.findings));
     assert.equal(status, 0);
+    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.probeDefinitionVersion, 1);
+    assert.match(report.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(report.runtime.node, process.version);
+    assert.equal(report.integrity.state, 'stable');
+    if (ps) {
+      assert.equal(report.runtime.powerShell.used, true);
+      assert.equal(report.runtime.powerShell.executable, pwsh);
+      assert.notEqual(report.runtime.powerShell.version, 'unknown');
+    } else {
+      assert.equal(report.runtime.powerShell.used, false);
+    }
     for (const guard of report.guards) assert.equal(guard.result, 'pass', guard.guard);
     // Every guard is probed on both sides. A suite that only proves the block
     // half would pass against a hook that blocks everything.
     for (const guard of report.guards) {
       assert.ok(guard.probes.some(p => p.expect === 2), `${guard.guard} has no blocking probe`);
       assert.ok(guard.probes.some(p => p.expect === 0), `${guard.guard} has no allowing probe`);
+      for (const probe of guard.probes) {
+        assert.ok(probe.id, `${guard.guard} probe has a fixed id`);
+        assert.equal(probe.classification, 'expected', `${guard.guard}/${probe.id}`);
+      }
     }
   });
 
@@ -125,6 +141,7 @@ try {
     assert.equal(status, 1);
     assert.equal(report.status, 'error');
     assert.equal(guardOf(report, 'guard-sql').result, 'fail');
+    assert.ok(guardOf(report, 'guard-sql').probes.some(p => p.expect === 2 && p.classification === 'unexpected-allow'));
     assert.ok(report.findings.some(f => f.level === 'error' && f.id === 'guard-sql.probe'));
     // The other three are untouched and must not be dragged down with it.
     for (const name of ['guard-secrets', 'guard-config', 'guard-destructive']) {
@@ -143,6 +160,7 @@ try {
     // Precisely the allow side failed: a guard that refuses correct work gets
     // switched off, which is the failure mode this half exists to catch.
     for (const p of guard.probes) assert.equal(p.result, p.expect === 0 ? 'fail' : 'pass', p.name);
+    assert.ok(guard.probes.some(p => p.expect === 0 && p.classification === 'false-positive'));
   });
 
   test('a missing hook file is reported, not silently passed', () => {
@@ -166,6 +184,8 @@ try {
     const { status, report } = runProbe(home);
     assert.notEqual(status, 0);
     assert.notEqual(guardOf(report, 'guard-destructive').result, 'pass');
+    assert.equal(report.integrity.state, 'unverified');
+    assert.ok(report.findings.some(f => f.id === 'probe.inputs'));
   });
 
   test('an unregistered guard is unverified, not a pass', () => {
@@ -176,8 +196,8 @@ try {
       entry.hooks = entry.hooks.filter(h => !h.command.includes('guard-destructive'));
     }
     writeFileSync(settings, JSON.stringify(parsed, null, 2));
-    const { status, report } = runProbe(home);
-    assert.equal(status, 2);
+    const { status, report, stderr } = runProbe(home);
+    assert.equal(status, 2, JSON.stringify(report) + stderr);
     assert.equal(report.status, 'incomplete');
     assert.equal(guardOf(report, 'guard-destructive').result, 'unverified');
     assert.ok(report.findings.some(f => f.id === 'guard-destructive.registration'));

@@ -35,7 +35,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { homedir, tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { homedir, release, tmpdir, type } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
@@ -43,6 +44,11 @@ import { readFileSync } from 'node:fs';
 const BLOCK = 2;
 const ALLOW = 0;
 const TIMEOUT_MS = 15000;
+// Increment this when a fixed probe is added, removed, or its meaning changes.
+// Consumers compare this alongside results; it is not a claim that two reports
+// with different definitions ran under identical conditions.
+const SCHEMA_VERSION = 1;
+const PROBE_DEFINITION_VERSION = 1;
 
 /**
  * The home guard-config protects at run time.
@@ -66,29 +72,29 @@ function probesFor(guard, protectedHome) {
   switch (guard) {
     case 'guard-sql':
       return [
-        { name: 'DROP over an MCP database tool', expect: BLOCK, tool: 'mcp__supabase__execute_sql', input: { query: 'drop table aiwf_probe_table_that_does_not_exist' } },
-        { name: 'DELETE with no WHERE through psql', expect: BLOCK, tool: 'Bash', input: { command: 'psql $DB -c "delete from aiwf_probe_table_that_does_not_exist"' } },
-        { name: 'a plain SELECT', expect: ALLOW, tool: 'mcp__supabase__execute_sql', input: { query: 'select 1' } },
-        { name: 'a shell command that is not SQL', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
+        { id: 'mcp-drop', name: 'DROP over an MCP database tool', expect: BLOCK, tool: 'mcp__supabase__execute_sql', input: { query: 'drop table aiwf_probe_table_that_does_not_exist' } },
+        { id: 'psql-delete-without-where', name: 'DELETE with no WHERE through psql', expect: BLOCK, tool: 'Bash', input: { command: 'psql $DB -c "delete from aiwf_probe_table_that_does_not_exist"' } },
+        { id: 'mcp-select', name: 'a plain SELECT', expect: ALLOW, tool: 'mcp__supabase__execute_sql', input: { query: 'select 1' } },
+        { id: 'shell-non-sql', name: 'a shell command that is not SQL', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
       ];
     case 'guard-secrets':
       return [
-        { name: 'reading .env through a shell', expect: BLOCK, tool: 'Bash', input: { command: 'cat .env' } },
-        { name: 'reading .env.example', expect: ALLOW, tool: 'Bash', input: { command: 'cat .env.example' } },
-        { name: 'a shell command that reads no secret', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
+        { id: 'shell-read-dotenv', name: 'reading .env through a shell', expect: BLOCK, tool: 'Bash', input: { command: 'cat .env' } },
+        { id: 'shell-read-dotenv-example', name: 'reading .env.example', expect: ALLOW, tool: 'Bash', input: { command: 'cat .env.example' } },
+        { id: 'shell-non-secret', name: 'a shell command that reads no secret', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
       ];
     case 'guard-config':
       return [
-        { name: 'editing the installed settings.json', expect: BLOCK, tool: 'Edit', input: { file_path: join(protectedHome, 'settings.json') } },
-        { name: 'editing an installed hook', expect: BLOCK, tool: 'Edit', input: { file_path: join(protectedHome, 'hooks', 'guard-sql.mjs') } },
-        { name: 'editing an ordinary file', expect: ALLOW, tool: 'Edit', input: { file_path: join(tmpdir(), 'aiwf-probe-ordinary-notes.txt') } },
+        { id: 'edit-settings', name: 'editing the installed settings.json', expect: BLOCK, tool: 'Edit', input: { file_path: join(protectedHome, 'settings.json') } },
+        { id: 'edit-installed-hook', name: 'editing an installed hook', expect: BLOCK, tool: 'Edit', input: { file_path: join(protectedHome, 'hooks', 'guard-sql.mjs') } },
+        { id: 'edit-ordinary-file', name: 'editing an ordinary file', expect: ALLOW, tool: 'Edit', input: { file_path: join(tmpdir(), 'aiwf-probe-ordinary-notes.txt') } },
       ];
     case 'guard-destructive':
       return [
-        { name: 'rm -rf wrapped in bash -c', expect: BLOCK, tool: 'Bash', input: { command: "bash -c 'rm -rf /tmp/aiwf-probe-directory-that-does-not-exist'" } },
-        { name: 'gh repo delete', expect: BLOCK, tool: 'Bash', input: { command: 'gh repo delete aiwf-probe/repo-that-does-not-exist --yes' } },
-        { name: 'an ordinary build command', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
-        { name: 'reading git status', expect: ALLOW, tool: 'Bash', input: { command: 'git status --porcelain' } },
+        { id: 'shell-rm-rf', name: 'rm -rf wrapped in bash -c', expect: BLOCK, tool: 'Bash', input: { command: "bash -c 'rm -rf /tmp/aiwf-probe-directory-that-does-not-exist'" } },
+        { id: 'gh-repo-delete', name: 'gh repo delete', expect: BLOCK, tool: 'Bash', input: { command: 'gh repo delete aiwf-probe/repo-that-does-not-exist --yes' } },
+        { id: 'shell-build', name: 'an ordinary build command', expect: ALLOW, tool: 'Bash', input: { command: 'npm run build' } },
+        { id: 'shell-git-status', name: 'reading git status', expect: ALLOW, tool: 'Bash', input: { command: 'git status --porcelain' } },
       ];
     default:
       return [];
@@ -113,11 +119,66 @@ function registeredCommand(settings, guard, claudeHome) {
         const forms = [path, path.replaceAll('\\', '/')];
         const expected = forms.flatMap(f => extension === 'mjs' ? [`node "${f}"`] :
           ['powershell.exe', 'pwsh'].map(exe => `${exe} -NoProfile -ExecutionPolicy Bypass -File "${f}"`));
-        if (expected.includes(hook.command)) return hook.command;
+        if (expected.includes(hook.command)) return { command: hook.command, extension, path };
       }
     }
   }
   return null;
+}
+
+function fingerprint(path) {
+  try {
+    return { state: 'ok', sha256: createHash('sha256').update(readFileSync(path)).digest('hex') };
+  } catch {
+    // Do not include an error string: it may disclose a user-specific path or
+    // settings contents. An unavailable hash is deliberately not equivalent to
+    // a matching hash.
+    return { state: 'unavailable' };
+  }
+}
+
+function fingerprints(settingsPath, registrations) {
+  const guards = {};
+  const lexers = {};
+  for (const name of GUARDS) {
+    const registration = registrations.get(name);
+    guards[name] = registration ? fingerprint(registration.path) : { state: 'unregistered' };
+    if (registration && ['guard-sql', 'guard-secrets', 'guard-destructive'].includes(name)) {
+      const lexer = `shell-lex.${registration.extension}`;
+      lexers[lexer] ??= fingerprint(join(resolve(settingsPath, '..'), 'hooks', 'lib', lexer));
+    }
+  }
+  return { settings: fingerprint(settingsPath), guards, sharedLexers: lexers };
+}
+
+function fingerprintProblems(before, after) {
+  const problems = [];
+  const visit = (a, b, name) => {
+    if (a?.state === 'ok' && b?.state === 'ok') {
+      if (a.sha256 !== b.sha256) problems.push(`${name} changed while probes ran`);
+      return;
+    }
+    if (a?.state === 'unregistered' && b?.state === 'unregistered') return;
+    problems.push(`${name} could not be hashed for the full probe`);
+  };
+  visit(before.settings, after.settings, 'settings');
+  for (const name of GUARDS) visit(before.guards[name], after.guards[name], `guard ${name}`);
+  for (const name of new Set([...Object.keys(before.sharedLexers), ...Object.keys(after.sharedLexers)])) {
+    visit(before.sharedLexers[name], after.sharedLexers[name], `shared lexer ${name}`);
+  }
+  return problems;
+}
+
+function powerShellRuntime(registrations) {
+  const command = [...registrations.values()].find(r => r?.extension === 'ps1')?.command;
+  if (!command) return { used: false, version: 'unknown' };
+  const executable = command.startsWith('powershell.exe ') ? 'powershell.exe'
+    : command.startsWith('pwsh ') ? 'pwsh' : null;
+  if (!executable) return { used: true, version: 'unknown' };
+  const r = spawnSync(executable, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'],
+    { encoding: 'utf8', timeout: TIMEOUT_MS });
+  const version = !r.error && r.status === 0 && r.stdout.trim() ? r.stdout.trim() : 'unknown';
+  return { used: true, executable, version };
 }
 
 function runProbe(command, probe, cwd) {
@@ -133,12 +194,15 @@ function runProbe(command, probe, cwd) {
   // here rather than the first time a guard was supposed to stop something.
   const r = spawnSync(command, { shell: true, input: payload, encoding: 'utf8', timeout: TIMEOUT_MS });
   if (r.error || r.status === null) {
-    return { ...probe, result: 'unverified', detail: r.error ? r.error.message : 'the hook did not exit normally' };
+    return { ...probe, result: 'unverified', classification: 'unverified', detail: r.error ? r.error.message : 'the hook did not exit normally' };
   }
-  if (r.status === probe.expect) return { ...probe, result: 'pass', status: r.status };
+  if (r.status === probe.expect) return { ...probe, result: 'pass', classification: 'expected', status: r.status };
+  const classification = probe.expect === BLOCK && r.status === ALLOW ? 'unexpected-allow'
+    : probe.expect === ALLOW && r.status === BLOCK ? 'false-positive' : 'execution-anomaly';
   return {
     ...probe,
     result: 'fail',
+    classification,
     status: r.status,
     detail: probe.expect === BLOCK
       ? `expected the guard to block (exit 2), it exited ${r.status}`
@@ -148,13 +212,19 @@ function runProbe(command, probe, cwd) {
 
 export function probe({ claudeHome = join(homedir(), '.claude'), cwd = process.cwd() } = {}) {
   const home = resolve(claudeHome);
+  const settingsPath = join(home, 'settings.json');
   const findings = [];
   const guards = [];
   let settings;
   try {
-    settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8').replace(/^﻿/, ''));
+    settings = JSON.parse(readFileSync(settingsPath, 'utf8').replace(/^﻿/, ''));
   } catch {
     return {
+      schemaVersion: SCHEMA_VERSION,
+      probeDefinitionVersion: PROBE_DEFINITION_VERSION,
+      generatedAt: new Date().toISOString(),
+      runtime: { os: { platform: process.platform, type: type(), release: release() }, node: process.version, powerShell: { used: false, version: 'unknown' } },
+      integrity: { state: 'unverified', before: { settings: fingerprint(settingsPath), guards: {}, sharedLexers: {} }, after: { settings: fingerprint(settingsPath), guards: {}, sharedLexers: {} } },
       status: 'error',
       claudeHome: home,
       protectedHome: protectedHomeFor(home),
@@ -176,24 +246,47 @@ export function probe({ claudeHome = join(homedir(), '.claude'), cwd = process.c
   }
 
   const protectedHome = protectedHomeFor(home);
+  const registrations = new Map(GUARDS.map(name => [name, registeredCommand(settings, name, home)]));
+  const before = fingerprints(settingsPath, registrations);
   for (const name of GUARDS) {
-    const command = registeredCommand(settings, name, home);
-    if (!command) {
+    const registration = registrations.get(name);
+    if (!registration) {
       guards.push({ guard: name, result: 'unverified', probes: [] });
       findings.push({ level: 'unknown', id: `${name}.registration`, message: 'No standard kit registration found; a custom command is not probed.' });
       continue;
     }
-    const probes = probesFor(name, protectedHome).map(p => runProbe(command, p, cwd));
+    const probes = probesFor(name, protectedHome).map(p => runProbe(registration.command, p, cwd));
     const result = probes.some(p => p.result === 'fail') ? 'fail'
       : probes.some(p => p.result === 'unverified') ? 'unverified' : 'pass';
-    guards.push({ guard: name, command, result, probes });
+    guards.push({ guard: name, command: registration.command, result, probes });
     for (const p of probes) {
       if (p.result === 'fail') findings.push({ level: 'error', id: `${name}.probe`, message: `${p.name}: ${p.detail}` });
       if (p.result === 'unverified') findings.push({ level: 'unknown', id: `${name}.probe`, message: `${p.name}: ${p.detail}` });
     }
   }
 
+  const after = fingerprints(settingsPath, registrations);
+  const integrityProblems = fingerprintProblems(before, after);
+  if (integrityProblems.length) findings.push({
+    level: 'unknown', id: 'probe.inputs',
+    message: `Comparison conditions are unverified: ${integrityProblems.join('; ')}.`,
+  });
+  const powerShell = powerShellRuntime(registrations);
+  if (powerShell.used && powerShell.version === 'unknown') findings.push({
+    level: 'unknown', id: 'probe.runtime',
+    message: 'The PowerShell runtime version could not be read; comparison conditions are unverified.',
+  });
+
   return {
+    schemaVersion: SCHEMA_VERSION,
+    probeDefinitionVersion: PROBE_DEFINITION_VERSION,
+    generatedAt: new Date().toISOString(),
+    runtime: {
+      os: { platform: process.platform, type: type(), release: release() },
+      node: process.version,
+      powerShell,
+    },
+    integrity: { state: integrityProblems.length ? 'unverified' : 'stable', before, after },
     status: findings.some(f => f.level === 'error') ? 'error'
       : findings.some(f => f.level === 'unknown') ? 'incomplete' : 'probe-pass',
     claudeHome: home,
@@ -226,6 +319,7 @@ export function main(args = process.argv.slice(2)) {
     console.log(JSON.stringify(report, null, 2));
   } else {
     console.log(`AI Workforce guard probe: ${report.status}`);
+    console.log(`report schema: ${report.schemaVersion}; probe definition: ${report.probeDefinitionVersion}`);
     console.log(`claude home: ${report.claudeHome}`);
     for (const guard of report.guards) {
       console.log(`\n${guard.guard}: ${guard.result}`);

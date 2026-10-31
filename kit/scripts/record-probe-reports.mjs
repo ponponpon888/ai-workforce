@@ -46,6 +46,11 @@ function writeNewReport(path, report) {
   }
 }
 
+function hasUnverifiableProbe(report) {
+  return report.guards?.some(guard => guard.probes?.some(probe =>
+    probe.result === 'unverified' || probe.classification === 'execution-anomaly'));
+}
+
 function record({ claudeHome, output, probeRunner = probe }) {
   let report;
   try {
@@ -53,7 +58,7 @@ function record({ claudeHome, output, probeRunner = probe }) {
   } catch {
     return { exitCode: 2, error: 'probe could not start; no report was saved' };
   }
-  if (!report || report.status === 'incomplete') {
+  if (!report || report.status === 'incomplete' || hasUnverifiableProbe(report)) {
     return { exitCode: 2, error: 'probe was incomplete; no report was saved' };
   }
   let input;

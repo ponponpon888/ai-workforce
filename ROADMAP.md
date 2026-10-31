@@ -374,12 +374,20 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
 
 ## 基本版以降
 
-- アプリ側の落とし穴（`data/app-pitfalls/`）の続き。事例の「未修正」11 件は、実物に当て終えた
-  （2026-10-06。8 件は直っていた。[doc-006](data/pitfalls/doc-006.json)）。残っているのは 3 つ。
-  事例のうち「未修正」以外の記述は当てていない。データベース側は、読む人が自分のプロジェクトで流せる
-  SQL を 3 本足した（2026-10-07、[20](docs/20-supabase-exposure-check.md)）。コードを読まないと
-  分からない側は、当て方がまだ手作業で、ほかのリポジトリに当てる手段が無い（`lint-pitfalls` は自分の
-  ルートしか読まない）。SQL の 3 本は、Supabase の SQL Editor に貼って流した結果をまだ確かめていない。
+- アプリ側の落とし穴（`data/app-pitfalls/`）の続き。事例の「未修正」11 件は、実物に当てた
+  （2026-10-06。8 件は直っていた。[doc-006](data/pitfalls/doc-006.json)）。「残り3件」は全てが
+  未修正という意味ではない。確認できた現在地は、**2026-10-06 時点で未修正のまま**が [state-001](data/app-pitfalls/state-001.json)
+  （状態遷移表が無い）、**現在の対象を特定できず未確認**が美容領域のマッチングプラットフォームの Cron の
+  1組、**外からは0行で穴ではない設計のまま**が同プロジェクトの RLS 有効・ポリシーなしの27表である
+  （[確かめ直した記録](docs/case-studies/beauty-matching.md#2026-10-06-に確かめ直したこと)）。
+  `data/app-pitfalls/` の `closed` は、事例側で修正・検証の根拠を確認できたレコードだけを指し、
+  対象を特定できなかった記述を完了扱いにはしない。事例のうち「未修正」以外の記述は当てていない。
+  データベース側は、読む人が自分のプロジェクトで流せる SQL を3本足した（2026-10-07、
+  [20](docs/20-supabase-exposure-check.md)）。同じ3本を事例の3プロジェクトの本番へ **psql と
+  Supabase の接続ツール経由で実行済み**で、[rls-004](data/app-pitfalls/rls-004.json) を見つけて
+  修正した。一方、**Supabase の SQL Editor に貼って実行する経路**は未確認のままである。
+  コードを読まないと分からない側は、当て方がまだ手作業で、ほかのリポジトリに当てる手段が無い
+  （`lint-pitfalls` は自分のルートしか読まない）。
   Windows で文書の実行結果が合わない件（[doc-005](data/pitfalls/doc-005.json)）は直した（2026-10-20）。
   symlink を張れない環境で黙って落ちていた 3 ケースを、数えて理由つきで出すようにし、
   `check-doc-commands` が `pass + skip` で照合するようにした。あわせて、`docs/13` が引く node:test の
@@ -389,7 +397,8 @@ Node版とPowerShell版の両方と既存テスト（guard-config の45件など
   MySQL / SQLite の SQL 検査は、どちらも実装した（上記）。MySQL / SQLite 側は Claude Code 本体での
   実地確認も終えた（2026-10-20、[記録](measurements/2026-10-20-live-hooks-scratch-project.md)）。
   残っているのは pull-all の shell 版の実地確認。
-- 落とし穴レコードの追加、Issue からの受け入れ手順。英訳は `docs/01`・`docs/03`・`docs/05`・
+- 落とし穴レコードの追加。Issue からレコード化する受け入れ手順は [docs/08](docs/08-pitfall-records.md#issue-から受け入れる)
+  に文書化した（外部報告での運用実証を意味しない）。英訳は `docs/01`・`docs/03`・`docs/05`・
   `docs/06`・`docs/07` を足して、4 本柱のうち 1・2・3 とチャット側の穴の話が英語で読める
   状態にした。→ `docs/04`・`08` も足した（2026-09-22、
   [PR #48](https://github.com/ponponpon888/ai-workforce/pull/48)）。これで README と

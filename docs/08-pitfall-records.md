@@ -239,6 +239,48 @@ Issue から報告するだけでも構いません。レコードにするの�
 
 ---
 
+## Issue から受け入れる
+
+これは外部からの報告を、レコードにしてよい根拠があるか順に確かめる手順です。報告そのものは
+価値がありますが、**報告が来たこと**と**再現・検証できたこと**、**修正できたこと**は別です。
+
+1. まず `data/pitfalls/` と `data/app-pitfalls/`、`data/pitfalls.index.json`、既存 Issue を検索し、
+   同じ現象・同じ原因・同じ対策のレコードがないかを見る。重複なら新しい ID を作らず、既存の
+   レコードと Issue に相互リンクを足すかを検討する。
+2. 報告から OS、Claude Code / PowerShell / Node などの版、使ったコマンド、期待結果、実際の結果を
+   確認する。接続文字列、鍵、顧客データ、実在する本番パスは除いた最小再現例にする。外部報告の
+   コマンドは内容を読んでから扱い、必要なら隔離した環境で確認する。報告を確かめるために本番へ
+   危険な操作を流さない。
+3. 報告だけで再現できないものは、Issue のまま保留にできる。レコードにする場合も、`origin` は
+   実在する `issue:<番号>` にし、再現していないことを `measured` や `closed` と書かない。
+   実行して日付・環境・再現手順を残せたときだけ `confidence: measured` にする。公式資料だけなら
+   `documented` と `sources`、コードや記録からの導出なら `inferred` と `inferred_from`、根拠を
+   確認できない報告は `unverified` を使う。
+4. `kind` は事故になるものを `trap`、製品・運用上の限界を `limitation`、穴ではない挙動を
+   `behaviour` にする。`trap` と `limitation` には `status` が必須で、`behaviour` には書かない。
+   `closed` は対策と確認根拠があるときだけで `fix` が要る。まだ塞がないなら `open_recorded` と
+   `why_not_closed`、未対応なら `untouched` を使う。スキーマに無い値や、`behaviour` の `status` は
+   追加しない。
+5. 修正したなら、問題の入力が**止まるべきケース**と、正しい入力が**通るべきケース**の両方を
+   既存テストへ足すか、該当する既存テストで確認する。再現できない報告を、検証済み・修正済みには
+   しない。
+6. レコードを足したときは、既存のコマンドで形式を検証し、インデックスを更新する。
+
+   ```bash
+   node kit/scripts/validate-pitfalls.mjs
+   node kit/scripts/test-validate-pitfalls.mjs
+   node kit/scripts/build-pitfall-index.mjs
+   ```
+
+   最後のコマンドは `data/pitfalls.index.json` を生成し直す。Issue にはレコード ID と確認範囲、
+   PR には Issue とレコードへのリンクを残す。完了と書くには、原因・対策・止める／通す確認の根拠を
+   たどれるようにする。
+
+この手順は `data/pitfalls/` のツール運用上の落とし穴向けです。アプリ実装側の報告は、次節の
+`data/app-pitfalls/` に置き、`status` がこの kit ではなく事例のアプリを指すことを確認します。
+
+---
+
 ## アプリ側のレコード
 
 `data/app-pitfalls/` には、このリポジトリのツールではなく、**AI に書かせたアプリの側**で

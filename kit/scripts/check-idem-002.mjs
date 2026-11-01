@@ -22,7 +22,8 @@
  * in the fallback.
  *
  * WHAT THIS READS, AND WHAT IT NEVER DOES
- *   - it reads files under the --root you name, and nothing else;
+ *   - it reads files under the --root you name, and nothing else. A call is
+ *     followed only into a file already read from that root;
  *   - it never imports, requires, evaluates or spawns anything from that root,
  *     and never reads a config file to decide what to do. A checker that ran
  *     the code it inspects would be a way to run anything by pointing it at a
@@ -33,24 +34,35 @@
  * A variable called `idempotencyKey` proves nothing, and the original defect
  * is invisible at the name level: both the broken and the fixed version have
  * the key, the column and the constraint. So a finding needs all three of
- * these, in ONE function body:
+ * these. Points 1 and 2 must sit in ONE function body:
  *   1. a row id bound from `.insert(...).select('id')` with no id in the
  *      payload (so the id is new on every delivery);
  *   2. a `||` / `??` chain that selects that row id FIRST and an
  *      identifier that arrived with the delivery LATER;
- *   3. the value of that chain actually reaching an `idempotency_key` field.
+ *   3. the value of that chain actually reaching an `idempotency_key` field,
+ *      in that function, or in an exported function of another file it calls
+ *      with the value as an object property. The original case does the
+ *      second: `beginConversationTurn({ sourceKey: conversationSourceKey })`,
+ *      and the receiver writes `idempotency_key: \`message:${sourceKey}\``.
  * Miss any one of them and nothing is reported.
+ *
+ * FOLLOWING A CALL WITHOUT READING CONFIG
+ * `@/x` is looked up as src/x and x under the root, because reading a config
+ * file from the target is exactly what this checker promises not to do. If both
+ * exist the answer is unknown, and a call that cannot be followed makes the run
+ * incomplete (exit 3) rather than clean.
  *
  * Exit 0 -> at least one file was read and nothing matched.
  * Exit 1 -> at least one finding.
  * Exit 2 -> called wrongly, or the root is unusable.
  * Exit 3 -> incomplete: no candidate file was found, or a candidate could not
- *           be read. "Nothing to look at" is not the same answer as "looked
+ *           be read, or a matching key went into a call that could not be
+ *           followed. "Nothing to look at" is not the same answer as "looked
  *           and found nothing", so it does not share exit 0.
  */
 
 import { readdirSync, readFileSync, lstatSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PITFALL = 'idem-002';
@@ -87,7 +99,8 @@ export function usage() {
     'that came with the delivery. Nothing under PATH is ever executed.',
     '',
     'Exit: 0 read something, found nothing; 1 found something; 2 called wrongly;',
-    '      3 incomplete (no candidate file, or a candidate could not be read).',
+    '      3 incomplete (no candidate file, a candidate could not be read, or a',
+    '      matching key went into a call that could not be followed).',
   ].join('\n');
 }
 
@@ -366,7 +379,8 @@ function declarationCount(text, kind, name, from, to) {
   return count;
 }
 
-const DESTRUCTURE = /(?:const|let|var)\s*\{\s*data\s*:\s*([A-Za-z_$][\w$]*)\s*\}\s*=\s*/g;
+const DESTRUCTURE = /(?:const|let|var)\s*\{([^{}]*)\}\s*=\s*/g;
+const DATA_MEMBER = /(?:^|,)\s*data\s*:\s*([A-Za-z_$][\w$]*)\s*(?:,|$)/;
 const ASSIGNMENT = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*/g;
 
 /**
@@ -381,6 +395,8 @@ function freshRowIds(text, structural, kind) {
   while ((match = DESTRUCTURE.exec(text)) !== null) {
     const start = match.index;
     if (kind[start] !== CODE) continue;
+    const name = DATA_MEMBER.exec(match[1].trim())?.[1];
+    if (!name) continue;
     const rhsStart = start + match[0].length;
     const end = statementEnd(structural, rhsStart);
     if (end < 0) continue;
@@ -401,7 +417,7 @@ function freshRowIds(text, structural, kind) {
     if (structural[objOpen] !== '{') continue;
     if (payloadMayCarryId(text, structural, objOpen)) continue;
     if (!spanIsFreeOfComments(kind, start, rhsStart)) continue;
-    found.set(match[1], { name: match[1], index: start, insertIndex: rhsStart + insert });
+    found.set(name, { name, index: start, insertIndex: rhsStart + insert });
   }
   return found;
 }
@@ -423,27 +439,196 @@ function deliveryIdentifier(operand) {
   return Boolean(root) && DELIVERY_ROOTS.has(root[1].toLowerCase());
 }
 
-function idempotencySink(text, kind, name, from, to) {
+const SINK_FIELD = /['"]?idempotency[_-]?key['"]?\s*:\s*/gi;
+
+/** Whether the value at `valueStart` is `name`, or a template that embeds it. */
+function valueReads(text, kind, valueStart, name) {
   const escaped = name.replace(/[$]/g, '\\$&');
-  const pattern = new RegExp(`(?:['"]?idempotency[_-]?key['"]?)\\s*:\\s*${escaped}\\b`, 'gi');
-  pattern.lastIndex = 0;
+  if (text[valueStart] === '`') {
+    let end = valueStart + 1;
+    while (end < text.length && text[end] !== '`') end += text[end] === '\\' ? 2 : 1;
+    return new RegExp(`\\$\\{\\s*${escaped}\\s*\\}`).test(text.slice(valueStart, end));
+  }
+  return kind[valueStart] === CODE
+    && new RegExp(`^${escaped}(?![\\w$])`).test(text.slice(valueStart, valueStart + name.length + 1));
+}
+
+/** Every `idempotency_key` field in [from, to] whose value reads `name`. */
+function idempotencySinks(text, kind, name, from, to) {
+  const found = [];
+  SINK_FIELD.lastIndex = from;
+  let match;
+  while ((match = SINK_FIELD.exec(text)) !== null && match.index <= to) {
+    const valueStart = match.index + match[0].length;
+    // The property name may legitimately be quoted (`'idempotency_key': key`),
+    // and a template value is a string too. The colon between them is what must
+    // be real code: it tells a field apart from a whole statement that only
+    // exists inside a string literal.
+    const colon = text.lastIndexOf(':', valueStart - 1);
+    if (kind[colon] !== CODE) continue;
+    if (!spanIsFreeOfComments(kind, match.index, valueStart)) continue;
+    if (valueReads(text, kind, valueStart, name)) found.push(match.index);
+  }
+  return found;
+}
+
+function snippetAt(text, index) {
+  const lineEnd = text.indexOf('\n', index);
+  return text.slice(index, lineEnd < 0 ? text.length : lineEnd).trim().replace(/,$/, '');
+}
+
+/** Top-level members of the object at `open`, with comments and strings blanked. */
+function objectMembers(structural, open) {
+  const close = matchingBracket(structural, open);
+  if (close < 0) return [];
+  const members = [];
+  const push = (from, to) => {
+    const raw = structural.slice(from, to);
+    const trimmed = raw.trim();
+    if (trimmed) members.push({ text: trimmed, index: from + raw.indexOf(trimmed) });
+  };
+  let depth = 0;
+  let from = open + 1;
+  for (let i = open + 1; i < close; i += 1) {
+    const char = structural[i];
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') depth -= 1;
+    else if (char === ',' && depth === 0) { push(from, i); from = i + 1; }
+  }
+  push(from, close);
+  return members;
+}
+
+const NAMED_IMPORT = /import\s*(?:[A-Za-z_$][\w$]*\s*,\s*)?\{([^{}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
+
+/** Local name -> what it imports. Default and namespace imports are not followed. */
+function namedImports(text, kind) {
+  const imports = new Map();
+  NAMED_IMPORT.lastIndex = 0;
+  let match;
+  while ((match = NAMED_IMPORT.exec(text)) !== null) {
+    if (kind[match.index] !== CODE) continue;
+    for (const entry of match[1].split(',')) {
+      const parts = /^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/.exec(entry.trim());
+      if (parts) imports.set(parts[2] ?? parts[1], { exported: parts[1], specifier: match[2], index: match.index });
+    }
+  }
+  return imports;
+}
+
+const MODULE_SUFFIXES = ['', '.js', '.mjs', '.cjs', '/index.js', '/index.mjs', '/index.cjs'];
+
+/**
+ * The file a specifier names, among the files already read from the root, so
+ * nothing outside the root, behind a link or in a skipped directory can be
+ * reached. null means a package, which is not the application's own code.
+ */
+function resolveModule(sources, importer, specifier) {
+  let bases;
+  if (/^\.{1,2}\//.test(specifier)) bases = [posix.join(posix.dirname(importer), specifier)];
+  else if (specifier.startsWith('@/')) bases = [`src/${specifier.slice(2)}`, specifier.slice(2)];
+  else if (/^[~#]/.test(specifier)) return { reason: `alias ${specifier} is not followed` };
+  else return null;
+  const hits = bases
+    .map(base => MODULE_SUFFIXES.map(suffix => base + suffix).find(path => sources.has(path)))
+    .filter(Boolean);
+  if (hits.length > 1) return { reason: `${specifier} could be ${hits.join(' or ')}` };
+  if (!hits.length) return { reason: `no .js/.mjs/.cjs file read for ${specifier}` };
+  return { file: hits[0] };
+}
+
+/** An exported function whose first parameter is destructured, or null. */
+function findExportedFunction(text, structural, kind, name) {
+  const escaped = name.replace(/[$]/g, '\\$&');
+  const pattern = new RegExp(`export\\s+(?:async\\s+function\\s+|function\\s+|const\\s+)${escaped}\\s*(?:=\\s*(?:async\\s*)?)?\\(`, 'g');
   let match;
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index < from || match.index > to) continue;
-    // The property name may legitimately be quoted (`'idempotency_key': key`),
-    // so the start of the match is allowed to sit in a string. What must be
-    // real code is the VALUE -- that is what tells a quoted key apart from a
-    // whole statement that only exists inside a string literal.
-    const valueStart = match.index + match[0].length - name.length;
-    if (kind[valueStart] !== CODE) continue;
-    if (!spanIsFreeOfComments(kind, match.index, match.index + match[0].length)) continue;
-    return match.index;
+    if (kind[match.index] !== CODE) continue;
+    const paren = match.index + match[0].length - 1;
+    const parenClose = matchingBracket(structural, paren);
+    if (parenClose < 0) return null;
+    let parameter = paren + 1;
+    while (/\s/.test(structural[parameter] ?? '')) parameter += 1;
+    if (structural[parameter] !== '{') return null;
+    let body = parenClose + 1;
+    while (/\s/.test(structural[body] ?? '')) body += 1;
+    if (structural.slice(body, body + 2) === '=>') {
+      body += 2;
+      while (/\s/.test(structural[body] ?? '')) body += 1;
+    }
+    if (structural[body] !== '{') return null;
+    const bodyEnd = matchingBracket(structural, body);
+    return bodyEnd < 0 ? null : { parameter, bodyStart: body, bodyEnd };
   }
-  return -1;
+  return null;
+}
+
+/** Sinks inside the function a value was passed to, or why it cannot be told. */
+function sinksInCallee(project, file, exported, property) {
+  const text = project.sources.get(file);
+  const { kind, structural } = classifySource(text);
+  const callee = findExportedFunction(text, structural, kind, exported);
+  if (!callee) return { reason: `no exported function ${exported} with a destructured parameter in ${file}` };
+  let local = null;
+  for (const member of objectMembers(structural, callee.parameter)) {
+    const parts = /^([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?\s*(?:=[\s\S]*)?$/.exec(member.text);
+    if (parts?.[1] === property) local = parts[2] ?? parts[1];
+  }
+  if (!local) return { reason: `${exported} in ${file} does not name ${property} in its parameter` };
+  if (declarationCount(text, kind, local, callee.bodyStart, callee.bodyEnd) > 0) {
+    return { reason: `${exported} in ${file} redeclares ${local}` };
+  }
+  const starts = lineStarts(text);
+  return {
+    sinks: idempotencySinks(text, kind, local, callee.bodyStart, callee.bodyEnd)
+      .map(index => ({ file, line: lineOf(starts, index), expression: snippetAt(text, index) })),
+  };
+}
+
+const OBJECT_CALL = /(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(\s*\{/g;
+
+/**
+ * Sinks reached by passing `keyName` as an object property to an imported
+ * function, one level deep. Member calls such as `logger.info({ key })` are not
+ * imports and are left out. A call that cannot be followed is recorded, because
+ * an unknown receiver is not the same as a receiver that only logs.
+ */
+function sinksThroughCalls(file, text, structural, kind, starts, scope, keyName, after, project) {
+  const sinks = [];
+  if (!project) return sinks;
+  const imports = namedImports(text, kind);
+  OBJECT_CALL.lastIndex = after;
+  let match;
+  while ((match = OBJECT_CALL.exec(text)) !== null && match.index < scope.end) {
+    if (kind[match.index] !== CODE) continue;
+    const target = imports.get(match[1]);
+    if (!target) continue;
+    const members = objectMembers(structural, match.index + match[0].length - 1);
+    for (const member of members) {
+      const parts = /^([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?$/.exec(member.text);
+      if (!parts || (parts[2] ?? parts[1]) !== keyName) continue;
+      const property = parts[1];
+      const via = {
+        file,
+        callLine: lineOf(starts, match.index),
+        argumentLine: lineOf(starts, member.index),
+        callee: target.exported,
+        property,
+        importedFrom: target.specifier,
+        importLine: lineOf(starts, target.index),
+      };
+      const module = resolveModule(project.sources, file, target.specifier);
+      if (!module) continue;
+      const answer = module.reason ? module : sinksInCallee(project, module.file, target.exported, property);
+      if (answer.reason) project.unresolved.push({ ...via, reason: answer.reason });
+      else sinks.push(...answer.sinks.map(sink => ({ ...sink, via })));
+    }
+  }
+  return sinks;
 }
 
 /** Findings for one file. `file` is only carried through to the diagnostic. */
-export function analyzeSource(file, text) {
+export function analyzeSource(file, text, project = null) {
   const { kind, structural } = classifySource(text);
   const starts = lineStarts(text);
   const bodies = findFunctionBodies(structural);
@@ -477,9 +662,13 @@ export function analyzeSource(file, text) {
     // reaches the field is not settled by reading text in order, so a shadowed
     // name is left alone (reviewed 2026-11-01).
     if (declarationCount(text, kind, keyName, scope.start, scope.end) > 1) continue;
-    const sink = idempotencySink(text, kind, keyName, scope.start, scope.end);
-    if (sink < 0) continue;
-    if (enclosingFunction(bodies, sink)?.start !== scope.start) continue;
+    const sinks = [
+      ...idempotencySinks(text, kind, keyName, scope.start, scope.end)
+        .filter(index => enclosingFunction(bodies, index)?.start === scope.start)
+        .map(index => ({ file, line: lineOf(starts, index), expression: snippetAt(text, index), via: null })),
+      ...sinksThroughCalls(file, text, structural, kind, starts, scope, keyName, end, project),
+    ];
+    if (!sinks.length) continue;
 
     findings.push({
       pitfall: PITFALL,
@@ -490,7 +679,9 @@ export function analyzeSource(file, text) {
       selectsLater: later,
       rowIdFrom: row.name,
       insertLine: lineOf(starts, row.index),
-      sinkLine: lineOf(starts, sink),
+      sinkFile: sinks[0].file,
+      sinkLine: sinks[0].line,
+      sinks,
       functionLine: lineOf(starts, scope.start),
     });
   }
@@ -528,18 +719,19 @@ function collectFiles(root) {
 
 export function scanRoot(root) {
   const { files, unread } = collectFiles(root);
-  const findings = [];
-  let read = 0;
+  const sources = new Map();
   for (const file of files) {
     let text;
     try { text = readFileSync(file, 'utf8'); }
     catch (error) { unread.push({ path: file, reason: `not readable (${error.code ?? 'unknown'})` }); continue; }
-    read += 1;
-    const relativePath = relative(root, file).split('\\').join('/');
-    findings.push(...analyzeSource(relativePath, text));
+    sources.set(relative(root, file).split('\\').join('/'), text);
   }
+  // Everything is read first, because a call is followed into another file.
+  const project = { sources, unresolved: [] };
+  const findings = [];
+  for (const [relativePath, text] of sources) findings.push(...analyzeSource(relativePath, text, project));
   const normalise = entry => ({ path: relative(root, entry.path).split('\\').join('/') || '.', reason: entry.reason });
-  return { scanned: read, candidates: files.length, unread: unread.map(normalise), findings };
+  return { scanned: sources.size, candidates: files.length, unread: unread.map(normalise), unresolved: project.unresolved, findings };
 }
 
 function describe(finding) {
@@ -547,17 +739,20 @@ function describe(finding) {
     `${finding.pitfall}  ${finding.file}:${finding.line}`,
     `  selects first: ${finding.selectsFirst}   <- id of the row inserted at line ${finding.insertLine}`,
     `  selects later: ${finding.selectsLater}   <- identifier that arrived with the delivery`,
-    `  reaches:       idempotency_key at line ${finding.sinkLine}`,
+    ...finding.sinks.map(sink => `  reaches:       idempotency_key at ${sink.file}:${sink.line}${sink.via ? ` (through ${sink.via.callee})` : ''}`),
     '',
-    `  Confirmed by reading the file (one function, from line ${finding.functionLine}):`,
+    `  Confirmed by reading the file(s) (key built in one function, from line ${finding.functionLine}):`,
     `    - line ${finding.insertLine} binds ${finding.rowIdFrom} from .insert(...).select('id'), with no id in the payload`,
     `    - line ${finding.line} puts that row id ahead of ${finding.selectsLater} in the chain`,
-    `    - line ${finding.sinkLine} passes ${finding.key} to an idempotency_key field`,
+    ...finding.sinks.flatMap(sink => (sink.via
+      ? [`    - ${sink.via.file}:${sink.via.argumentLine} passes ${finding.key} to ${sink.via.callee} as ${sink.via.property} (imported at line ${sink.via.importLine} from ${sink.via.importedFrom})`,
+        `    - ${sink.file}:${sink.line} uses it: ${sink.expression}`]
+      : [`    - line ${sink.line} passes ${finding.key} to an idempotency_key field`])),
     '  Not established here. A duplicate on redelivery also needs all of:',
     '    - the provider to redeliver the same event carrying the same identifier',
     `    - every delivery to reach line ${finding.insertLine} and insert a new row, so the id differs each time`,
     '    - the de-duplication to rest on a unique constraint over this key',
-    `    - the effects meant to be suppressed to happen at or after line ${finding.sinkLine}`,
+    `    - the effects meant to be suppressed to happen at or after ${finding.sinkFile}:${finding.sinkLine}`,
   ];
   return lines.join('\n');
 }
@@ -600,7 +795,7 @@ function main(argv) {
 
   const result = scanRoot(root);
   const status = result.findings.length ? 'findings'
-    : result.candidates === 0 || result.unread.length ? 'incomplete' : 'no-findings';
+    : result.candidates === 0 || result.unread.length || result.unresolved.length ? 'incomplete' : 'no-findings';
   const code = status === 'findings' ? 1 : status === 'incomplete' ? 3 : 0;
 
   if (options.json) {
@@ -613,13 +808,15 @@ function main(argv) {
   if (status === 'incomplete') {
     out.push(result.candidates === 0
       ? `INCOMPLETE: no .js/.mjs/.cjs file to read under ${root}. Nothing was checked, which is not the same as nothing being wrong.`
-      : `INCOMPLETE: ${result.unread.length} candidate file(s) could not be read, so the answer is partial.`);
+      : `INCOMPLETE: ${result.unread.length} candidate file(s) could not be read and ${result.unresolved.length} call(s) could not be followed, so the answer is partial.`);
     for (const entry of result.unread) out.push(`  unread: ${entry.path} -- ${entry.reason}`);
+    for (const entry of result.unresolved) out.push(`  unresolved: ${entry.file}:${entry.callLine} ${entry.callee} -- ${entry.reason}`);
   } else if (status === 'no-findings') {
     out.push(`no ${PITFALL} finding in ${result.scanned} file(s) under ${root}`);
   } else {
-    out.push(`${result.findings.length} ${PITFALL} finding(s) in ${result.scanned} file(s) read`);
+    out.push(`${result.findings.length} ${PITFALL} finding(s) in ${result.scanned} file(s) read, ${result.unread.length} unread`);
     for (const entry of result.unread) out.push(`  unread: ${entry.path} -- ${entry.reason}`);
+    for (const entry of result.unresolved) out.push(`  unresolved: ${entry.file}:${entry.callLine} ${entry.callee} -- ${entry.reason}`);
   }
   process.stdout.write(`${out.join('\n')}\n`);
   return code;
